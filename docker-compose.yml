@@ -1,0 +1,145 @@
+# =============================================================================
+# Crane SEO Platform - 独立部署 Docker Compose
+# 包含：Nginx + Admin UI + API + Crawler + PostgreSQL + Redis
+# 使用: bash deploy.sh（自动检测环境，kejilion 环境将使用 docker-compose.kejilion.yml）
+# =============================================================================
+
+version: "3.9"
+
+services:
+  # --- PostgreSQL 15 ---
+  postgres:
+    image: postgres:15-alpine
+    container_name: crane-seo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crane_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crane_password}
+      POSTGRES_DB: ${POSTGRES_DB:-crane_seo}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crane_user} -d ${POSTGRES_DB:-crane_seo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - crane-network
+
+  # --- Redis 7 ---
+  redis:
+    image: redis:7-alpine
+    container_name: crane-seo-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - crane-network
+
+  # --- API Server ---
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: crane-seo-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      API_PORT: 8080
+      API_HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-crane_user}:${POSTGRES_PASSWORD:-crane_password}@postgres:5432/${POSTGRES_DB:-crane_seo}
+      REDIS_URL: redis://${REDIS_PASSWORD:+${REDIS_PASSWORD}@}redis:6379/0
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./api/src:/app/src:ro
+    networks:
+      - crane-network
+
+  # --- Crawler Service ---
+  crawler:
+    build:
+      context: ./crawler
+      dockerfile: Dockerfile
+    container_name: crane-seo-crawler
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-crane_user}:${POSTGRES_PASSWORD:-crane_password}@postgres:5432/${POSTGRES_DB:-crane_seo}
+      REDIS_URL: redis://${REDIS_PASSWORD:+${REDIS_PASSWORD}@}redis:6379/0
+      CRAWLER_CONCURRENCY: ${CRAWLER_CONCURRENCY:-5}
+      CRAWLER_MAX_REQUESTS_PER_MINUTE: ${CRAWLER_MAX_REQUESTS_PER_MINUTE:-60}
+      CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-Mozilla/5.0 (compatible; CraneSEOBot/1.0)}
+      CRAWLER_RESPECT_ROBOTS_TXT: ${CRAWLER_RESPECT_ROBOTS_TXT:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - crane-network
+
+  # --- Admin UI (Frontend) ---
+  admin-ui:
+    image: nginx:alpine
+    container_name: crane-seo-admin-ui
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    volumes:
+      - ./admin-ui/dist:/usr/share/nginx/html:ro
+    networks:
+      - crane-network
+
+  # --- Nginx Reverse Proxy ---
+  nginx:
+    image: nginx:alpine
+    container_name: crane-seo-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./admin-ui/dist:/usr/share/nginx/html/admin:ro
+    depends_on:
+      - api
+      - admin-ui
+    networks:
+      - crane-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  crane-network:
+    driver: bridge
+    name: crane-seo-network

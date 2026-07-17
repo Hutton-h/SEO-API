@@ -1,0 +1,55 @@
+import type { Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
+import * as asoService from './service.js';
+import { badRequest, paginated } from '../../shared/utils/response.js';
+
+// ---------------------------------------------------------------------------
+// Schemas
+// ---------------------------------------------------------------------------
+
+export const asoQuerySchema = z.object({
+  page: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : 1))
+    .pipe(z.number().int().positive()),
+  pageSize: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : 20))
+    .pipe(z.number().int().min(1).max(100)),
+  store: z.enum(['apple', 'google_play']).optional(),
+  keyword: z.string().optional(),
+});
+
+// ---------------------------------------------------------------------------
+// Controller
+// ---------------------------------------------------------------------------
+
+export async function getASORankings(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+    const { page, pageSize, store, keyword } = req.query as unknown as z.infer<
+      typeof asoQuerySchema
+    >;
+
+    const result = await asoService.getASORankings(projectId, {
+      page,
+      pageSize,
+      store,
+      keyword,
+    });
+
+    paginated(res, result.items, { page, pageSize, total: result.total });
+  } catch (err) {
+    badRequest(res, 'Failed to fetch ASO rankings', { error: (err as Error).message });
+  }
+}
+
+export default {
+  getASORankings,
+};
