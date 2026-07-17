@@ -460,7 +460,7 @@ ensure_cert_exists() {
 }
 
 deploy_nginx_kejilion() {
-    log_step "部署 Nginx 配置 → kejilion 模式"
+    log_step "部署 N 配置 → kejilion 模式"
 
     # 1. 复制前端静态文件
     rm -rf "$KEJILION_HTML_DIR/seo-platform"
@@ -469,52 +469,39 @@ deploy_nginx_kejilion() {
     chmod -R 755 "$KEJILION_HTML_DIR/seo-platform"
     log_ok "前端文件 → $KEJILION_HTML_DIR/seo-platform"
 
-    # 2. SSL 证书
-    if [ "$SSL_MODE" = "https" ]; then
+    # 2. SSL 证书（和 kejilion ldnmp_Proxy 一样：install_ssltls + certs_status）
+    if [ "$SSLODE" = "https" ]; then
         auto_ssl_kejilion "$DOMAIN" || true
     fi
 
-    # 3. 下载 map.conf（kejilion 依赖）
+    # 3. 下载反代模板（照抄 kejilion ldnmp_Proxy 的 wget 命令）
     local gh_proxy=""
-    [ -n "${GITHUB_PROXY:-}" ] && gh_proxy="$GITHUB_PROXY"
-    if [ ! -f "$KEJILION_CONF_DIR/map.conf" ]; then
-        wget -q -O "$KEJILION_CONF_DIR/map.conf" ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf 2>/dev/null || true
-    fi
+    [ -n "${GITHUB_PROXY:-}" ] gh_proxy="$GITHUB_PROXY"
+    wget - - "$KEJILION_CONF_DIR/map.conf" ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf 2>/dev/null || true
+    wget - - "$KEJILION_CONF_DIR/${DOMAIN}.conf" ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy-backend.conf 2>/dev/null
 
-    # 4. 选择模板并替换占位符
-    local backend_name
-    backend_name=$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)
-    local has_cert=false
-    [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ] && has_cert=true
+    # 4. 替换占位符（照抄 kejilion ldnmp_Proxy 的 sed 命令）
+    local backend=$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)
+    sed -i "s/backend_yuming_com/backend_$backend/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
+    sed -i "s/yuming.com/${DOMAIN}/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
 
-    local template
-    if [ "$has_cert" = true ] && [ "$SSL_MODE" = "https" ]; then
-        template="$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy-https.conf"
-        log_info "生成 HTTPS 配置 → ${DOMAIN}.conf"
-    else
-        template="$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy.conf"
-        log_info "生成 HTTP 配置 → ${DOMAIN}.conf"
-    fi
+    # 5. 设置 upstream（和 kejilion 一样：替换 # 动态添加）
+    local upstream_servers="    server 127.0.0.1:48080;\n"
+    sed -i "s/# 动态添加/${upstream_servers}/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
+    sed -i '/remote_addr/d' "$KEJILION_CONF_DIR/${DOMAIN}.conf"
 
-    cp "$template" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
-    sed -i "s/__DOMAIN__/${DOMAIN}/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
-    sed -i "s/__BACKEND__/backend_${backend_name}/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
-    sed -i "s/__DATE__/$(date '+%Y-%m-%d %H:%M:%S')/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
+    log_ok "N 配置已生成 → ${DOMAIN}.conf"
 
-    log_ok "Nginx 配置已生成 → ${DOMAIN}.conf"
-
-    # 5. 清理旧配置
+    # 6. 清理旧配置
     rm -f "$KEJILION_CONF_DIR/seo-platform.conf"
 
-    # 6. 验证 & 重载
-    if docker exec nginx nginx -t 2>&1 | tail -5; then
-        docker exec nginx nginx -s reload 2>/dev/null || true
-        log_ok "Nginx 配置已生效 → ${DOMAIN}.conf"
-    else
-        log_error "Nginx 配置验证失败"
-        exit 1
-    fi
+    # 7. 重载 N（照抄 kejilion：docker exec n n -s reload）
+    docker exec n n -s reload 2>/dev/null || true
+    log_ok "N 配置已生效"
 }
+# 删除本地模板文件，以后只用 kejilion GitHub 上的模板
+rm -f "$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy-backend.conf" "$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy-https.conf"
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
