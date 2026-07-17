@@ -475,25 +475,24 @@ find_certs_and_domain() {
         fi
     fi
 
-    # 2. 扫描 kejilion 路径
-    found_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | head -1 | sed 's|.*/||; s|_cert\.pem||')
+    # 2. 扫描 kejilion 路径（按名称长度降序，优先选最具体的域名）
+    found_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | sed 's|.*/||; s|_cert\.pem||' | awk '{ print length, $0 }' | sort -rn | head -1 | cut -d' ' -f2)
     if [ -n "$found_domain" ] && [ "$found_domain" != "localhost" ]; then
         echo "$found_domain"
         return 0
     fi
 
-    # 3. 扫描 certbot 原路径
-    for dir in /etc/letsencrypt/live/*/; do
-        local d=$(basename "$dir")
-        if [ -f "${dir}fullchain.pem" ] && [ -f "${dir}privkey.pem" ]; then
+    # 3. 扫描 certbot 原路径（按名称长度降序，优先选最具体的域名）
+    for dir in $(ls -d /etc/letsencrypt/live/*/ 2>/dev/null | sed 's|.*/||; s|/||' | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2); do
+        if [ -f "/etc/letsencrypt/live/${dir}/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/${dir}/privkey.pem" ]; then
             # 复制到 kejilion 路径
             mkdir -p /home/web/certs
-            cp "${dir}fullchain.pem" "/home/web/certs/${d}_cert.pem"
-            cp "${dir}privkey.pem" "/home/web/certs/${d}_key.pem"
-            chmod 644 "/home/web/certs/${d}_cert.pem"
-            chmod 600 "/home/web/certs/${d}_key.pem"
-            log_ok "从 certbot 路径恢复证书: ${d}"
-            echo "$d"
+            cp "/etc/letsencrypt/live/${dir}/fullchain.pem" "/home/web/certs/${dir}_cert.pem"
+            cp "/etc/letsencrypt/live/${dir}/privkey.pem" "/home/web/certs/${dir}_key.pem"
+            chmod 644 "/home/web/certs/${dir}_cert.pem"
+            chmod 600 "/home/web/certs/${dir}_key.pem"
+            log_ok "从 certbot 路径恢复证书: ${dir}"
+            echo "$dir"
             return 0
         fi
     done
