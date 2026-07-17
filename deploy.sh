@@ -28,7 +28,7 @@ ENV_EXAMPLE="$SCRIPT_DIR/.env.example"
 INIT_SQL="$SCRIPT_DIR/init.sql"
 FRONTEND_DIR="$SCRIPT_DIR/admin-ui"
 FRONTEND_DIST="$FRONTEND_DIR/dist"
-NGINX_CONF_SRC="$SCRIPT_DIR/nginx/conf.d/seo-platform.conf"
+# NGINX_CONF_SRC removed — config generated dynamically in kejilion mode
 NGINX_STANDALONE_CONF="$SCRIPT_DIR/nginx/conf.d/default.conf"
 
 # kejilion 路径
@@ -453,57 +453,228 @@ setup_auto_renewal() {
 deploy_nginx_kejilion() {
     log_step "部署 Nginx 配置 → kejilion 模式"
 
-    local target_conf="$KEJILION_CONF_DIR/seo-platform.conf"
+    local target_conf="$KEJILION_CONF_DIR/${DOMAIN}.conf"
     local target_html="$KEJILION_HTML_DIR/seo-platform"
 
-    # 复制前端静态文件
+    # 1. 复制前端静态文件
     rm -rf "$target_html"
     mkdir -p "$target_html"
     cp -r "$FRONTEND_DIST/"* "$target_html/"
     chmod -R 755 "$target_html"
     log_ok "前端文件 → $target_html"
 
-    # 生成 Nginx 配置
-    if [ ! -f "$NGINX_CONF_SRC" ]; then
-        log_error "Nginx 配置模板不存在: $NGINX_CONF_SRC"
-        exit 1
-    fi
-    cp "$NGINX_CONF_SRC" "$target_conf"
-    sed -i "s|{YOUR_DOMAIN}|${DOMAIN}|g" "$target_conf"
-
-    if [ "$SSL_MODE" = "http" ]; then
-        # HTTP 模式：注释掉整个 HTTPS 443 块，避免 Nginx 因证书缺失启动失败
-        log_info "HTTP 模式（无 SSL 跳转）"
-        sed -i '/^# ---------- HTTPS (443) 主站点 ----------$/,/^}/s/^/#/' "$target_conf"
+    # 2. 检查证书
+    local cert_file="$KEJILION_CERTS_DIR/${DOMAIN}_cert.pem"
+    local key_file="$KEJILION_CERTS_DIR/${DOMAIN}_key.pem"
+    local has_cert=false
+    if [ -f "$cert_file" ] && [ -f "$key_file" ]; then
+        has_cert=true
+        log_ok "SSL 证书已就绪"
     else
-        # HTTPS 模式：取消注释 return 301，HTTP 请求自动跳转 HTTPS
-        sed -i 's|# return 301 https://$host$request_uri;|return 301 https://$host$request_uri;|' "$target_conf"
-        log_info "HTTPS 模式（HTTP 自动跳转 HTTPS）"
-
-        # 检查证书
-        local cert_file="$KEJILION_CERTS_DIR/${DOMAIN}_cert.pem"
-        local key_file="$KEJILION_CERTS_DIR/${DOMAIN}_key.pem"
-        if [ ! -f "$cert_file" ] || [ ! -f "$key_file" ]; then
-            log_warn "SSL 证书不存在，尝试自动申请..."
+        log_warn "SSL 证书不存在: ${DOMAIN}_cert.pem"
+        if [ "$SSL_MODE" = "https" ]; then
+            log_info "尝试自动申请 SSL 证书..."
             if auto_ssl_kejilion "$DOMAIN"; then
-                log_ok "SSL 证书已就绪，启用 HTTPS"
+                has_cert=true
+                log_ok "SSL 证书申请成功"
             else
-                log_warn "证书申请失败，本次以 HTTP 模式启动"
-                log_info "证书到位后运行: bash deploy.sh update"
-                sed -i 's|return 301 https://$host$request_uri;|# return 301 https://$host$request_uri;|' "$target_conf"
-                # 证书缺失时，注释掉整个 HTTPS (443) server block，避免 Nginx 启动失败
-                sed -i '/^# ---------- HTTPS (443) ----------$/,/^}$/s/^/#/' "$target_conf"
-                sed -i 's|^## ---------- HTTPS (443) ----------$|# ---------- HTTPS (443) 主站点（已注释，证书到位后恢复）|' "$target_conf"
+                log_warn "证书申请失败，降级为 HTTP 模式"
+                SSL_MODE="http"
             fi
-        else
-            log_ok "SSL 证书已就绪"
         fi
     fi
 
-    # 验证 & 重载
-    if docker exec nginx nginx -t 2>&1 | tail -3; then
+    # 3. 生成 kejilion 风格的 Nginx 配置（域名命名）
+    if [ "$has_cert" = true ] && [ "$SSL_MODE" = "https" ]; then
+        log_info "生成 HTTPS 配置 → ${DOMAIN}.conf"
+        cat > "$target_conf" << NGINX_EOF
+# ============================================================
+# 站点: ${DOMAIN}
+# 模式: HTTPS (kejilion 反代模式)
+# 自动生成于: $(date '+%Y-%m-%d %H:%M:%S')
+# ============================================================
+
+# ---- upstream ----
+upstream crane_seo_backend {
+    hash \$remote_addr consistent;
+    server 127.0.0.1:48080;
+    keepalive 64;
+}
+
+# ---- HTTP（强制跳转 HTTPS）----
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    return 301 https://\$host\$request_uri;
+}
+
+# ---- HTTPS 主站点 ----
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    listen 443 quic;
+    listen [::]:443 quic;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/nginx/certs/${DOMAIN}_cert.pem;
+    ssl_certificate_key /etc/nginx/certs/${DOMAIN}_key.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    root /var/www/html/seo-platform;
+    index index.html;
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files \$uri =404;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|webp)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /api/ {
+        proxy_pass http://crane_seo_backend/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 300s;
+    }
+
+    location /api-docs {
+        proxy_pass http://crane_seo_backend/api-docs;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /api-docs.json {
+        proxy_pass http://crane_seo_backend/api-docs.json;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /health {
+        proxy_pass http://crane_seo_backend/health;
+        proxy_set_header Host \$host;
+        access_log off;
+    }
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    client_max_body_size 50m;
+    client_body_timeout 120s;
+}
+NGINX_EOF
+    else
+        log_info "生成 HTTP 配置 → ${DOMAIN}.conf"
+        cat > "$target_conf" << NGINX_EOF
+# ============================================================
+# 站点: ${DOMAIN}
+# 模式: HTTP（无 SSL）
+# ============================================================
+
+# ---- upstream ----
+upstream crane_seo_backend {
+    hash \$remote_addr consistent;
+    server 127.0.0.1:48080;
+    keepalive 64;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    root /var/www/html/seo-platform;
+    index index.html;
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files \$uri =404;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|webp)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /api/ {
+        proxy_pass http://crane_seo_backend/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_connect_timeout 30s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 300s;
+    }
+
+    location /api-docs {
+        proxy_pass http://crane_seo_backend/api-docs;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /api-docs.json {
+        proxy_pass http://crane_seo_backend/api-docs.json;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /health {
+        proxy_pass http://crane_seo_backend/health;
+        proxy_set_header Host \$host;
+        access_log off;
+    }
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    client_max_body_size 50m;
+    client_body_timeout 120s;
+}
+NGINX_EOF
+    fi
+
+    # 4. 清理旧配置文件（删除之前的 seo-platform.conf 等）
+    if [ -f "$KEJILION_CONF_DIR/seo-platform.conf" ]; then
+        rm -f "$KEJILION_CONF_DIR/seo-platform.conf"
+        log_info "已清理旧配置: seo-platform.conf"
+    fi
+
+    # 5. 验证 & 重载
+    if docker exec nginx nginx -t 2>&1 | tail -5; then
         docker exec nginx nginx -s reload 2>/dev/null || true
-        log_ok "Nginx 配置已生效"
+        log_ok "Nginx 配置已生效 → ${DOMAIN}.conf"
     else
         log_error "Nginx 配置验证失败"
         exit 1
@@ -667,12 +838,14 @@ clean_all() {
 
     # 4. kejilion 环境：删除 Nginx 配置和前端文件
     if [ -d "$KEJILION_CONF_DIR" ]; then
-        local conf_target="$KEJILION_CONF_DIR/seo-platform.conf"
+        # 删除旧配置 seo-platform.conf 和域名配置
+        for old_conf in "$KEJILION_CONF_DIR/seo-platform.conf" "$KEJILION_CONF_DIR/${DOMAIN}.conf"; do
+            if [ -f "$old_conf" ]; then
+                rm -f "$old_conf"
+                log_ok "已删除 Nginx 配置: $(basename "$old_conf")"
+            fi
+        done
         local html_target="$KEJILION_HTML_DIR/seo-platform"
-        if [ -f "$conf_target" ]; then
-            rm -f "$conf_target"
-            log_ok "已删除 Nginx 站点配置"
-        fi
         if [ -d "$html_target" ]; then
             rm -rf "$html_target"
             log_ok "已删除前端静态文件"
