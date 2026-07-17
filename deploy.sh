@@ -971,7 +971,7 @@ main_deploy() {
         DOMAIN="${DOMAIN:-localhost}"
         SSL_MODE="${SSL_MODE:-http}"
         # 自动检测证书
-        local cert_domain=$(find_certs_and_domain "$DOMAIN")
+        cert_domain=$(find_certs_and_domain "$DOMAIN")
         if [ -n "$cert_domain" ]; then
             if [ "$DOMAIN" != "$cert_domain" ]; then
                 log_ok "检测到证书域名: ${cert_domain}"
@@ -1042,7 +1042,7 @@ case "$CMD" in
             SSL_MODE="${SSL_MODE:-http}"
         fi
         # 自动检测证书
-        local cert_domain=$(find_certs_and_domain "$DOMAIN")
+        cert_domain=$(find_certs_and_domain "$DOMAIN")
         if [ -n "$cert_domain" ]; then
             if [ "$DOMAIN" != "$cert_domain" ]; then
                 log_ok "检测到证书域名: ${cert_domain}"
