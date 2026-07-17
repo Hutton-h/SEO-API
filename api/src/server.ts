@@ -36,11 +36,18 @@ async function bootstrap(): Promise<void> {
   console.log('[Server] Starting Crane SEO Platform API...');
   console.log(`[Server] Environment: ${config.nodeEnv}`);
   console.log(`[Server] Port: ${config.port}`);
+  console.log(`[Server] Database: ${config.database.host}:${config.database.port}/${config.database.database}`);
 
-  // --- Database ---
-  const dbOk = await testDb();
+  // --- Database (with retry) ---
+  let dbOk = false;
+  for (let attempt = 1; attempt <= 10; attempt++) {
+    dbOk = await testDb();
+    if (dbOk) break;
+    console.log(`[Server] Database not ready, retrying (${attempt}/10)...`);
+    await new Promise((r) => setTimeout(r, 3000));
+  }
   if (!dbOk) {
-    console.error('[Server] Database connection failed. Exiting.');
+    console.error('[Server] Database connection failed after 10 retries. Exiting.');
     process.exit(1);
   }
 

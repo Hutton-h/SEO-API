@@ -36,6 +36,24 @@ function envFloat(key: string, defaultValue?: number): number {
   return parsed;
 }
 
+// 从 DATABASE_URL 解析连接参数，作为独立 env 变量的回退
+function parseDatabaseUrl(): { host: string; port: number; user: string; password: string; database: string } {
+  const url = process.env['DATABASE_URL'];
+  if (!url) return { host: '', port: 0, user: '', password: '', database: '' };
+  try {
+    const u = new URL(url);
+    return {
+      host: u.hostname,
+      port: parseInt(u.port, 10) || 5432,
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: u.pathname.replace(/^\//, ''),
+    };
+  } catch {
+    return { host: '', port: 0, user: '', password: '', database: '' };
+  }
+}
+
 export interface Config {
   port: number;
   host: string;
@@ -161,17 +179,18 @@ export interface Config {
 }
 
 function loadConfig(): Config {
+  const dbUrl = parseDatabaseUrl();
   return {
     port: envInt('API_PORT', 8080),
     host: env('API_HOST', '0.0.0.0'),
     nodeEnv: env('NODE_ENV', 'development'),
 
     database: {
-      host: env('DB_HOST', 'localhost'),
-      port: envInt('DB_PORT', 5432),
-      user: env('DB_USER', 'postgres'),
-      password: env('DB_PASSWORD', 'postgres'),
-      database: env('DB_NAME', 'crane_seo'),
+      host: env('DB_HOST', dbUrl.host || 'localhost'),
+      port: envInt('DB_PORT', dbUrl.port || 5432),
+      user: env('DB_USER', dbUrl.user || 'postgres'),
+      password: env('DB_PASSWORD', dbUrl.password || 'postgres'),
+      database: env('DB_NAME', dbUrl.database || 'crane_seo'),
     },
 
     redis: {

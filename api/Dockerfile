@@ -22,7 +22,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 
 # Compile TypeScript to JavaScript
-RUN npm run build; exit 0
+RUN npm run build
 
 # Prune devDependencies
 RUN npm prune --omit=dev
