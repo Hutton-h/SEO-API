@@ -124,12 +124,12 @@ export async function analyzeEntities(
 
       const mentions: Entity['mentions'] = (entity.mentions ?? []).map((m) => ({
         text: m.text?.content ?? '',
-        type: m.type ?? 'UNKNOWN',
+        type: String(m.type ?? 'UNKNOWN'),
       }));
 
       const entityResult: Entity = {
         name: entity.name ?? '',
-        type: entity.type ?? 'UNKNOWN',
+        type: String(entity.type ?? 'UNKNOWN'),
         salience: entity.salience ?? 0,
         metadata,
         mentions,
@@ -244,18 +244,18 @@ export async function analyzeSyntax(
     const tokens: Token[] = (result.tokens ?? []).map((t) => ({
       text: t.text?.content ?? '',
       partOfSpeech: {
-        tag: t.partOfSpeech?.tag ?? 'UNKNOWN',
-        aspect: t.partOfSpeech?.aspect ?? 'UNKNOWN',
-        case: t.partOfSpeech?.case ?? 'UNKNOWN',
-        form: t.partOfSpeech?.form ?? 'UNKNOWN',
-        gender: t.partOfSpeech?.gender ?? 'UNKNOWN',
-        mood: t.partOfSpeech?.mood ?? 'UNKNOWN',
-        number: t.partOfSpeech?.number ?? 'UNKNOWN',
-        person: t.partOfSpeech?.person ?? 'UNKNOWN',
-        proper: t.partOfSpeech?.proper ?? 'UNKNOWN',
-        reciprocity: t.partOfSpeech?.reciprocity ?? 'UNKNOWN',
-        tense: t.partOfSpeech?.tense ?? 'UNKNOWN',
-        voice: t.partOfSpeech?.voice ?? 'UNKNOWN',
+        tag: String(t.partOfSpeech?.tag ?? 'UNKNOWN'),
+        aspect: String(t.partOfSpeech?.aspect ?? 'UNKNOWN'),
+        case: String(t.partOfSpeech?.case ?? 'UNKNOWN'),
+        form: String(t.partOfSpeech?.form ?? 'UNKNOWN'),
+        gender: String(t.partOfSpeech?.gender ?? 'UNKNOWN'),
+        mood: String(t.partOfSpeech?.mood ?? 'UNKNOWN'),
+        number: String(t.partOfSpeech?.number ?? 'UNKNOWN'),
+        person: String(t.partOfSpeech?.person ?? 'UNKNOWN'),
+        proper: String(t.partOfSpeech?.proper ?? 'UNKNOWN'),
+        reciprocity: String(t.partOfSpeech?.reciprocity ?? 'UNKNOWN'),
+        tense: String(t.partOfSpeech?.tense ?? 'UNKNOWN'),
+        voice: String(t.partOfSpeech?.voice ?? 'UNKNOWN'),
       },
       lemma: t.lemma ?? '',
       dependencyEdge: {

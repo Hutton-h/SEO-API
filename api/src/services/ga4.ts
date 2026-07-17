@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Google Analytics Data API (GA4) Service
-// Uses googleapis package (google.auth.OAuth2 + analyticsdata/v1beta)
+// Uses googleapis package (google.auth.GoogleAuth + analyticsdata/v1beta)
 // ---------------------------------------------------------------------------
 
 import { google, type analyticsdata_v1beta } from 'googleapis';
@@ -53,23 +53,25 @@ export interface GA4Result<T = unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Auth Client
+// Auth Client (Service Account via GoogleAuth)
 // ---------------------------------------------------------------------------
 
-function createAuthClient(): google.auth.OAuth2 {
-  const client = new google.auth.OAuth2();
-  client.setCredentials({
-    client_email: config.ga4.clientEmail,
-    private_key: config.ga4.privateKey,
+async function getAuthClient() {
+  const auth = new google.auth.GoogleAuth({
+    credentials: {
+      client_email: config.ga4.clientEmail,
+      private_key: config.ga4.privateKey,
+    },
+    scopes: ['https://www.googleapis.com/auth/analytics.readonly'],
   });
-  return client;
+  return auth.getClient();
 }
 
-function getAnalyticsDataClient(): analyticsdata_v1beta.Analyticsdata {
-  const auth = createAuthClient();
+async function getAnalyticsDataClient() {
+  const auth = await getAuthClient();
   return google.analyticsdata({
     version: 'v1beta',
-    auth,
+    auth: auth as any,
   });
 }
 
@@ -105,9 +107,9 @@ async function runReport(
     dimensionFilter?: analyticsdata_v1beta.Schema$FilterExpression;
   },
 ): Promise<analyticsdata_v1beta.Schema$RunReportResponse> {
-  const analyticsData = getAnalyticsDataClient();
+  const analyticsData = await getAnalyticsDataClient();
 
-  const request: analyticsdata_v1beta.Schema$RunReportRequest = {
+  const request: any = {
     property: `properties/${propertyId}`,
     dateRanges: [buildDateRange(startDate, endDate)],
     dimensions,
