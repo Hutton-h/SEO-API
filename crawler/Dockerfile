@@ -53,8 +53,8 @@ RUN npm install --omit=dev --no-audit --no-fund --prefer-offline
 # Copy compiled output from builder
 COPY --from=builder /app/dist/ ./dist/
 
-# Set ownership
-RUN chown -R crawleruser:crawlergroup /app
+# Set ownership (only app files, skip node_modules which is slow)
+RUN chown -R crawleruser:crawlergroup /app/dist /app/package.json
 
 # Switch to non-root user
 USER crawleruser
