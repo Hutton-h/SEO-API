@@ -77,13 +77,13 @@ export async function getRankings(
 
             // Merge GSC data with rankings
             for (const item of result.items) {
-              const kw = (item as Record<string, unknown>)['keyword_text'] as string;
+              const kw = (item as any)['keyword_text'] as string;
               const gscRow = gscData.rows.find((row) => row.keys[0] === kw);
               if (gscRow) {
-                (item as Record<string, unknown>)['gsc_position'] = gscRow.position;
-                (item as Record<string, unknown>)['gsc_clicks'] = gscRow.clicks;
-                (item as Record<string, unknown>)['gsc_impressions'] = gscRow.impressions;
-                (item as Record<string, unknown>)['gsc_ctr'] = Math.round(gscRow.ctr * 10000) / 100;
+                (item as any)['gsc_position'] = gscRow.position;
+                (item as any)['gsc_clicks'] = gscRow.clicks;
+                (item as any)['gsc_impressions'] = gscRow.impressions;
+                (item as any)['gsc_ctr'] = Math.round(gscRow.ctr * 10000) / 100;
               }
             }
           }

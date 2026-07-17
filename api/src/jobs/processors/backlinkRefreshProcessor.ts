@@ -1,7 +1,7 @@
 import type { Job } from 'bullmq';
 import { db } from '../../shared/database.js';
-import { dataforseo } from '../../services/dataforseo.js';
-import { majestic } from '../../services/majestic.js';
+import dataforseo from '../../services/dataforseo.js';
+import majestic from '../../services/majestic.js';
 
 // ---------------------------------------------------------------------------
 // Types

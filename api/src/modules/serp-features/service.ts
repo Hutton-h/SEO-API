@@ -1,4 +1,4 @@
-import { dataforseo } from '../../services/dataforseo.js';
+import dataforseo from '../../services/dataforseo.js';
 import { db } from '../../shared/database.js';
 
 // ---------------------------------------------------------------------------

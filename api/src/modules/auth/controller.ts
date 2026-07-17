@@ -30,7 +30,7 @@ export async function login(
   try {
     const data = req.body as z.infer<typeof loginSchema>;
 
-    const result = await authService.login(data);
+    const result = await authService.login(data as any);
     success(res, result, 'Login successful');
   } catch (err) {
     const message = (err as Error).message;
@@ -50,7 +50,7 @@ export async function register(
   try {
     const data = req.body as z.infer<typeof registerSchema>;
 
-    const result = await authService.register(data);
+    const result = await authService.register(data as any);
     success(res, result, 'Registration successful');
   } catch (err) {
     badRequest(res, 'Registration failed', { error: (err as Error).message });

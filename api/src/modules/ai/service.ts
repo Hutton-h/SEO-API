@@ -1,5 +1,5 @@
 import { db } from '../../shared/database.js';
-import { openai } from '../../services/openai.js';
+import openai from '../../services/openai.js';
 
 // ---------------------------------------------------------------------------
 // Types

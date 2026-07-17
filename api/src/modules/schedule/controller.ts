@@ -51,7 +51,7 @@ export async function createSchedule(
     const { id: projectId } = req.params;
     const data = req.body as z.infer<typeof createScheduleSchema>;
 
-    const schedule = await scheduleService.createSchedule(projectId, data);
+    const schedule = await scheduleService.createSchedule(projectId, data as any);
     created(res, schedule, 'Schedule created successfully');
   } catch (err) {
     badRequest(res, 'Failed to create schedule', { error: (err as Error).message });

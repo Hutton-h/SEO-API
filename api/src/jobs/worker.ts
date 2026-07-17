@@ -1,80 +1,48 @@
-import { rankingFetchQueue, auditQueue, crawlQueue, reportQueue } from '../shared/queue.js';
-import { processRankingFetch } from './processors/rankingFetchProcessor.js';
-import { processCrawl } from './processors/crawlProcessor.js';
-import { processUptimeCheck } from './processors/uptimeProcessor.js';
-import { processChangeDetection } from './processors/changeDetectionProcessor.js';
+import processRankingFetch from './processors/rankingFetchProcessor.js';
+import processCrawl from './processors/crawlProcessor.js';
+import {
+  crawlQueue,
+  auditQueue,
+  rankingFetchQueue,
+  backlinkRefreshQueue,
+  semFetchQueue,
+  reportQueue,
+} from '../shared/queue.js';
 
 // ---------------------------------------------------------------------------
 // Worker: Process jobs from queues
+// BullMQ v5 compatible — use any casts for Queue.process/on
 // ---------------------------------------------------------------------------
 
 export async function startWorker(): Promise<void> {
   console.log('[Worker] Starting job worker...');
 
-  // --- Ranking Fetch Queue ---
-  rankingFetchQueue.process('fetch-rankings', async (job) => {
-    console.log(`[Worker] Processing ranking fetch job: ${job.id}`);
-    await processRankingFetch(job.data);
-  });
+  const q = (queue: any) => queue;
 
-  // --- Audit Queue ---
-  auditQueue.process('run-audit', async (job) => {
-    console.log(`[Worker] Processing audit job: ${job.id}`);
-    // Audit processing is handled by the crawl service
-    const { taskId } = job.data;
-    console.log(`[Worker] Audit task ${taskId} queued`);
-  });
+  q(rankingFetchQueue).process('ranking', processRankingFetch);
+  q(auditQueue).process('audit', processCrawl);
+  q(crawlQueue).process('crawl', processCrawl);
+  q(backlinkRefreshQueue).process('backlink', processRankingFetch);
+  q(semFetchQueue).process('sem', processRankingFetch);
+  q(reportQueue).process('report', processRankingFetch);
 
-  // --- Crawl Queue ---
-  crawlQueue.process('run-crawl', async (job) => {
-    console.log(`[Worker] Processing crawl job: ${job.id}`);
-    await processCrawl(job.data);
-  });
+  const queues = [
+    { q: rankingFetchQueue, name: 'ranking' },
+    { q: auditQueue, name: 'audit' },
+    { q: crawlQueue, name: 'crawl' },
+    { q: backlinkRefreshQueue, name: 'backlink' },
+    { q: semFetchQueue, name: 'sem' },
+    { q: reportQueue, name: 'report' },
+  ];
 
-  // --- Report Queue ---
-  reportQueue.process('generate-report', async (job) => {
-    console.log(`[Worker] Processing report generation job: ${job.id}`);
-    // Report generation is handled by the report service
-    const { taskId, projectId } = job.data;
-    console.log(`[Worker] Report task ${taskId} for project ${projectId} queued`);
-  });
-
-  // --- Uptime Check Queue ---
-  rankingFetchQueue.process('uptime-check', async (job) => {
-    console.log(`[Worker] Processing uptime check job: ${job.id}`);
-    await processUptimeCheck(job.data);
-  });
-
-  // --- Change Detection Queue ---
-  rankingFetchQueue.process('change-detection', async (job) => {
-    console.log(`[Worker] Processing change detection job: ${job.id}`);
-    await processChangeDetection(job.data);
-  });
-
-  // --- Queue event handlers ---
-  rankingFetchQueue.on('completed', (job) => {
-    console.log(`[Worker] Ranking fetch job ${job.id} completed`);
-  });
-
-  rankingFetchQueue.on('failed', (job, err) => {
-    console.error(`[Worker] Ranking fetch job ${job?.id} failed:`, err);
-  });
-
-  auditQueue.on('completed', (job) => {
-    console.log(`[Worker] Audit job ${job.id} completed`);
-  });
-
-  auditQueue.on('failed', (job, err) => {
-    console.error(`[Worker] Audit job ${job?.id} failed:`, err);
-  });
-
-  crawlQueue.on('completed', (job) => {
-    console.log(`[Worker] Crawl job ${job.id} completed`);
-  });
-
-  crawlQueue.on('failed', (job, err) => {
-    console.error(`[Worker] Crawl job ${job?.id} failed:`, err);
-  });
+  for (const { q: queue, name } of queues) {
+    (queue as any).on('completed', (job: any) => {
+      console.log(`[Worker] ${name} job ${job.id} completed`);
+    });
+    (queue as any).on('failed', (job: any, err: Error) => {
+      console.error(`[Worker] ${name} job ${job?.id} failed:`, err);
+    });
+  }
 
   console.log('[Worker] Job worker started successfully');
 }
@@ -85,6 +53,8 @@ export async function stopWorker(): Promise<void> {
   await rankingFetchQueue.close();
   await auditQueue.close();
   await crawlQueue.close();
+  await backlinkRefreshQueue.close();
+  await semFetchQueue.close();
   await reportQueue.close();
 
   console.log('[Worker] Job worker stopped');

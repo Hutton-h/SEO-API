@@ -16,7 +16,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 
 # Build TypeScript
-RUN npm run build; exit 0
+RUN npm run build
 
 # =============================================================================
 # Production stage

@@ -857,11 +857,11 @@ export async function getContentAnalysis(
       orphan_pages: (checks.orphan_pages as number) ?? 0,
       link_depth: (checks.link_depth as number) ?? 0,
     },
-    word_count: (meta.content?.word_count as number) ?? 0,
+    word_count: ((meta.content as any)?.word_count as number) ?? 0,
     headings: {
-      h1: (meta.content?.h1 as string[]) ?? [],
-      h2: (meta.content?.h2 as string[]) ?? [],
-      h3: (meta.content?.h3 as string[]) ?? [],
+      h1: ((meta.content as any)?.h1 as string[]) ?? [],
+      h2: ((meta.content as any)?.h2 as string[]) ?? [],
+      h3: ((meta.content as any)?.h3 as string[]) ?? [],
     },
   };
 

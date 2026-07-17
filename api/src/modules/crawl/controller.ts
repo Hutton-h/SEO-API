@@ -157,15 +157,18 @@ export async function getIssues(
         url: psi['url'] ?? '',
         status: 'open',
         source: 'psi',
+        page_id: null,
+        element: null,
+        resolved_at: null,
         created_at: psi['created_at'],
       }));
 
       if (source !== 'psi') {
-        result.items = [...result.items, ...psiFormatted];
+        result.items = [...result.items, ...psiFormatted] as any;
       }
 
       if (source === 'psi') {
-        result.items = psiFormatted;
+        result.items = psiFormatted as any;
         result.total = psiFormatted.length;
       }
     }

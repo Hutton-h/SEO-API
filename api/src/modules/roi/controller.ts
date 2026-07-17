@@ -66,7 +66,7 @@ export async function saveROI(
     const { id: projectId } = req.params;
     const data = req.body as z.infer<typeof saveROISchema>;
 
-    const roi = await roiService.saveROI(projectId, data);
+    const roi = await roiService.saveROI(projectId, data as any);
     success(res, roi, 'ROI metrics saved successfully');
   } catch (err) {
     badRequest(res, 'Failed to save ROI metrics', { error: (err as Error).message });

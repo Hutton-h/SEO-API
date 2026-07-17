@@ -79,7 +79,7 @@ export async function createRule(
     const { id: projectId } = req.params;
     const data = req.body as z.infer<typeof createRuleSchema>;
 
-    const rule = await alertingService.createRule(projectId, data);
+    const rule = await alertingService.createRule(projectId, data as any);
     created(res, rule, 'Alert rule created successfully');
   } catch (err) {
     badRequest(res, 'Failed to create alert rule', { error: (err as Error).message });
@@ -111,7 +111,7 @@ export async function updateRule(
     const { id: ruleId } = req.params;
     const data = req.body as z.infer<typeof updateRuleSchema>;
 
-    const rule = await alertingService.updateRule(ruleId, data);
+    const rule = await alertingService.updateRule(ruleId, data as any);
     if (!rule) {
       notFound(res, 'Alert rule not found');
       return;

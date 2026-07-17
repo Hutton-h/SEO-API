@@ -1,5 +1,5 @@
 import { db } from '../../shared/database.js';
-import { dataforseo } from '../../services/dataforseo.js';
+import dataforseo from '../../services/dataforseo.js';
 
 // ---------------------------------------------------------------------------
 // Types

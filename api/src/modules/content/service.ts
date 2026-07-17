@@ -1,6 +1,6 @@
 import { db } from '../../shared/database.js';
 import { nlp } from '../../services/nlp.js';
-import { openai } from '../../services/openai.js';
+import openai from '../../services/openai.js';
 import axios from 'axios';
 
 // ---------------------------------------------------------------------------
