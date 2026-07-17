@@ -19,6 +19,7 @@ RUN npm install --no-audit --no-fund --prefer-offline
 
 # Copy source code
 COPY tsconfig.json ./
+COPY migrations/ ./migrations/
 COPY src/ ./src/
 
 # Compile TypeScript to JavaScript
@@ -41,6 +42,7 @@ RUN apk add --no-cache tini curl
 
 # Copy built artifacts and production node_modules from builder
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 

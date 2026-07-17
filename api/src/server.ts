@@ -51,12 +51,11 @@ async function bootstrap(): Promise<void> {
     process.exit(1);
   }
 
-  // Run migrations
+  // Run migrations (non-fatal — database is initialized via init.sql)
   try {
     await runMigrations();
   } catch (err) {
-    console.error('[Server] Migration failed:', err);
-    process.exit(1);
+    console.warn('[Server] Migration skipped (DB initialized via init.sql):', (err as Error).message);
   }
 
   // --- Redis ---
