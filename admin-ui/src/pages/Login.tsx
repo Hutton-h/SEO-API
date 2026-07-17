@@ -1,31 +1,59 @@
 import React, { useState } from 'react';
-import { Card, Form, Input, Button, Typography, message, Space, Divider } from 'antd';
+import { Card, Form, Input, Button, Typography, message, Space, Divider, Alert } from 'antd';
 import {
   UserOutlined, LockOutlined, EyeInvisibleOutlined, EyeTwoTone,
   GithubOutlined, GoogleOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { authAPI } from '@/services/auth';
+import { useStore } from '@/store';
+import axios from 'axios';
 
 const { Title, Text } = Typography;
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const { setUser, setAuthenticated } = useStore();
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [form] = Form.useForm();
 
   const handleLogin = async (values: { username: string; password: string; remember: boolean }) => {
     setLoading(true);
-    // 模拟登录
-    setTimeout(() => {
-      if (values.username === 'admin' && values.password === 'admin123') {
-        message.success('登录成功');
-        localStorage.setItem('access_token', 'mock-token-12345');
+    setErrorMsg(null);
+    try {
+      const response = await authAPI.login({
+        username: values.username,
+        password: values.password,
+      });
+      // 存储 token
+      localStorage.setItem('access_token', response.accessToken);
+      localStorage.setItem('refresh_token', response.refreshToken);
+      // 更新状态
+      setUser(response.user);
+      setAuthenticated(true);
+      message.success('登录成功');
+      navigate('/dashboard', { replace: true });
+    } catch (error: any) {
+      const errMsg = error?.response?.data?.message || error?.message || '登录失败，请检查用户名和密码';
+      setErrorMsg(errMsg);
+      // 开发环境回退：模拟登录
+      if (import.meta.env.DEV && values.username === 'admin' && values.password === 'admin123') {
+        localStorage.setItem('access_token', 'dev-token-' + Date.now());
+        localStorage.setItem('refresh_token', 'dev-refresh-token-' + Date.now());
+        setUser({
+          id: '1',
+          name: '管理员',
+          email: 'admin@seo-platform.com',
+          role: 'admin',
+        });
+        setAuthenticated(true);
+        message.success('登录成功 (开发模式)');
         navigate('/dashboard', { replace: true });
-      } else {
-        message.error('用户名或密码错误');
       }
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -55,6 +83,17 @@ const Login: React.FC = () => {
           </Title>
           <Text type="secondary">专业 SEO 管理平台</Text>
         </div>
+
+        {errorMsg && (
+          <Alert
+            message={errorMsg}
+            type="error"
+            showIcon
+            closable
+            onClose={() => setErrorMsg(null)}
+            style={{ marginBottom: 16 }}
+          />
+        )}
 
         <Form
           form={form}

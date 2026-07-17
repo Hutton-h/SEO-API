@@ -23,6 +23,19 @@ function envInt(key: string, defaultValue?: number): number {
   return parsed;
 }
 
+function envFloat(key: string, defaultValue?: number): number {
+  const value = process.env[key];
+  if (value === undefined) {
+    if (defaultValue !== undefined) return defaultValue;
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  const parsed = parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`Environment variable ${key} must be a valid number, got: ${value}`);
+  }
+  return parsed;
+}
+
 export interface Config {
   port: number;
   host: string;
@@ -52,6 +65,39 @@ export interface Config {
     apiKey: string;
     model: string;
   };
+  gsc: {
+    clientId: string;
+    clientSecret: string;
+    refreshToken: string;
+  };
+  pagespeed: {
+    apiKey: string;
+  };
+  ga4: {
+    propertyId: string;
+    clientEmail: string;
+    privateKey: string;
+  };
+  indexing: {
+    serviceAccountKey: string;
+  };
+  nlp: {
+    projectId: string;
+    keyFile: string;
+  };
+  bing: {
+    apiKey: string;
+    siteUrl: string;
+  };
+  trends: {
+    // No API key required, uses unofficial endpoint
+  };
+  whois: {
+    apiKey: string;
+  };
+  valueserp: {
+    apiKey: string;
+  };
   jwt: {
     secret: string;
     expiresIn: string;
@@ -66,6 +112,50 @@ export interface Config {
     brandName: string;
     primaryColor: string;
     logoUrl: string;
+  };
+  monitoring: {
+    uptimeCheckInterval: number;
+    alertThresholds: {
+      cpuPercent: number;
+      memoryPercent: number;
+      diskPercent: number;
+      responseTimeMs: number;
+      errorRate: number;
+    };
+  };
+  notification: {
+    email: {
+      enabled: boolean;
+      smtpHost: string;
+      smtpPort: number;
+      smtpUser: string;
+      smtpPassword: string;
+      fromAddress: string;
+    };
+    dingtalk: {
+      enabled: boolean;
+      webhookUrl: string;
+      secret: string;
+    };
+    feishu: {
+      enabled: boolean;
+      webhookUrl: string;
+      secret: string;
+    };
+    slack: {
+      enabled: boolean;
+      webhookUrl: string;
+    };
+    webhook: {
+      enabled: boolean;
+      url: string;
+      secret: string;
+    };
+  };
+  billing: {
+    dataforseoCostPerCall: number;
+    openaiCostPerToken: number;
+    valueserpCostPerCall: number;
   };
 }
 
@@ -102,7 +192,56 @@ function loadConfig(): Config {
 
     openai: {
       apiKey: env('OPENAI_API_KEY', ''),
-      model: env('OPENAI_MODEL', 'gpt-4o'),
+      model: env('OPENAI_MODEL', 'gpt-4o-mini'),
+    },
+
+    // Google Search Console
+    gsc: {
+      clientId: env('GSC_CLIENT_ID', ''),
+      clientSecret: env('GSC_CLIENT_SECRET', ''),
+      refreshToken: env('GSC_REFRESH_TOKEN', ''),
+    },
+
+    // Google PageSpeed Insights
+    pagespeed: {
+      apiKey: env('PAGESPEED_API_KEY', ''),
+    },
+
+    // Google Analytics 4
+    ga4: {
+      propertyId: env('GA4_PROPERTY_ID', ''),
+      clientEmail: env('GA4_CLIENT_EMAIL', ''),
+      privateKey: env('GA4_PRIVATE_KEY', ''),
+    },
+
+    // Google Indexing API
+    indexing: {
+      serviceAccountKey: env('INDEXING_SERVICE_ACCOUNT_KEY', ''),
+    },
+
+    // Google Cloud Natural Language API
+    nlp: {
+      projectId: env('GCP_PROJECT_ID', ''),
+      keyFile: env('GCP_KEY_FILE', ''),
+    },
+
+    // Bing Webmaster Tools
+    bing: {
+      apiKey: env('BING_API_KEY', ''),
+      siteUrl: env('BING_SITE_URL', ''),
+    },
+
+    // Google Trends (no API key required)
+    trends: {},
+
+    // WhoisJSON API
+    whois: {
+      apiKey: env('WHOIS_API_KEY', ''),
+    },
+
+    // ValueSERP API
+    valueserp: {
+      apiKey: env('VALUESERP_API_KEY', ''),
     },
 
     jwt: {
@@ -121,6 +260,56 @@ function loadConfig(): Config {
       brandName: env('APP_BRAND_NAME', 'Crane SEO'),
       primaryColor: env('APP_PRIMARY_COLOR', '#2563eb'),
       logoUrl: env('APP_LOGO_URL', '/logo.png'),
+    },
+
+    // Monitoring
+    monitoring: {
+      uptimeCheckInterval: envInt('MONITORING_UPTIME_CHECK_INTERVAL', 300),
+      alertThresholds: {
+        cpuPercent: envFloat('MONITORING_ALERT_CPU_PERCENT', 90),
+        memoryPercent: envFloat('MONITORING_ALERT_MEMORY_PERCENT', 90),
+        diskPercent: envFloat('MONITORING_ALERT_DISK_PERCENT', 85),
+        responseTimeMs: envInt('MONITORING_ALERT_RESPONSE_TIME_MS', 5000),
+        errorRate: envFloat('MONITORING_ALERT_ERROR_RATE', 5),
+      },
+    },
+
+    // Notification
+    notification: {
+      email: {
+        enabled: env('NOTIFICATION_EMAIL_ENABLED', 'false') === 'true',
+        smtpHost: env('NOTIFICATION_EMAIL_SMTP_HOST', 'smtp.gmail.com'),
+        smtpPort: envInt('NOTIFICATION_EMAIL_SMTP_PORT', 587),
+        smtpUser: env('NOTIFICATION_EMAIL_SMTP_USER', ''),
+        smtpPassword: env('NOTIFICATION_EMAIL_SMTP_PASSWORD', ''),
+        fromAddress: env('NOTIFICATION_EMAIL_FROM', 'noreply@craneseo.com'),
+      },
+      dingtalk: {
+        enabled: env('NOTIFICATION_DINGTALK_ENABLED', 'false') === 'true',
+        webhookUrl: env('NOTIFICATION_DINGTALK_WEBHOOK_URL', ''),
+        secret: env('NOTIFICATION_DINGTALK_SECRET', ''),
+      },
+      feishu: {
+        enabled: env('NOTIFICATION_FEISHU_ENABLED', 'false') === 'true',
+        webhookUrl: env('NOTIFICATION_FEISHU_WEBHOOK_URL', ''),
+        secret: env('NOTIFICATION_FEISHU_SECRET', ''),
+      },
+      slack: {
+        enabled: env('NOTIFICATION_SLACK_ENABLED', 'false') === 'true',
+        webhookUrl: env('NOTIFICATION_SLACK_WEBHOOK_URL', ''),
+      },
+      webhook: {
+        enabled: env('NOTIFICATION_WEBHOOK_ENABLED', 'false') === 'true',
+        url: env('NOTIFICATION_WEBHOOK_URL', ''),
+        secret: env('NOTIFICATION_WEBHOOK_SECRET', ''),
+      },
+    },
+
+    // Billing
+    billing: {
+      dataforseoCostPerCall: envFloat('BILLING_DATAFORSEO_COST_PER_CALL', 0.05),
+      openaiCostPerToken: envFloat('BILLING_OPENAI_COST_PER_TOKEN', 0.00000015),
+      valueserpCostPerCall: envFloat('BILLING_VALUESERP_COST_PER_CALL', 0.005),
     },
   };
 }

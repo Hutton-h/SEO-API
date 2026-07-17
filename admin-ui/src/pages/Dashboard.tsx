@@ -9,6 +9,10 @@ import {
   WarningOutlined,
   CheckCircleOutlined,
   RightOutlined,
+  BellOutlined,
+  DollarOutlined,
+  CloudServerOutlined,
+  ReadOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -43,6 +47,24 @@ const mockStats = {
   keywords: 3845,
   pagesCrawled: 56720,
   seoHealthScore: 87,
+};
+
+const mockAlertSummary = {
+  unacknowledged: 3,
+  critical: 1,
+};
+
+const mockApiCost = {
+  monthlyCost: 1245.80,
+  change: 11.2,
+};
+
+const mockSLA = {
+  uptime: 99.87,
+};
+
+const mockContentScore = {
+  average: 78,
 };
 
 const mockRankingTrend = [
@@ -260,7 +282,7 @@ const Dashboard: React.FC = () => {
         ]}
       />
 
-      {/* 统计卡片 */}
+      {/* 主统计卡片 */}
       <div className="dashboard-stats">
         <StatCard
           title="项目总数"
@@ -295,6 +317,96 @@ const Dashboard: React.FC = () => {
           trend={5}
         />
       </div>
+
+      {/* 新增：告警/API/SLA/内容质量卡片 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={12} sm={6}>
+          <Card
+            hoverable
+            style={{ borderTop: '3px solid #ff4d4f', cursor: 'pointer' }}
+            onClick={() => navigate('/alerting')}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text type="secondary" style={{ fontSize: 13 }}>未处理告警</Text>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#ff4d4f' }}>
+                  {mockAlertSummary.unacknowledged}
+                  <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>条</Text>
+                </div>
+                {mockAlertSummary.critical > 0 && (
+                  <Badge status="error" text={`${mockAlertSummary.critical} 条严重`} style={{ fontSize: 12 }} />
+                )}
+              </div>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: '#ff4d4f15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <BellOutlined style={{ fontSize: 22, color: '#ff4d4f' }} />
+              </div>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card
+            hoverable
+            style={{ borderTop: '3px solid #52c41a', cursor: 'pointer' }}
+            onClick={() => navigate('/api-usage')}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text type="secondary" style={{ fontSize: 13 }}>API 费用 (本月)</Text>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#52c41a' }}>
+                  ${mockApiCost.monthlyCost.toLocaleString()}
+                </div>
+                <Text style={{ fontSize: 12, color: '#ff4d4f' }}>
+                  +{mockApiCost.change}% vs 上月
+                </Text>
+              </div>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: '#52c41a15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <DollarOutlined style={{ fontSize: 22, color: '#52c41a' }} />
+              </div>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card
+            hoverable
+            style={{ borderTop: '3px solid #1677ff', cursor: 'pointer' }}
+            onClick={() => navigate('/monitor')}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text type="secondary" style={{ fontSize: 13 }}>SLA 可用率</Text>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#1677ff' }}>
+                  {mockSLA.uptime}%
+                </div>
+                <Text style={{ fontSize: 12, color: '#52c41a' }}>正常运行</Text>
+              </div>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: '#1677ff15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CloudServerOutlined style={{ fontSize: 22, color: '#1677ff' }} />
+              </div>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card
+            hoverable
+            style={{ borderTop: '3px solid #fa8c16', cursor: 'pointer' }}
+            onClick={() => navigate('/content-analysis')}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <Text type="secondary" style={{ fontSize: 13 }}>内容质量 (平均分)</Text>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#fa8c16' }}>
+                  {mockContentScore.average}
+                  <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>/100</Text>
+                </div>
+                <Text style={{ fontSize: 12, color: '#52c41a' }}>良好</Text>
+              </div>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: '#fa8c1615', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ReadOutlined style={{ fontSize: 22, color: '#fa8c16' }} />
+              </div>
+            </div>
+          </Card>
+        </Col>
+      </Row>
 
       {/* 图表区域 */}
       <Row gutter={[24, 24]}>

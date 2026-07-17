@@ -131,10 +131,39 @@ interactive_config() {
 
     echo ""
 
-    # ── Majestic（可选）──
-    banner "  【Majestic SEO API】（可选 — 用于外链分析）"
-    read -r -p "    API Key (留空跳过): " mj_key
-    MAJESTIC_API_KEY="${mj_key:-}"
+    # ── Google Cloud（可选）──
+    banner "  【Google Cloud APIs】（可选 — 全部免费额度内）"
+    read -r -p "    PageSpeed Insights API Key (留空跳过): " psi_key
+    PAGESPEED_API_KEY="${psi_key:-}"
+    read -r -p "    GSC Client ID (留空跳过): " gsc_cid
+    GSC_CLIENT_ID="${gsc_cid:-}"
+    read -r -p "    GSC Client Secret (留空跳过): " gsc_cs
+    GSC_CLIENT_SECRET="${gsc_cs:-}"
+    read -r -p "    GSC Refresh Token (留空跳过): " gsc_rt
+    GSC_REFRESH_TOKEN="${gsc_rt:-}"
+    read -r -p "    GA4 Property ID (留空跳过): " ga4_pid
+    GA4_PROPERTY_ID="${ga4_pid:-}"
+
+    echo ""
+
+    # ── Bing（可选）──
+    banner "  【Bing Webmaster API】（可选 — 免费，外链交叉验证）"
+    read -r -p "    API Key (留空跳过): " bing_key
+    BING_API_KEY="${bing_key:-}"
+
+    echo ""
+
+    # ── WhoisJSON（可选）──
+    banner "  【WhoisJSON API】（可选 — 免费 1000次/月，域名健康检测）"
+    read -r -p "    API Key (留空跳过): " whois_key
+    WHOIS_API_KEY="${whois_key:-}"
+
+    echo ""
+
+    # ── ValueSERP（可选）──
+    banner "  【ValueSERP API】（可选 — 按量付费，SERP 备用）"
+    read -r -p "    API Key (留空跳过): " vserp_key
+    VALUESERP_API_KEY="${vserp_key:-}"
 
     echo ""
 
@@ -189,12 +218,31 @@ generate_env_file() {
 DATAFORSEO_EMAIL=${DATAFORSEO_EMAIL}
 DATAFORSEO_API_KEY=${DATAFORSEO_API_KEY}
 
-# --- Majestic SEO API (可选) ---
-MAJESTIC_API_KEY=${MAJESTIC_API_KEY}
-
 # --- OpenAI API (可选) ---
 OPENAI_API_KEY=${OPENAI_API_KEY}
 OPENAI_MODEL=gpt-4o-mini
+
+# --- Google Cloud APIs (可选，免费额度内) ---
+GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+GCP_KEY_FILE=${GCP_KEY_FILE:-}
+GSC_CLIENT_ID=${GSC_CLIENT_ID:-}
+GSC_CLIENT_SECRET=${GSC_CLIENT_SECRET:-}
+GSC_REFRESH_TOKEN=${GSC_REFRESH_TOKEN:-}
+PAGESPEED_API_KEY=${PAGESPEED_API_KEY:-}
+GA4_PROPERTY_ID=${GA4_PROPERTY_ID:-}
+GA4_CLIENT_EMAIL=${GA4_CLIENT_EMAIL:-}
+GA4_PRIVATE_KEY=${GA4_PRIVATE_KEY:-}
+INDEXING_SERVICE_ACCOUNT_KEY=${INDEXING_SERVICE_ACCOUNT_KEY:-}
+
+# --- Bing Webmaster Tools API (可选，免费) ---
+BING_API_KEY=${BING_API_KEY:-}
+BING_SITE_URL=${BING_SITE_URL:-}
+
+# --- WhoisJSON API (可选) ---
+WHOIS_API_KEY=${WHOIS_API_KEY:-}
+
+# --- ValueSERP API (可选，按量付费) ---
+VALUESERP_API_KEY=${VALUESERP_API_KEY:-}
 
 # --- Database ---
 DATABASE_URL=postgresql://crane_user:${POSTGRES_PASSWORD}@postgres:5432/crane_seo

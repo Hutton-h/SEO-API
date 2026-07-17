@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Avatar, Dropdown, Breadcrumb, Typography, Button, Space } from 'antd';
+import { Layout, Menu, Avatar, Dropdown, Breadcrumb, Typography, Button, Space, Badge, Statistic } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   DashboardOutlined,
@@ -22,6 +22,19 @@ import {
   LogoutOutlined,
   SettingOutlined,
   HomeOutlined,
+  BellOutlined,
+  CloudServerOutlined,
+  ScheduleOutlined,
+  SendOutlined,
+  GlobalOutlined,
+  SitemapOutlined,
+  ReadOutlined,
+  VerifiedOutlined,
+  SwapOutlined,
+  ApiOutlined,
+  PieChartOutlined,
+  SafetyCertificateOutlined,
+  FundOutlined,
 } from '@ant-design/icons';
 import { useStore } from '@/store';
 
@@ -94,6 +107,85 @@ const menuItems: MenuProps['items'] = [
     icon: <FileTextOutlined />,
     label: '报告',
   },
+  {
+    type: 'divider',
+  },
+  {
+    key: 'monitor-group',
+    icon: <CloudServerOutlined />,
+    label: '监控与告警',
+    children: [
+      {
+        key: '/alerting',
+        icon: <BellOutlined />,
+        label: '告警中心',
+      },
+      {
+        key: '/monitor',
+        icon: <CloudServerOutlined />,
+        label: '系统监控',
+      },
+      {
+        key: '/notifications',
+        icon: <SendOutlined />,
+        label: '通知管理',
+      },
+    ],
+  },
+  {
+    key: 'analysis-group',
+    icon: <PieChartOutlined />,
+    label: '数据分析',
+    children: [
+      {
+        key: '/roi-analysis',
+        icon: <FundOutlined />,
+        label: 'ROI 分析',
+      },
+      {
+        key: '/serp-features',
+        icon: <GlobalOutlined />,
+        label: 'SERP 特性',
+      },
+      {
+        key: '/content-analysis',
+        icon: <ReadOutlined />,
+        label: '内容分析',
+      },
+      {
+        key: '/domain-health',
+        icon: <VerifiedOutlined />,
+        label: '域名健康',
+      },
+      {
+        key: '/competitor-changes',
+        icon: <SwapOutlined />,
+        label: '竞品变更',
+      },
+    ],
+  },
+  {
+    key: 'tools-group',
+    icon: <SettingOutlined />,
+    label: '工具与配置',
+    children: [
+      {
+        key: '/sitemap',
+        icon: <SitemapOutlined />,
+        label: 'Sitemap',
+      },
+      {
+        key: '/schedule',
+        icon: <ScheduleOutlined />,
+        label: '定时任务',
+      },
+      {
+        key: '/white-label',
+        icon: <SafetyCertificateOutlined />,
+        label: '白标配置',
+      },
+    ],
+  },
 ];
 
 // 面包屑映射
@@ -111,22 +203,53 @@ const breadcrumbMap: Record<string, string> = {
   '/ai-optimization': 'AI 优化',
   '/competitors': '竞品分析',
   '/report': '综合报告',
+  '/alerting': '告警中心',
+  '/monitor': '系统监控',
+  '/roi-analysis': 'ROI 分析',
+  '/white-label': '白标配置',
+  '/schedule': '定时任务',
+  '/notifications': '通知管理',
+  '/serp-features': 'SERP 特性',
+  '/sitemap': 'Sitemap 管理',
+  '/content-analysis': '内容分析',
+  '/domain-health': '域名健康',
+  '/competitor-changes': '竞品变更',
+  '/api-usage': 'API 用量',
 };
 
 const MainLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, theme: themeMode } = useStore();
+  const { user, theme: themeMode, branding, apiUsage, logout } = useStore();
 
   const selectedKey = '/' + location.pathname.split('/').filter(Boolean)[0] || '/dashboard';
   const currentPage = breadcrumbMap[selectedKey] || '';
+
+  // 查找父级展开的 key
+  const getOpenKeys = () => {
+    for (const item of menuItems) {
+      if (item && 'children' in item && item.children) {
+        for (const child of item.children) {
+          if (child && 'key' in child && child.key === selectedKey) {
+            return [item.key as string];
+          }
+        }
+      }
+    }
+    return [];
+  };
 
   const userMenuItems: MenuProps['items'] = [
     {
       key: 'profile',
       icon: <UserOutlined />,
       label: '个人信息',
+    },
+    {
+      key: 'api-usage',
+      icon: <ApiOutlined />,
+      label: 'API 用量',
     },
     {
       key: 'settings',
@@ -150,7 +273,12 @@ const MainLayout: React.FC = () => {
 
   const handleUserMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (key === 'logout') {
+      logout();
       navigate('/login');
+    } else if (key === 'api-usage') {
+      navigate('/api-usage');
+    } else if (key === 'profile') {
+      navigate('/dashboard');
     }
   };
 
@@ -173,17 +301,42 @@ const MainLayout: React.FC = () => {
         }}
       >
         <div className="sider-logo">
-          {!collapsed && <h2>SEO Platform</h2>}
+          {!collapsed && <h2>{branding.brandName}</h2>}
           {collapsed && <h2 style={{ fontSize: 14 }}>SEO</h2>}
         </div>
         <Menu
           theme="dark"
           mode="inline"
           selectedKeys={[selectedKey]}
+          defaultOpenKeys={getOpenKeys()}
           items={menuItems}
           onClick={handleMenuClick}
           style={{ borderRight: 0 }}
         />
+        {!collapsed && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              padding: '12px 16px',
+              borderTop: '1px solid rgba(255,255,255,0.1)',
+              cursor: 'pointer',
+            }}
+            onClick={() => navigate('/api-usage')}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ApiOutlined style={{ color: 'rgba(255,255,255,0.65)', fontSize: 14 }} />
+              <div style={{ flex: 1 }}>
+                <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11 }}>API 用量</Text>
+                <div style={{ color: '#52c41a', fontSize: 14, fontWeight: 600 }}>
+                  ${apiUsage.monthlyCost.toFixed(2)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </Sider>
       <Layout style={{ marginLeft: collapsed ? 80 : 220, transition: 'margin-left 0.2s' }}>
         <Header
@@ -212,7 +365,7 @@ const MainLayout: React.FC = () => {
           <div className="header-right">
             <Dropdown menu={{ items: userMenuItems, onClick: handleUserMenuClick }}>
               <Space style={{ cursor: 'pointer' }}>
-                <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: '#1677ff' }} />
+                <Avatar size="small" icon={<UserOutlined />} style={{ backgroundColor: branding.primaryColor }} />
                 <Text>{user?.name || '管理员'}</Text>
               </Space>
             </Dropdown>
@@ -222,7 +375,7 @@ const MainLayout: React.FC = () => {
           <Outlet />
         </Content>
         <Footer className="footer-bar">
-          Crane SEO Platform &copy; {new Date().getFullYear()} - 专业 SEO 管理平台
+          {branding.brandName} &copy; {new Date().getFullYear()} - 专业 SEO 管理平台
         </Footer>
       </Layout>
     </Layout>

@@ -18,6 +18,7 @@ export interface RankingRecord {
   language: string;
   check_date: string;
   created_at: string;
+  source?: string;
 }
 
 export interface RankingListParams {
@@ -87,7 +88,7 @@ export async function getRankings(
 
 export async function fetchRankings(
   projectId: string,
-  options: { keywords?: string[]; locationCode?: number } = {},
+  options: { keywords?: string[]; locationCode?: number; includeGSC?: boolean } = {},
 ): Promise<TaskRecord> {
   const taskId = uuidv4();
 
@@ -109,6 +110,7 @@ export async function fetchRankings(
       projectId,
       keywords: options.keywords ?? [],
       locationCode: options.locationCode ?? 0,
+      includeGSC: options.includeGSC ?? true,
     },
     {
       jobId: taskId,

@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import * as crawlService from './service.js';
+import { db } from '../../shared/database.js';
+import { pagespeed } from '../../services/pagespeed.js';
 import {
   success, created, notFound, badRequest, paginated,
 } from '../../shared/utils/response.js';
@@ -16,6 +18,8 @@ export const triggerCrawlSchema = z.object({
 
 export const triggerAuditSchema = z.object({
   auditType: z.enum(['full', 'seo', 'performance', 'accessibility']).optional().default('full'),
+  includePSI: z.boolean().optional().default(true),
+  psiUrls: z.array(z.string().url()).optional(),
 });
 
 export const pagesQuerySchema = z.object({
@@ -49,6 +53,7 @@ export const issuesQuerySchema = z.object({
     .pipe(z.number().int().min(1).max(100)),
   severity: z.enum(['critical', 'error', 'warning', 'info']).optional(),
   status: z.enum(['open', 'in_progress', 'resolved', 'ignored']).optional(),
+  source: z.enum(['crawl', 'lighthouse', 'psi', 'all']).optional().default('all'),
 });
 
 // ---------------------------------------------------------------------------
@@ -123,7 +128,7 @@ export async function getIssues(
 ): Promise<void> {
   try {
     const { id: projectId } = req.params;
-    const { page, pageSize, severity, status } = req.query as unknown as z.infer<
+    const { page, pageSize, severity, status, source } = req.query as unknown as z.infer<
       typeof issuesQuerySchema
     >;
 
@@ -134,6 +139,36 @@ export async function getIssues(
       severity,
       status,
     });
+
+    // If Lighthouse/PSI sources are requested, also fetch from those tables
+    if (source === 'lighthouse' || source === 'psi' || source === 'all') {
+      const psiIssues = await db('psi_issues')
+        .where('project_id', projectId)
+        .select('*');
+
+      // Convert PSI issues to crawl_issues format
+      const psiFormatted = (psiIssues as Array<Record<string, unknown>>).map((psi) => ({
+        id: psi['id'],
+        project_id: psi['project_id'],
+        rule_id: `psi-${psi['rule_id'] ?? 'perf'}`,
+        severity: psi['severity'] ?? 'warning',
+        category: 'Performance',
+        message: psi['message'] ?? 'PSI issue',
+        url: psi['url'] ?? '',
+        status: 'open',
+        source: 'psi',
+        created_at: psi['created_at'],
+      }));
+
+      if (source !== 'psi') {
+        result.items = [...result.items, ...psiFormatted];
+      }
+
+      if (source === 'psi') {
+        result.items = psiFormatted;
+        result.total = psiFormatted.length;
+      }
+    }
 
     paginated(res, result.items, { page, pageSize, total: result.total });
   } catch (err) {
@@ -148,10 +183,107 @@ export async function triggerAudit(
 ): Promise<void> {
   try {
     const { id: projectId } = req.params;
-    const { auditType } = req.body as z.infer<typeof triggerAuditSchema>;
+    const { auditType, includePSI, psiUrls } = req.body as z.infer<typeof triggerAuditSchema>;
 
     const task = await crawlService.triggerAudit(projectId, { auditType });
-    created(res, task, 'Audit task created successfully');
+    const taskId = task.id;
+
+    // If PageSpeed Insights is requested, run batch analysis
+    if (includePSI) {
+      try {
+        const project = await db('projects').where('id', projectId).first();
+        if (project) {
+          const domain = (project as { domain: string }).domain;
+
+          // Determine URLs to analyze
+          let urls: string[] = psiUrls ?? [];
+          if (urls.length === 0) {
+            // Get top pages from crawl_pages
+            const pages = await db('crawl_pages')
+              .where('project_id', projectId)
+              .where('status_code', 200)
+              .select('url')
+              .limit(5);
+
+            urls = (pages as Array<{ url: string }>).map((p) => p.url);
+            if (urls.length === 0) {
+              urls = [`https://${domain}`];
+            }
+          }
+
+          // Run PSI batch analysis
+          const psiResult = await pagespeed.batchAnalyze(urls, 'mobile');
+
+          if (psiResult.success && psiResult.data) {
+            // Store PSI results as issues
+            for (const result of psiResult.data.results) {
+              const { v4: uuidv4 } = await import('uuid');
+
+              if (result.scores.performance < 50) {
+                await db('psi_issues').insert({
+                  id: uuidv4(),
+                  project_id: projectId,
+                  url: result.url,
+                  rule_id: 'psi-performance',
+                  severity: 'critical',
+                  category: 'Performance',
+                  message: `Performance score is ${result.scores.performance}/100`,
+                  metrics: JSON.stringify({
+                    scores: result.scores,
+                    labData: result.labData,
+                  }),
+                });
+              }
+
+              if (result.scores.accessibility < 70) {
+                await db('psi_issues').insert({
+                  id: uuidv4(),
+                  project_id: projectId,
+                  url: result.url,
+                  rule_id: 'psi-accessibility',
+                  severity: 'warning',
+                  category: 'Accessibility',
+                  message: `Accessibility score is ${result.scores.accessibility}/100`,
+                  metrics: JSON.stringify({ accessibilityScore: result.scores.accessibility }),
+                });
+              }
+
+              if (result.scores.seo < 80) {
+                await db('psi_issues').insert({
+                  id: uuidv4(),
+                  project_id: projectId,
+                  url: result.url,
+                  rule_id: 'psi-seo',
+                  severity: 'warning',
+                  category: 'SEO',
+                  message: `SEO score is ${result.scores.seo}/100`,
+                  metrics: JSON.stringify({ seoScore: result.scores.seo }),
+                });
+              }
+
+              // Store opportunities as issues
+              for (const opp of result.opportunities.slice(0, 5)) {
+                await db('psi_issues').insert({
+                  id: uuidv4(),
+                  project_id: projectId,
+                  url: result.url,
+                  rule_id: `psi-opp-${opp.title.substring(0, 30)}`,
+                  severity: 'warning',
+                  category: 'Performance',
+                  message: `${opp.title}: ${opp.description}`,
+                  metrics: JSON.stringify({ savings: opp.savings }),
+                });
+              }
+            }
+          }
+        }
+      } catch (psiErr) {
+        console.warn('[CrawlController] PSI batch analysis failed:', psiErr);
+        // PSI failure should not block the audit task
+      }
+    }
+
+    created(res, task, `Audit task created successfully${includePSI ? ' (with PSI analysis)' : ''}`);
   } catch (err) {
     badRequest(res, 'Failed to trigger audit', { error: (err as Error).message });
   }

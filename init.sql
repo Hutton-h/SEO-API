@@ -312,6 +312,197 @@ CREATE INDEX idx_tasks_type ON tasks(type);
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_created_at ON tasks(created_at DESC);
 
+-- ---------------------------------------------------------------------------
+-- 15. users - 用户表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'manager', 'member', 'viewer')),
+    avatar_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
+
+-- ---------------------------------------------------------------------------
+-- 16. project_members - 项目成员表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS project_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(50) NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'editor', 'viewer')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(project_id, user_id)
+);
+
+CREATE INDEX idx_project_members_project_id ON project_members(project_id);
+CREATE INDEX idx_project_members_user_id ON project_members(user_id);
+
+-- ---------------------------------------------------------------------------
+-- 17. project_branding - 白标配置表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS project_branding (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE UNIQUE,
+    brand_name VARCHAR(255),
+    logo_url TEXT,
+    primary_color VARCHAR(7) DEFAULT '#2563eb',
+    custom_domain VARCHAR(512),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_project_branding_project_id ON project_branding(project_id);
+CREATE INDEX idx_project_branding_custom_domain ON project_branding(custom_domain);
+
+-- ---------------------------------------------------------------------------
+-- 18. api_usage_logs - API 用量日志表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS api_usage_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service VARCHAR(255) NOT NULL,
+    endpoint VARCHAR(255) NOT NULL,
+    cost DECIMAL(10, 6) DEFAULT 0,
+    credits DECIMAL(10, 2) DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_api_usage_logs_service ON api_usage_logs(service);
+CREATE INDEX idx_api_usage_logs_endpoint ON api_usage_logs(endpoint);
+CREATE INDEX idx_api_usage_logs_created_at ON api_usage_logs(created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- 19. alert_rules - 告警规则表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    type VARCHAR(255) NOT NULL,
+    threshold DECIMAL(10, 2) NOT NULL,
+    enabled BOOLEAN DEFAULT true,
+    channels JSONB DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_alert_rules_project_id ON alert_rules(project_id);
+CREATE INDEX idx_alert_rules_type ON alert_rules(type);
+CREATE INDEX idx_alert_rules_enabled ON alert_rules(enabled);
+
+-- ---------------------------------------------------------------------------
+-- 20. alert_history - 告警历史表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS alert_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    rule_id UUID REFERENCES alert_rules(id) ON DELETE SET NULL,
+    message TEXT NOT NULL,
+    severity VARCHAR(50) NOT NULL DEFAULT 'warning' CHECK (severity IN ('critical', 'error', 'warning', 'info')),
+    acknowledged BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_alert_history_project_id ON alert_history(project_id);
+CREATE INDEX idx_alert_history_rule_id ON alert_history(rule_id);
+CREATE INDEX idx_alert_history_severity ON alert_history(severity);
+CREATE INDEX idx_alert_history_created_at ON alert_history(created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- 21. uptime_logs - 宕机/可用性日志表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS uptime_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    status_code INTEGER,
+    response_time_ms INTEGER DEFAULT 0,
+    is_up BOOLEAN DEFAULT true,
+    checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_uptime_logs_project_id ON uptime_logs(project_id);
+CREATE INDEX idx_uptime_logs_is_up ON uptime_logs(is_up);
+CREATE INDEX idx_uptime_logs_checked_at ON uptime_logs(checked_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- 22. schedules - 定时任务表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS schedules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    type VARCHAR(255) NOT NULL,
+    cron_expression VARCHAR(100) NOT NULL,
+    config JSONB DEFAULT '{}'::jsonb,
+    enabled BOOLEAN DEFAULT true,
+    last_run_at TIMESTAMPTZ,
+    next_run_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_schedules_project_id ON schedules(project_id);
+CREATE INDEX idx_schedules_type ON schedules(type);
+CREATE INDEX idx_schedules_enabled ON schedules(enabled);
+
+-- ---------------------------------------------------------------------------
+-- 23. notifications - 通知记录表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    channel VARCHAR(50) NOT NULL CHECK (channel IN ('email', 'dingtalk', 'feishu', 'slack', 'webhook')),
+    recipient VARCHAR(512) NOT NULL,
+    content TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed')),
+    sent_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_notifications_project_id ON notifications(project_id);
+CREATE INDEX idx_notifications_channel ON notifications(channel);
+CREATE INDEX idx_notifications_status ON notifications(status);
+CREATE INDEX idx_notifications_created_at ON notifications(created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- 24. roi_metrics - ROI 数据表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS roi_metrics (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    month VARCHAR(7) NOT NULL,
+    seo_spend DECIMAL(12, 2) DEFAULT 0,
+    estimated_traffic_value DECIMAL(12, 2) DEFAULT 0,
+    conversion_value DECIMAL(12, 2) DEFAULT 0,
+    roi_percent DECIMAL(8, 2) DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(project_id, month)
+);
+
+CREATE INDEX idx_roi_metrics_project_id ON roi_metrics(project_id);
+CREATE INDEX idx_roi_metrics_month ON roi_metrics(month DESC);
+
+-- ---------------------------------------------------------------------------
+-- 25. content_history - 内容变更追踪表
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS content_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    field VARCHAR(255) NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_content_history_project_id ON content_history(project_id);
+CREATE INDEX idx_content_history_url ON content_history(url);
+CREATE INDEX idx_content_history_field ON content_history(field);
+CREATE INDEX idx_content_history_detected_at ON content_history(detected_at DESC);
+
 -- =============================================================================
 -- SEED DATA - 种子数据
 -- =============================================================================

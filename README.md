@@ -10,14 +10,39 @@
 | 数据库 | PostgreSQL 15 |
 | 缓存/队列 | Redis 7 + BullMQ |
 | 爬虫 | Crawlee + Playwright + Lighthouse CI |
-| 外部 API | DataForSEO / Majestic / OpenAI |
+| 外部 API | DataForSEO + OpenAI + Google (GSC/GA4/PSI/Indexing/NLP) + Bing + ValueSERP + Google Trends + WhoisJSON |
 | 前端 | React 18 + Vite + Ant Design 5 + ECharts |
 | 部署 | Docker Compose + Nginx（兼容 kejilion 环境） |
 
 ## 功能模块
 
-- **仪表盘** — SEO 健康分、排名趋势、爬虫概览
+### 核心 SEO
+- **仪表盘** — SEO 健康分、排名趋势、API 费用、SLA 可用率、告警概览
 - **项目管理** — 多项目 CRUD，域名管理
+- **爬虫审计** — 自动爬取 + 17 条 SEO 规则检测 + Lighthouse + PageSpeed Insights
+- **关键词管理** — 50 个起重机行业预设关键词 + DataForSEO 搜索量 + Google Trends 趋势
+- **排名追踪** — 历史排名 + GSC 真实点击/展现/CTR + 定时刷新
+- **外链分析** — DataForSEO 外链 + Bing 交叉验证
+- **SEM 分析** — 竞品广告、关键词指标、机会分析
+- **本地 SEO** — GMB 档案、本地排名对比
+- **ASO / YouTube** — 应用商店排名 + YouTube 视频排名
+
+### 高级分析
+- **SERP 特性** — Featured Snippet / Knowledge Graph / PAA / Video Carousel 追踪
+- **内容分析** — NLP 实体识别 + 情感分析 + 可读性评分 + AI 优化建议
+- **域名健康** — WHOIS 信息 + SSL 证书状态 + 域名年龄 + 综合评分
+- **Sitemap** — 自动生成 + 验证 + 提交
+- **竞品分析** — 关键词重叠 + 内容空缺 + 网站变更追踪
+- **AI 优化** — GPT-4o-mini 驱动的内容生成/改写/FAQ Schema
+
+### 运营管理
+- **告警中心** — 排名骤降/流量暴跌/外链丢失/宕机 自动通知
+- **系统监控** — 5 分钟级 HTTP 健康检查 + SLA 可用率
+- **ROI 分析** — SEO 投入产出比 + API 费用自动统计
+- **定时任务** — 自动爬虫/周报/排名刷新/竞品检测
+- **通知管理** — 邮件/钉钉/飞书/Slack 多渠道
+- **白标配置** — 品牌名/Logo/色系/自定义域名
+- **API 用量** — 实时统计 + 费用明细 + 月度预估 + 预警
 - **爬虫审计** — 自动爬取 + 17 条 SEO 规则检测 + Lighthouse 审计
 - **关键词管理** — 50 个起重机行业预设关键词 + DataForSEO 搜索量
 - **排名追踪** — 历史排名、变化趋势、定时刷新

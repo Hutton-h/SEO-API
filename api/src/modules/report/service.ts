@@ -42,6 +42,12 @@ export interface ComprehensiveReport {
       previousPosition: number | null;
       checkDate: string;
     }>;
+    gscData?: {
+      totalClicks: number;
+      totalImpressions: number;
+      avgCTR: number;
+      avgPosition: number;
+    };
   };
   backlinks: {
     total: number;
@@ -58,6 +64,55 @@ export interface ComprehensiveReport {
       category: string;
       severity: string;
       count: number;
+    }>;
+  };
+  // New module data
+  performance?: {
+    score: number;
+    lcp: number;
+    fcp: number;
+    tbt: number;
+    cls: number;
+    psiScore: number;
+  };
+  alerts?: {
+    activeAlerts: number;
+    recentAlerts: Array<{
+      type: string;
+      severity: string;
+      message: string;
+      createdAt: string;
+    }>;
+  };
+  roi?: {
+    latestRoiPercent: number;
+    monthlyTrend: Array<{
+      period: string;
+      roiPercent: number;
+      investment: number;
+      revenue: number;
+    }>;
+  };
+  contentQuality?: {
+    averageScore: number;
+    pagesAnalyzed: number;
+    topIssues: Array<{
+      issue: string;
+      affectedPages: number;
+    }>;
+  };
+  uptime?: {
+    isUp: boolean;
+    uptimePercent: number;
+    averageResponseTime: number;
+  };
+  competitorChanges?: {
+    totalChanges: number;
+    recentChanges: Array<{
+      competitorName: string;
+      changeType: string;
+      severity: string;
+      detectedAt: string;
     }>;
   };
 }
@@ -209,6 +264,219 @@ export async function generateReport(
   healthScore -= errorCount * 2;
   healthScore = Math.max(0, Math.min(100, healthScore));
 
+  // --- NEW: GSC Rankings Data ---
+  let gscData: ComprehensiveReport['rankings']['gscData'] = undefined;
+  try {
+    const siteUrl = `sc-domain:${domain}`;
+    const today = new Date().toISOString().split('T')[0];
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const gscResult = await db('gsc_analytics')
+      .where('project_id', projectId)
+      .orderBy('date', 'desc')
+      .limit(30);
+
+    if (gscResult.length > 0) {
+      const gscRows = gscResult as Array<{
+        clicks: number;
+        impressions: number;
+        ctr: number;
+        position: number;
+      }>;
+      const totalClicks = gscRows.reduce((sum, r) => sum + (r.clicks ?? 0), 0);
+      const totalImpressions = gscRows.reduce((sum, r) => sum + (r.impressions ?? 0), 0);
+      const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+      const avgPosition = gscRows.length > 0
+        ? gscRows.reduce((sum, r) => sum + (r.position ?? 0), 0) / gscRows.length
+        : 0;
+
+      gscData = {
+        totalClicks,
+        totalImpressions,
+        avgCTR: Math.round(avgCTR * 100) / 100,
+        avgPosition: Math.round(avgPosition * 10) / 10,
+      };
+    }
+  } catch {
+    // GSC data not available
+  }
+
+  // --- NEW: Performance (PSI) ---
+  let performanceData: ComprehensiveReport['performance'] = undefined;
+  try {
+    const psiScore = await db('psi_issues')
+      .where('project_id', projectId)
+      .avg('score as avg_score')
+      .first();
+
+    performanceData = {
+      score: psiScore ? Math.round((psiScore as unknown as { avg_score: string }).avg_score as unknown as number) : 0,
+      lcp: 0,
+      fcp: 0,
+      tbt: 0,
+      cls: 0,
+      psiScore: psiScore ? Math.round((psiScore as unknown as { avg_score: string }).avg_score as unknown as number) : 0,
+    };
+  } catch {
+    // Performance data not available
+  }
+
+  // --- NEW: Alerts ---
+  let alertsData: ComprehensiveReport['alerts'] = undefined;
+  try {
+    const activeAlerts = await db('alert_history')
+      .where('project_id', projectId)
+      .where('acknowledged', false)
+      .count<{ count: string }[]>('* as count');
+
+    const recentAlerts = await db('alert_history')
+      .where('project_id', projectId)
+      .orderBy('created_at', 'desc')
+      .limit(5)
+      .select('type', 'severity', 'message', 'created_at');
+
+    alertsData = {
+      activeAlerts: parseInt(activeAlerts[0]?.count ?? '0', 10),
+      recentAlerts: (recentAlerts as Array<{
+        type: string;
+        severity: string;
+        message: string;
+        created_at: string;
+      }>).map((a) => ({
+        type: a.type,
+        severity: a.severity,
+        message: a.message,
+        createdAt: a.created_at,
+      })),
+    };
+  } catch {
+    // Alerts data not available
+  }
+
+  // --- NEW: ROI ---
+  let roiData: ComprehensiveReport['roi'] = undefined;
+  try {
+    const latestRoi = await db('roi_metrics')
+      .where('project_id', projectId)
+      .orderBy('start_date', 'desc')
+      .first();
+
+    const monthlyTrend = await db('roi_metrics')
+      .where('project_id', projectId)
+      .orderBy('start_date', 'asc')
+      .limit(12)
+      .select('period', 'roi_percent', 'seo_investment', 'total_revenue');
+
+    roiData = {
+      latestRoiPercent: latestRoi ? (latestRoi as { roi_percent: number }).roi_percent : 0,
+      monthlyTrend: (monthlyTrend as Array<{
+        period: string;
+        roi_percent: number;
+        seo_investment: number;
+        total_revenue: number;
+      }>).map((r) => ({
+        period: r.period,
+        roiPercent: r.roi_percent,
+        investment: r.seo_investment,
+        revenue: r.total_revenue,
+      })),
+    };
+  } catch {
+    // ROI data not available
+  }
+
+  // --- NEW: Content Quality ---
+  let contentQualityData: ComprehensiveReport['contentQuality'] = undefined;
+  try {
+    const avgScore = await db('content_quality_scores')
+      .where('project_id', projectId)
+      .avg('score as avg_score')
+      .first();
+
+    const pagesAnalyzed = await db('content_quality_scores')
+      .where('project_id', projectId)
+      .count<{ count: string }[]>('* as count');
+
+    contentQualityData = {
+      averageScore: avgScore ? Math.round((avgScore as unknown as { avg_score: string }).avg_score as unknown as number) : 0,
+      pagesAnalyzed: parseInt(pagesAnalyzed[0]?.count ?? '0', 10),
+      topIssues: [],
+    };
+  } catch {
+    // Content quality data not available
+  }
+
+  // --- NEW: Uptime ---
+  let uptimeData: ComprehensiveReport['uptime'] = undefined;
+  try {
+    const lastCheck = await db('uptime_logs')
+      .where('project_id', projectId)
+      .orderBy('checked_at', 'desc')
+      .first();
+
+    const upChecks = await db('uptime_logs')
+      .where('project_id', projectId)
+      .where('checked_at', '>=', db.raw("NOW() - INTERVAL '30 days'"))
+      .where('is_up', true)
+      .count<{ count: string }[]>('* as count');
+
+    const totalChecks = await db('uptime_logs')
+      .where('project_id', projectId)
+      .where('checked_at', '>=', db.raw("NOW() - INTERVAL '30 days'"))
+      .count<{ count: string }[]>('* as count');
+
+    const totalUp = parseInt(upChecks[0]?.count ?? '0', 10);
+    const totalAll = parseInt(totalChecks[0]?.count ?? '0', 10);
+
+    const avgResponseTime = await db('uptime_logs')
+      .where('project_id', projectId)
+      .where('checked_at', '>=', db.raw("NOW() - INTERVAL '30 days'"))
+      .avg('response_time_ms as avg_rt')
+      .first();
+
+    uptimeData = {
+      isUp: lastCheck ? (lastCheck as { is_up: boolean }).is_up : true,
+      uptimePercent: totalAll > 0 ? Math.round((totalUp / totalAll) * 10000) / 100 : 100,
+      averageResponseTime: avgResponseTime
+        ? Math.round((avgResponseTime as unknown as { avg_rt: string }).avg_rt as unknown as number)
+        : 0,
+    };
+  } catch {
+    // Uptime data not available
+  }
+
+  // --- NEW: Competitor Changes ---
+  let competitorChangesData: ComprehensiveReport['competitorChanges'] = undefined;
+  try {
+    const totalChanges = await db('competitor_changes')
+      .where('project_id', projectId)
+      .where('detected_at', '>=', db.raw("NOW() - INTERVAL '7 days'"))
+      .count<{ count: string }[]>('* as count');
+
+    const recentChanges = await db('competitor_changes')
+      .where('project_id', projectId)
+      .orderBy('detected_at', 'desc')
+      .limit(5)
+      .select('competitor_name', 'change_type', 'severity', 'detected_at');
+
+    competitorChangesData = {
+      totalChanges: parseInt(totalChanges[0]?.count ?? '0', 10),
+      recentChanges: (recentChanges as Array<{
+        competitor_name: string;
+        change_type: string;
+        severity: string;
+        detected_at: string;
+      }>).map((c) => ({
+        competitorName: c.competitor_name,
+        changeType: c.change_type,
+        severity: c.severity,
+        detectedAt: c.detected_at,
+      })),
+    };
+  } catch {
+    // Competitor changes data not available
+  }
+
   const report: ComprehensiveReport = {
     projectId,
     projectName,
@@ -245,6 +513,7 @@ export async function generateReport(
         previousPosition: number | null;
         checkDate: string;
       }>,
+      gscData,
     },
     backlinks: {
       total: parseInt(totalBacklinks, 10),
@@ -267,6 +536,12 @@ export async function generateReport(
         count: parseInt(i.count, 10),
       })),
     },
+    performance: performanceData,
+    alerts: alertsData,
+    roi: roiData,
+    contentQuality: contentQualityData,
+    uptime: uptimeData,
+    competitorChanges: competitorChangesData,
   };
 
   return report;

@@ -4,6 +4,7 @@ import { ConfigProvider, App as AntApp, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import MainLayout from '@/layouts/MainLayout';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import { useStore } from '@/store';
 
 // 懒加载页面组件
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
@@ -21,7 +22,30 @@ const Competitors = lazy(() => import('@/pages/Competitors'));
 const Report = lazy(() => import('@/pages/Report'));
 const Login = lazy(() => import('@/pages/Login'));
 
+// 新增页面
+const Alerting = lazy(() => import('@/pages/Alerting'));
+const Monitor = lazy(() => import('@/pages/Monitor'));
+const ROIAnalysis = lazy(() => import('@/pages/ROIAnalysis'));
+const WhiteLabel = lazy(() => import('@/pages/WhiteLabel'));
+const Schedule = lazy(() => import('@/pages/Schedule'));
+const Notifications = lazy(() => import('@/pages/Notifications'));
+const SerpFeatures = lazy(() => import('@/pages/SerpFeatures'));
+const Sitemap = lazy(() => import('@/pages/Sitemap'));
+const ContentAnalysis = lazy(() => import('@/pages/ContentAnalysis'));
+const DomainHealth = lazy(() => import('@/pages/DomainHealth'));
+const CompetitorChanges = lazy(() => import('@/pages/CompetitorChanges'));
+const ApiUsage = lazy(() => import('@/pages/ApiUsage'));
+
 const PageLoading = () => <LoadingSpinner fullPage />;
+
+// 登录保护组件
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isAuthenticated = useStore((state) => state.isAuthenticated);
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+};
 
 const App: React.FC = () => {
   return (
@@ -42,7 +66,14 @@ const App: React.FC = () => {
         <Suspense fallback={<PageLoading />}>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/" element={<MainLayout />}>
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <MainLayout />
+                </ProtectedRoute>
+              }
+            >
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="projects" element={<Projects />} />
@@ -57,6 +88,19 @@ const App: React.FC = () => {
               <Route path="ai-optimization" element={<AIOptimization />} />
               <Route path="competitors" element={<Competitors />} />
               <Route path="report" element={<Report />} />
+              {/* 新增路由 */}
+              <Route path="alerting" element={<Alerting />} />
+              <Route path="monitor" element={<Monitor />} />
+              <Route path="roi-analysis" element={<ROIAnalysis />} />
+              <Route path="white-label" element={<WhiteLabel />} />
+              <Route path="schedule" element={<Schedule />} />
+              <Route path="notifications" element={<Notifications />} />
+              <Route path="serp-features" element={<SerpFeatures />} />
+              <Route path="sitemap" element={<Sitemap />} />
+              <Route path="content-analysis" element={<ContentAnalysis />} />
+              <Route path="domain-health" element={<DomainHealth />} />
+              <Route path="competitor-changes" element={<CompetitorChanges />} />
+              <Route path="api-usage" element={<ApiUsage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

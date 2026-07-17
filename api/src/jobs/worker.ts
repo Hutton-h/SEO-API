@@ -1,150 +1,96 @@
-import { Worker, type Job, type ConnectionOptions } from 'bullmq';
-import redis from './shared/redis.js';
-import { config } from './config.js';
-import crawlProcessor from './jobs/processors/crawlProcessor.js';
-import auditProcessor from './jobs/processors/auditProcessor.js';
-import rankingFetchProcessor from './jobs/processors/rankingFetchProcessor.js';
-import backlinkRefreshProcessor from './jobs/processors/backlinkRefreshProcessor.js';
-import semFetchProcessor from './jobs/processors/semFetchProcessor.js';
-import reportProcessor from './jobs/processors/reportProcessor.js';
+import { rankingFetchQueue, auditQueue, crawlQueue, reportQueue } from '../shared/queue.js';
+import { processRankingFetch } from './processors/rankingFetchProcessor.js';
+import { processCrawl } from './processors/crawlProcessor.js';
+import { processUptimeCheck } from './processors/uptimeProcessor.js';
+import { processChangeDetection } from './processors/changeDetectionProcessor.js';
 
 // ---------------------------------------------------------------------------
-// Types
+// Worker: Process jobs from queues
 // ---------------------------------------------------------------------------
 
-interface JobData {
-  taskId: string;
-  projectId: string;
-  [key: string]: unknown;
-}
+export async function startWorker(): Promise<void> {
+  console.log('[Worker] Starting job worker...');
 
-// ---------------------------------------------------------------------------
-// Connection config
-// ---------------------------------------------------------------------------
-
-const connection: ConnectionOptions = {
-  host: config.redis.host,
-  port: config.redis.port,
-  password: config.redis.password || undefined,
-  maxRetriesPerRequest: null,
-};
-
-// ---------------------------------------------------------------------------
-// Processor registry
-// ---------------------------------------------------------------------------
-
-const processors: Record<string, (job: Job<JobData>) => Promise<void>> = {
-  crawl: crawlProcessor,
-  audit: auditProcessor,
-  'ranking-fetch': rankingFetchProcessor,
-  'backlink-refresh': backlinkRefreshProcessor,
-  'sem-fetch': semFetchProcessor,
-  report: reportProcessor,
-};
-
-// ---------------------------------------------------------------------------
-// Worker factory
-// ---------------------------------------------------------------------------
-
-function createWorker(
-  queueName: string,
-  processor: (job: Job<JobData>) => Promise<void>,
-  concurrency: number = 5,
-): Worker<JobData> {
-  const worker = new Worker<JobData>(queueName, processor, {
-    connection,
-    concurrency,
-    autorun: true,
-    removeOnComplete: {
-      age: 3600 * 24,
-    },
-    removeOnFail: {
-      age: 3600 * 24 * 7,
-    },
+  // --- Ranking Fetch Queue ---
+  rankingFetchQueue.process('fetch-rankings', async (job) => {
+    console.log(`[Worker] Processing ranking fetch job: ${job.id}`);
+    await processRankingFetch(job.data);
   });
 
-  worker.on('completed', (job: Job<JobData>) => {
-    console.log(`[Worker][${queueName}] Job ${job.id} completed`);
+  // --- Audit Queue ---
+  auditQueue.process('run-audit', async (job) => {
+    console.log(`[Worker] Processing audit job: ${job.id}`);
+    // Audit processing is handled by the crawl service
+    const { taskId } = job.data;
+    console.log(`[Worker] Audit task ${taskId} queued`);
   });
 
-  worker.on('failed', (job: Job<JobData> | undefined, err: Error) => {
-    console.error(`[Worker][${queueName}] Job ${job?.id ?? 'unknown'} failed:`, err.message);
+  // --- Crawl Queue ---
+  crawlQueue.process('run-crawl', async (job) => {
+    console.log(`[Worker] Processing crawl job: ${job.id}`);
+    await processCrawl(job.data);
   });
 
-  worker.on('error', (err: Error) => {
-    console.error(`[Worker][${queueName}] Worker error:`, err.message);
+  // --- Report Queue ---
+  reportQueue.process('generate-report', async (job) => {
+    console.log(`[Worker] Processing report generation job: ${job.id}`);
+    // Report generation is handled by the report service
+    const { taskId, projectId } = job.data;
+    console.log(`[Worker] Report task ${taskId} for project ${projectId} queued`);
   });
 
-  return worker;
+  // --- Uptime Check Queue ---
+  rankingFetchQueue.process('uptime-check', async (job) => {
+    console.log(`[Worker] Processing uptime check job: ${job.id}`);
+    await processUptimeCheck(job.data);
+  });
+
+  // --- Change Detection Queue ---
+  rankingFetchQueue.process('change-detection', async (job) => {
+    console.log(`[Worker] Processing change detection job: ${job.id}`);
+    await processChangeDetection(job.data);
+  });
+
+  // --- Queue event handlers ---
+  rankingFetchQueue.on('completed', (job) => {
+    console.log(`[Worker] Ranking fetch job ${job.id} completed`);
+  });
+
+  rankingFetchQueue.on('failed', (job, err) => {
+    console.error(`[Worker] Ranking fetch job ${job?.id} failed:`, err);
+  });
+
+  auditQueue.on('completed', (job) => {
+    console.log(`[Worker] Audit job ${job.id} completed`);
+  });
+
+  auditQueue.on('failed', (job, err) => {
+    console.error(`[Worker] Audit job ${job?.id} failed:`, err);
+  });
+
+  crawlQueue.on('completed', (job) => {
+    console.log(`[Worker] Crawl job ${job.id} completed`);
+  });
+
+  crawlQueue.on('failed', (job, err) => {
+    console.error(`[Worker] Crawl job ${job?.id} failed:`, err);
+  });
+
+  console.log('[Worker] Job worker started successfully');
 }
 
-// ---------------------------------------------------------------------------
-// Bootstrap
-// ---------------------------------------------------------------------------
+export async function stopWorker(): Promise<void> {
+  console.log('[Worker] Stopping job worker...');
 
-const workers: Worker<JobData>[] = [];
+  await rankingFetchQueue.close();
+  await auditQueue.close();
+  await crawlQueue.close();
+  await reportQueue.close();
 
-function startWorkers(): void {
-  console.log('[Worker] Starting all queue workers...');
-
-  const concurrencyMap: Record<string, number> = {
-    crawl: config.crawl.maxConcurrency,
-    audit: 3,
-    'ranking-fetch': 5,
-    'backlink-refresh': 3,
-    'sem-fetch': 3,
-    report: 2,
-  };
-
-  for (const [queueName, processor] of Object.entries(processors)) {
-    const concurrency = concurrencyMap[queueName] ?? 3;
-    const worker = createWorker(queueName, processor, concurrency);
-    workers.push(worker);
-    console.log(`[Worker] Registered worker for queue "${queueName}" (concurrency: ${concurrency})`);
-  }
-
-  console.log(`[Worker] ${workers.length} workers started successfully`);
+  console.log('[Worker] Job worker stopped');
 }
-
-async function shutdownWorkers(): Promise<void> {
-  console.log('[Worker] Shutting down all workers...');
-  await Promise.all(workers.map((w) => w.close()));
-  console.log('[Worker] All workers shut down');
-}
-
-// ---------------------------------------------------------------------------
-// Signal handlers
-// ---------------------------------------------------------------------------
-
-process.on('SIGTERM', async () => {
-  console.log('[Worker] Received SIGTERM');
-  await shutdownWorkers();
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('[Worker] Received SIGINT');
-  await shutdownWorkers();
-  process.exit(0);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[Worker] Unhandled rejection:', reason);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('[Worker] Uncaught exception:', err);
-  process.exit(1);
-});
-
-// ---------------------------------------------------------------------------
-// Start
-// ---------------------------------------------------------------------------
-
-startWorkers();
 
 export default {
-  workers,
-  startWorkers,
-  shutdownWorkers,
+  startWorker,
+  stopWorker,
 };

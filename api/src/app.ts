@@ -18,6 +18,21 @@ import competitorRouter from './modules/competitor/router.js';
 import reportRouter from './modules/report/router.js';
 import tasksRouter from './modules/tasks/router.js';
 
+// New modules
+import authRouter from './modules/auth/router.js';
+import alertingRouter from './modules/alerting/router.js';
+import monitorRouter from './modules/monitor/router.js';
+import scheduleRouter from './modules/schedule/router.js';
+import whitelabelRouter from './modules/whitelabel/router.js';
+import roiRouter from './modules/roi/router.js';
+import notificationsRouter from './modules/notifications/router.js';
+import serpFeaturesRouter from './modules/serp-features/router.js';
+import sitemapRouter from './modules/sitemap/router.js';
+import contentRouter from './modules/content/router.js';
+import domainHealthRouter from './modules/domain-health/router.js';
+import competitorChangeRouter from './modules/competitor-change/router.js';
+import apiUsageRouter from './modules/api-usage/router.js';
+
 // ---------------------------------------------------------------------------
 // Swagger / OpenAPI spec
 // ---------------------------------------------------------------------------
@@ -97,6 +112,11 @@ export function createApp(): Application {
   });
 
   // --- API v1 routes ---
+
+  // Auth (no auth middleware required for login/register)
+  app.use('/api/v1', authRouter);
+
+  // Existing routes
   app.use('/api/v1', projectRouter);
   app.use('/api/v1', crawlRouter);
   app.use('/api/v1', keywordsRouter);
@@ -110,6 +130,20 @@ export function createApp(): Application {
   app.use('/api/v1', competitorRouter);
   app.use('/api/v1', reportRouter);
   app.use('/api/v1', tasksRouter);
+
+  // New routes
+  app.use('/api/v1', alertingRouter);
+  app.use('/api/v1', monitorRouter);
+  app.use('/api/v1', scheduleRouter);
+  app.use('/api/v1', whitelabelRouter);
+  app.use('/api/v1', roiRouter);
+  app.use('/api/v1', notificationsRouter);
+  app.use('/api/v1', serpFeaturesRouter);
+  app.use('/api/v1', sitemapRouter);
+  app.use('/api/v1', contentRouter);
+  app.use('/api/v1', domainHealthRouter);
+  app.use('/api/v1', competitorChangeRouter);
+  app.use('/api/v1', apiUsageRouter);
 
   // --- 404 handler ---
   app.use((_req: Request, res: Response) => {
