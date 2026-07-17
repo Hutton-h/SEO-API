@@ -51,22 +51,32 @@ const channelConfigFields: Record<string, { name: string; label: string; placeho
 };
 
 const mockChannels = [
-  { id: 'c1', type: 'email' as const, typeLabel: '邮件', enabled: true, config: { smtpHost: 'smtp.example.com', smtpPort: '587', username: 'admin@example.com', fromName: 'SEO Platform' }, lastTestAt: '2024-07-15T10:00:00', lastTestStatus: 'success' as const, createdAt: '2024-06-01' },
-  { id: 'c2', type: 'dingtalk' as const, typeLabel: '钉钉', enabled: true, config: { webhookUrl: 'https://oapi.dingtalk.com/robot/send?access_token=xxx', secret: 'SEC***' }, lastTestAt: null, lastTestStatus: null, createdAt: '2024-06-15' },
-  { id: 'c3', type: 'feishu' as const, typeLabel: '飞书', enabled: false, config: { webhookUrl: '', secret: '' }, lastTestAt: null, lastTestStatus: null, createdAt: '2024-07-01' },
-  { id: 'c4', type: 'slack' as const, typeLabel: 'Slack', enabled: true, config: { webhookUrl: 'https://hooks.slack.com/services/xxx', channel: '#seo-alerts' }, lastTestAt: '2024-07-14T15:00:00', lastTestStatus: 'success' as const, createdAt: '2024-07-10' },
+  { id: 'c1', type: 'email', typeLabel: '邮件', enabled: true, config: { smtpHost: 'smtp.example.com', smtpPort: '587', username: 'admin@example.com', fromName: 'SEO Platform' }, lastTestAt: '2024-07-15T10:00:00', lastTestStatus: 'success', createdAt: '2024-06-01' },
+  { id: 'c2', type: 'dingtalk', typeLabel: '钉钉', enabled: true, config: { webhookUrl: 'https://oapi.dingtalk.com/robot/send?access_token=xxx', secret: 'SEC***' }, lastTestAt: null, lastTestStatus: null, createdAt: '2024-06-15' },
+  { id: 'c3', type: 'feishu', typeLabel: '飞书', enabled: false, config: { webhookUrl: '', secret: '' }, lastTestAt: null, lastTestStatus: null, createdAt: '2024-07-01' },
+  { id: 'c4', type: 'slack', typeLabel: 'Slack', enabled: true, config: { webhookUrl: 'https://hooks.slack.com/services/xxx', channel: '#seo-alerts' }, lastTestAt: '2024-07-14T15:00:00', lastTestStatus: 'success', createdAt: '2024-07-10' },
 ];
 
 const mockSendRecords = [
-  { id: 's1', channelId: 'c1', channelType: '邮件', recipient: 'admin@example.com', subject: '告警: 主站排名骤降', status: 'success' as const, errorMessage: null, sentAt: '2024-07-15T09:30:00' },
-  { id: 's2', channelId: 'c2', channelType: '钉钉', recipient: 'SEO群组', subject: '流量暴跌预警', status: 'success' as const, errorMessage: null, sentAt: '2024-07-15T08:15:00' },
-  { id: 's3', channelId: 'c4', channelType: 'Slack', recipient: '#seo-alerts', subject: '爬虫异常通知', status: 'failed' as const, errorMessage: 'Rate limit exceeded', sentAt: '2024-07-14T15:30:00' },
-  { id: 's4', channelId: 'c1', channelType: '邮件', recipient: 'admin@example.com', subject: '周报已生成', status: 'success' as const, errorMessage: null, sentAt: '2024-07-14T09:00:00' },
-  { id: 's5', channelId: 'c2', channelType: '钉钉', recipient: 'SEO群组', subject: '宕机检测通知', status: 'success' as const, errorMessage: null, sentAt: '2024-07-14T22:00:00' },
+  { id: 's1', channelId: 'c1', channelType: '邮件', recipient: 'admin@example.com', subject: '告警: 主站排名骤降', status: 'success', errorMessage: null, sentAt: '2024-07-15T09:30:00' },
+  { id: 's2', channelId: 'c2', channelType: '钉钉', recipient: 'SEO群组', subject: '流量暴跌预警', status: 'success', errorMessage: null, sentAt: '2024-07-15T08:15:00' },
+  { id: 's3', channelId: 'c4', channelType: 'Slack', recipient: '#seo-alerts', subject: '爬虫异常通知', status: 'failed', errorMessage: 'Rate limit exceeded', sentAt: '2024-07-14T15:30:00' },
+  { id: 's4', channelId: 'c1', channelType: '邮件', recipient: 'admin@example.com', subject: '周报已生成', status: 'success', errorMessage: null, sentAt: '2024-07-14T09:00:00' },
+  { id: 's5', channelId: 'c2', channelType: '钉钉', recipient: 'SEO群组', subject: '宕机检测通知', status: 'success', errorMessage: null, sentAt: '2024-07-14T22:00:00' },
 ];
 
+interface ChannelItem {
+  id: string;
+  type: string;
+  typeLabel: string;
+  enabled: boolean;
+  config: Record<string, string | undefined>;
+  lastTestAt: string | null;
+  lastTestStatus: string | null;
+  createdAt: string;
+}
 const Notifications: React.FC = () => {
-  const [channels, setChannels] = useState(mockChannels);
+  const [channels, setChannels] = useState<ChannelItem[]>(mockChannels as ChannelItem[]);
   const [sendRecords] = useState(mockSendRecords);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [testLoading, setTestLoading] = useState<string | null>(null);

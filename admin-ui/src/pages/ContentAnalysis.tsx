@@ -221,7 +221,7 @@ const ContentAnalysis: React.FC = () => {
               >
                 <List
                   dataSource={result.suggestions}
-                  renderItem={(item: any) => (
+                  renderItem={(item: { title: string; description: string; priority: 'high' | 'medium' | 'low' }) => (
                     <List.Item>
                       <List.Item.Meta
                         avatar={

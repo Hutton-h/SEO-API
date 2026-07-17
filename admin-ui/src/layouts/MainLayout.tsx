@@ -27,7 +27,7 @@ import {
   ScheduleOutlined,
   SendOutlined,
   GlobalOutlined,
-  SitemapOutlined,
+  ApartmentOutlined,
   ReadOutlined,
   VerifiedOutlined,
   SwapOutlined,
@@ -171,7 +171,7 @@ const menuItems: MenuProps['items'] = [
     children: [
       {
         key: '/sitemap',
-        icon: <SitemapOutlined />,
+        icon: <ApartmentOutlined />,
         label: 'Sitemap',
       },
       {

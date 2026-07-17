@@ -4,7 +4,7 @@ import {
 } from 'antd';
 import {
   DollarOutlined, RiseOutlined, FallOutlined, TrophyOutlined,
-  ReloadOutlined, PlusOutlined, TrendingUpOutlined, TrendingDownOutlined,
+  ReloadOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -63,7 +63,7 @@ const ROIAnalysis: React.FC = () => {
         roiPercent: 0,
       };
       entry.roiPercent = Math.round(entry.roi * 100);
-      setRoiData([...roiData, { id: Date.now().toString(), ...entry }]);
+      setRoiData([...roiData, entry]);
       message.success('ROI 数据已添加');
       form.resetFields();
     });
@@ -133,7 +133,7 @@ const ROIAnalysis: React.FC = () => {
               suffix="%"
               precision={1}
               valueStyle={{ color: overallROI >= 0 ? '#52c41a' : '#ff4d4f' }}
-              prefix={overallROI >= 0 ? <TrendingUpOutlined /> : <TrendingDownOutlined />}
+              prefix={overallROI >= 0 ? <RiseOutlined /> : <FallOutlined />}
             />
           </Card>
         </Col>

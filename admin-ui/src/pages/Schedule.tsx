@@ -34,12 +34,12 @@ const cronPresets = [
 ];
 
 const mockTasks = [
-  { id: '1', name: '主站爬虫', type: 'crawler', typeLabel: '爬虫任务', cronExpression: '0 2 * * *', status: 'active' as const, lastRunAt: '2024-07-15T02:00:00', lastRunStatus: 'success' as const, nextRunAt: '2024-07-16T02:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-01' },
-  { id: '2', name: '关键词排名检测', type: 'ranking', typeLabel: '排名检测', cronExpression: '0 8 * * *', status: 'active' as const, lastRunAt: '2024-07-15T08:00:00', lastRunStatus: 'success' as const, nextRunAt: '2024-07-16T08:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-15' },
-  { id: '3', name: '外链监控', type: 'backlink', typeLabel: '外链检查', cronExpression: '0 */6 * * *', status: 'active' as const, lastRunAt: '2024-07-15T12:00:00', lastRunStatus: 'failed' as const, nextRunAt: '2024-07-15T18:00:00', projectId: 'p2', projectName: '电商平台', createdAt: '2024-07-01' },
-  { id: '4', name: '周报自动生成', type: 'weekly_report', typeLabel: '周报生成', cronExpression: '0 9 * * 1', status: 'paused' as const, lastRunAt: '2024-07-08T09:00:00', lastRunStatus: 'success' as const, nextRunAt: null, projectId: 'p1', projectName: '主站优化', createdAt: '2024-07-05' },
-  { id: '5', name: '竞品变化检测', type: 'competitor_check', typeLabel: '竞品检测', cronExpression: '0 10 * * *', status: 'active' as const, lastRunAt: '2024-07-15T10:00:00', lastRunStatus: 'success' as const, nextRunAt: '2024-07-16T10:00:00', projectId: 'p3', projectName: '博客站', createdAt: '2024-07-10' },
-  { id: '6', name: '宕机检查', type: 'downtime_check', typeLabel: '宕机检查', cronExpression: '*/5 * * * *', status: 'active' as const, lastRunAt: '2024-07-15T14:55:00', lastRunStatus: 'success' as const, nextRunAt: '2024-07-15T15:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-07-12' },
+  { id: '1', name: '主站爬虫', type: 'crawler', typeLabel: '爬虫任务', cronExpression: '0 2 * * *', status: 'active', lastRunAt: '2024-07-15T02:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T02:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-01' },
+  { id: '2', name: '关键词排名检测', type: 'ranking', typeLabel: '排名检测', cronExpression: '0 8 * * *', status: 'active', lastRunAt: '2024-07-15T08:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T08:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-15' },
+  { id: '3', name: '外链监控', type: 'backlink', typeLabel: '外链检查', cronExpression: '0 */6 * * *', status: 'active', lastRunAt: '2024-07-15T12:00:00', lastRunStatus: 'failed', nextRunAt: '2024-07-15T18:00:00', projectId: 'p2', projectName: '电商平台', createdAt: '2024-07-01' },
+  { id: '4', name: '周报自动生成', type: 'weekly_report', typeLabel: '周报生成', cronExpression: '0 9 * * 1', status: 'paused', lastRunAt: '2024-07-08T09:00:00', lastRunStatus: 'success', nextRunAt: null, projectId: 'p1', projectName: '主站优化', createdAt: '2024-07-05' },
+  { id: '5', name: '竞品变化检测', type: 'competitor_check', typeLabel: '竞品检测', cronExpression: '0 10 * * *', status: 'active', lastRunAt: '2024-07-15T10:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T10:00:00', projectId: 'p3', projectName: '博客站', createdAt: '2024-07-10' },
+  { id: '6', name: '宕机检查', type: 'downtime_check', typeLabel: '宕机检查', cronExpression: '*/5 * * * *', status: 'active', lastRunAt: '2024-07-15T14:55:00', lastRunStatus: 'success', nextRunAt: '2024-07-15T15:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-07-12' },
 ];
 
 const Schedule: React.FC = () => {
