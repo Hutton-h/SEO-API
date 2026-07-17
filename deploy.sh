@@ -505,6 +505,7 @@ clean_all() {
     echo -e "  ${YELLOW}• Docker 网络${NC}"
     echo -e "  ${YELLOW}• .env 配置文件${NC}"
     echo -e "  ${YELLOW}• 前端构建产物${NC}"
+    echo -e "  ${YELLOW}• 项目目录（所有源代码）${NC}"
     if [ -d "$KEJILION_CONF_DIR" ]; then
         echo -e "  ${YELLOW}• Nginx 站点配置${NC}"
         echo -e "  ${YELLOW}• 前端静态文件${NC}"
@@ -578,12 +579,19 @@ clean_all() {
         sed -i "s|server_name .*|server_name localhost;|" "$NGINX_STANDALONE_CONF" 2>/dev/null || true
     fi
 
+    # 6. 删除项目目录（先切到安全位置再删）
+    log_info "删除项目目录..."
+    local project_dir="$SCRIPT_DIR"
+    cd /tmp
+    rm -rf "$project_dir"
+    log_ok "项目目录已删除"
+
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}  清理完成！所有 Crane SEO Platform 数据已删除${NC}"
+    echo -e "${GREEN}  清理完成！所有 Crane SEO Platform 数据已彻底删除${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    echo -e "  如需重新部署: ${CYAN}bash deploy.sh${NC}"
+    echo -e "  如需要，请重新克隆: ${CYAN}git clone git@github.com:Hutton-h/SEO-API.git${NC}"
     echo ""
 }
 
