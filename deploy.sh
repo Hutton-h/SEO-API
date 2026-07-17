@@ -518,6 +518,119 @@ deploy_nginx_kejilion() {
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  首次部署
+# ═══════════════════════════════════════════════════════════════════════════════
+main_deploy() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════╗"
+    echo "║          Crane SEO Platform — 首次部署                              ║"
+    echo "╚══════════════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    detect_environment
+
+    if [ -f "$ENV_FILE" ]; then
+        log_info "检测到已有 .env，跳过交互式配置"
+        set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
+        DOMAIN="${DOMAIN:-localhost}"
+        SSL_MODE="${SSL_MODE:-http}"
+        if [ "$DOMAIN" != "localhost" ] && [ -n "$DOMAIN" ]; then
+            if [ "$SSL_MODE" = "http" ] && ensure_cert_exists "$DOMAIN"; then
+                log_ok "检测到 SSL 证书，自动启用 HTTPS"
+                SSL_MODE="https"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+            fi
+        fi
+    else
+        interactive_config
+    fi
+
+    generate_env_file
+    build_frontend
+
+    if [ "$DETECTED_KEJILION" = true ]; then
+        deploy_nginx_kejilion
+    fi
+
+    log_step "构建 & 启动 Docker 服务"
+    log_info "构建镜像...（首次约 3-5 分钟，请耐心等待）"
+    docker compose -f "$COMPOSE_FILE" build --parallel 2>&1
+    log_info "启动容器..."
+    docker compose -f "$COMPOSE_FILE" up -d --force-recreate
+
+    run_init_sql
+
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════╗"
+    echo "║                    部署完成！                                       ║"
+    echo "╠══════════════════════════════════════════════════════════════════════╣"
+    if [ "$SSL_MODE" = "https" ] && [ "$DOMAIN" != "localhost" ]; then
+        echo "║  https://${DOMAIN}                                                  ║"
+    else
+        echo "║  http://${DOMAIN}                                                   ║"
+    fi
+    echo "║  API:  http://localhost:48080/api-docs                             ║"
+    echo "╚══════════════════════════════════════════════════════════════════════╝"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  一键清理
+# ═══════════════════════════════════════════════════════════════════════════════
+clean_all() {
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════╗"
+    echo "║  ⚠  警告：此操作将删除所有容器、数据、配置和前端文件！             ║"
+    echo "╚══════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    read -r -p "  输入 DELETE 确认删除: " confirm
+    if [ "$confirm" != "DELETE" ]; then
+        log_info "已取消"
+        exit 0
+    fi
+
+    log_step "开始清理..."
+
+    # 1. 停止并删除项目容器
+    log_info "停止项目容器..."
+    docker compose -f "$COMPOSE_FILE" down -v --remove-orphans 2>/dev/null || true
+    docker rm -f crane-seo-api crane-seo-crawler crane-seo-postgres 2>/dev/null || true
+
+    # 2. 删除 Docker 卷
+    docker volume rm seo-api_postgres_data 2>/dev/null || true
+
+    # 3. 删除 .env
+    rm -f "$ENV_FILE"
+
+    # 4. 删除 Nginx 配置和前端文件
+    if [ -d "$KEJILION_CONF_DIR" ]; then
+        for f in "$KEJILION_CONF_DIR/seo-platform.conf" "$KEJILION_CONF_DIR/${DOMAIN}.conf"; do
+            if [ -f "$f" ]; then
+                rm -f "$f"
+                log_ok "已删除: $(basename "$f")"
+            fi
+        done
+        if [ -d "$KEJILION_HTML_DIR/seo-platform" ]; then
+            rm -rf "$KEJILION_HTML_DIR/seo-platform"
+            log_ok "已删除前端文件"
+        fi
+        docker exec nginx nginx -s reload 2>/dev/null || true
+    fi
+
+    # 5. 删除证书
+    if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "localhost" ]; then
+        rm -f "/home/web/certs/${DOMAIN}_cert.pem" "/home/web/certs/${DOMAIN}_key.pem" 2>/dev/null
+    fi
+
+    # 6. 删除 Docker 镜像
+    docker rmi seo-api-api seo-api-crawler 2>/dev/null || true
+
+    echo ""
+    log_ok "清理完成！运行 bash deploy.sh 重新部署"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  入口
 # ═══════════════════════════════════════════════════════════════════════════════
 CMD="${1:-deploy}"
@@ -588,6 +701,10 @@ case "$CMD" in
         ;;
     clean)
         detect_environment
+        if [ -f "$ENV_FILE" ]; then
+            set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
+            DOMAIN="${DOMAIN:-localhost}"
+        fi
         clean_all
         ;;
     ssl)
