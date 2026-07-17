@@ -260,7 +260,7 @@ export async function analyzeSyntax(
       lemma: t.lemma ?? '',
       dependencyEdge: {
         headTokenIndex: t.dependencyEdge?.headTokenIndex ?? 0,
-        label: t.dependencyEdge?.label ?? 'UNKNOWN',
+        label: String(t.dependencyEdge?.label ?? 'UNKNOWN'),
       },
     }));
 
