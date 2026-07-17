@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Install build dependencies
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN npm install --no-audit --no-fund --prefer-offline
 
 # Copy TypeScript source and config
 COPY tsconfig.json ./
@@ -48,7 +48,7 @@ ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Copy production dependencies
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --no-audit --no-fund --prefer-offline
 
 # Copy compiled output from builder
 COPY --from=builder /app/dist/ ./dist/
