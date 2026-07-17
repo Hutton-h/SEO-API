@@ -361,93 +361,49 @@ build_frontend() {
 #  5. 部署 Nginx 配置
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# 自动申请 SSL 证书（仿 kejilion.sh 模式）
+# 申请 SSL 证书（完全对齐 kejilion.sh install_ssltls 逻辑）
 auto_ssl_kejilion() {
     local domain="$1"
-    log_step "自动申请 SSL 证书 → ${domain}"
-
-    # 检查域名是否解析到本机
-    local server_ip=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || curl -s --max-time 5 ip.sb 2>/dev/null)
-    local dns_ip=$(dig +short "$domain" @8.8.8.8 2>/dev/null | head -1 || nslookup "$domain" 2>/dev/null | grep -A1 'Name:' | grep 'Address:' | awk '{print $2}' | head -1)
-    if [ -n "$server_ip" ] && [ -n "$dns_ip" ] && [ "$server_ip" != "$dns_ip" ]; then
-        log_warn "域名 $domain 解析到 $dns_ip，但服务器 IP 是 $server_ip"
-        log_warn "DNS 可能未正确解析，证书申请可能失败"
-    fi
+    log_step "申请 SSL 证书 → ${domain}"
 
     # 1. 暂停 nginx（certbot 需要 80 端口）
-    log_info "暂停 Nginx 释放 80 端口..."
     docker stop nginx > /dev/null 2>&1 || true
-    sleep 1
 
-    # 2. 使用 certbot standalone 模式申请证书
-    local EMAIL="${ADMIN_EMAIL:-admin@${domain}}"
-    log_info "运行 certbot 申请证书（域名: ${domain}）..."
-    docker run --rm \
-        -p 80:80 \
-        -v /etc/letsencrypt/:/etc/letsencrypt \
-        certbot/certbot certonly \
-        --standalone \
-        -d "$domain" \
-        --email "$EMAIL" \
-        --agree-tos \
-        --no-eff-email \
-        --force-renewal \
-        --key-type ecdsa \
-        2>&1 | tail -5
-
-    local cert_status=$?
+    # 2. 如果 /etc/letsencrypt/live 下已有证书，跳过申请直接复制
+    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
+        log_info "Let's Encrypt 证书已存在，跳过申请"
+    else
+        log_info "运行 certbot standalone 申请证书..."
+        docker run --rm \
+            -p 80:80 \
+            -v /etc/letsencrypt/:/etc/letsencrypt \
+            certbot/certbot certonly \
+            --standalone \
+            -d "$domain" \
+            --email your@email.com \
+            --agree-tos \
+            --no-eff-email \
+            --force-renewal \
+            --key-type ecdsa 2>&1 | tail -5
+    fi
 
     # 3. 恢复 nginx
-    log_info "恢复 Nginx..."
     docker start nginx > /dev/null 2>&1 || true
 
-    # 4. 检查结果
-    local fullchain="/etc/letsencrypt/live/${domain}/fullchain.pem"
-    local privkey="/etc/letsencrypt/live/${domain}/privkey.pem"
-    if [ -f "$fullchain" ] && [ -f "$privkey" ]; then
-        # 复制证书到 kejilion 标准路径
-        mkdir -p "$KEJILION_CERTS_DIR"
-        cp "$fullchain" "$KEJILION_CERTS_DIR/${domain}_cert.pem"
-        cp "$privkey" "$KEJILION_CERTS_DIR/${domain}_key.pem"
-        chmod 644 "$KEJILION_CERTS_DIR/${domain}_cert.pem"
-        chmod 600 "$KEJILION_CERTS_DIR/${domain}_key.pem"
-        log_ok "SSL 证书申请成功！"
-        log_info "证书路径: $KEJILION_CERTS_DIR/${domain}_cert.pem"
-        log_info "私钥路径: $KEJILION_CERTS_DIR/${domain}_key.pem"
-
-        # 5. 设置自动续签（仿 kejilion.sh install_certbot）
-        setup_auto_renewal "$domain"
+    # 4. 复制证书到 kejilion 标准路径（和 kejilion 完全一致）
+    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
+        mkdir -p /home/web/certs
+        cp "/etc/letsencrypt/live/${domain}/fullchain.pem" "/home/web/certs/${domain}_cert.pem"
+        cp "/etc/letsencrypt/live/${domain}/privkey.pem" "/home/web/certs/${domain}_key.pem"
+        log_ok "SSL 证书已就绪: ${domain}"
         return 0
     else
-        log_error "SSL 证书申请失败（exit=${cert_status}）"
-        log_info "可能原因: DNS 未解析 / 80 端口被占用 / Let's Encrypt 频率限制"
-        log_info "可稍后手动运行: bash deploy.sh ssl"
+        log_error "SSL 证书申请失败"
+        log_info "请确认域名 ${domain} 已解析到本机 IP，且 80 端口可公网访问"
         return 1
     fi
 }
 
-# 使用 Cloudflare Origin CA 生成自签名证书（Cloudflare 代理专用）
-# 当域名在 Cloudflare 后面时，certbot 的 HTTP 验证可能失败
-# Cloudflare Origin CA 自签名证书在 Full 模式下可用
-auto_ssl_cloudflare_origin() {
-    local domain="$1"
-    log_step "生成 Cloudflare 兼容的自签名证书 → ${domain}"
-
-    mkdir -p "$KEJILION_CERTS_DIR"
-
-    # 生成 ECC 自签名证书（Cloudflare Full 模式接受）
-    if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
-        openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1             -keyout "$KEJILION_CERTS_DIR/${domain}_key.pem"             -out "$KEJILION_CERTS_DIR/${domain}_cert.pem"             -days 3650 -subj "/CN=${domain}"
-    else
-        openssl genpkey -algorithm Ed25519 -out "$KEJILION_CERTS_DIR/${domain}_key.pem"
-        openssl req -x509 -key "$KEJILION_CERTS_DIR/${domain}_key.pem"             -out "$KEJILION_CERTS_DIR/${domain}_cert.pem"             -days 3650 -subj "/CN=${domain}"
-    fi
-    chmod 644 "$KEJILION_CERTS_DIR/${domain}_cert.pem"
-    chmod 600 "$KEJILION_CERTS_DIR/${domain}_key.pem"
-    log_ok "自签名证书已生成: ${domain}"
-    log_info "请确保 Cloudflare SSL/TLS 模式设为 Full（非 Strict）"
-    return 0
-}
 
 # 设置 Let's Encrypt 自动续签
 setup_auto_renewal() {
@@ -485,48 +441,22 @@ find_certs_and_domain() {
     1
 }
 
+# 检查证书是否存在（kejilion 路径 + Let's Encrypt 原路径，不做有效性验证）
 ensure_cert_exists() {
     local domain="$1"
-    local cert_file=""
-    local key_file=""
-
-    # 优先 kejilion 路径
     if [ -f "/home/web/certs/${domain}_cert.pem" ] [ -f "/home/web/certs/${domain}_key.pem" ]; then
-        cert_file="/home/web/certs/${domain}_cert.pem"
-        key_file="/home/web/certs/${domain}_key.pem"
-    elif [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
+        0
+    fi
+    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
         mkdir -p /home/web/certs
         cp "/etc/letsencrypt/live/${domain}/fullchain.pem" "/home/web/certs/${domain}_cert.pem"
         cp "/etc/letsencrypt/live/${domain}/privkey.pem" "/home/web/certs/${domain}_key.pem"
         chmod 644 "/home/web/certs/${domain}_cert.pem"
         chmod 600 "/home/web/certs/${domain}_key.pem"
-        log_ok "从 certbot 路径恢复证书: ${domain}"
-        cert_file="/home/web/certs/${domain}_cert.pem"
-        key_file="/home/web/certs/${domain}_key.pem"
-    else
-        1
+        log_ok "从 Let's Encrypt 路径恢复证书: ${domain}"
+        0
     fi
-
-    # 验证证书有效性：检查是否过期 + 域名是否匹配
-    if [ -f "$cert_file" ]; then
-        if openssl x509 -in "$cert_file" -noout -checkend 86400 2>/dev/null; then
-            # 检查证书的 CN 或 SAN 是否包含目标域名
-            local cert_domains=$(openssl x509 -in "$cert_file" -noout -text 2>/dev/null | grep -A1 "Subject Alternative Name" | tail -1 | tr ',' '\n' | sed 's/DNS://g' | tr -d ' ')
-            local cert_cn=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null | sed 's/.*CN = //')
-            if echo "$cert_domains $cert_cn" | grep -qw "$domain"; then
-                0
-            fi
-            log_warn "证书域名不匹配: ${domain}，需要重新申请"
-            rm -f "$cert_file" "$key_file"
-            1
-        else
-            log_warn "证书已过期或即将过期，需要重新申请"
-            rm -f "$cert_file" "$key_file"
-            1
-        fi
-    else
-        1
-    fi
+    1
 }
 
 deploy_nginx_kejilion() {
