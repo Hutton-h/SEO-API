@@ -329,6 +329,11 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
 
+-- 创建默认管理员 (密码: admin123)
+INSERT INTO users (email, password_hash, name, role) VALUES
+('admin@crane-seo.com', '$2b$10$WMa4trKzUIlhLsYpiPUsKeTwCN2w4EXVWWS/SUla/oc/f4a0EL1Ku', 'Administrator', 'admin')
+ON CONFLICT (email) DO NOTHING;
+
 -- ---------------------------------------------------------------------------
 -- 16. project_members - 项目成员表
 -- ---------------------------------------------------------------------------

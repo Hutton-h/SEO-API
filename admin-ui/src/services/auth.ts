@@ -1,21 +1,18 @@
 import { apiPost, apiGet } from './api';
 
 export interface LoginRequest {
-  username: string;
+  email: string;
   password: string;
 }
 
 export interface LoginResponse {
-  accessToken: string;
-  refreshToken: string;
-  tokenType: string;
-  expiresIn: number;
+  token: string;
   user: {
     id: string;
     name: string;
     email: string;
     avatar?: string;
-    role: 'admin' | 'editor' | 'viewer';
+    role: string;
   };
 }
 

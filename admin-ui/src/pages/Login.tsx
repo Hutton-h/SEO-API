@@ -18,33 +18,34 @@ const Login: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [form] = Form.useForm();
 
-  const handleLogin = async (values: { username: string; password: string; remember: boolean }) => {
+  const handleLogin = async (values: { email: string; password: string; remember: boolean }) => {
     setLoading(true);
     setErrorMsg(null);
     try {
       const response = await authAPI.login({
-        username: values.username,
+        email: values.email,
         password: values.password,
       });
-      // 存储 token
-      localStorage.setItem('access_token', response.accessToken);
-      localStorage.setItem('refresh_token', response.refreshToken);
+      // 响应格式: { success: true, data: { user, token }, message: '...' }
+      const result = (response as any).data || response;
+      localStorage.setItem('access_token', result.token);
       // 更新状态
-      setUser(response.user);
+      setUser(result.user);
       setAuthenticated(true);
       message.success('登录成功');
       navigate('/dashboard', { replace: true });
     } catch (error: any) {
-      const errMsg = error?.response?.data?.message || error?.message || '登录失败，请检查用户名和密码';
+      const errData = error?.response?.data;
+      const errMsg = errData?.error?.message || errData?.message || error?.message || '登录失败，请检查用户名和密码';
       setErrorMsg(errMsg);
       // 开发环境回退：模拟登录
-      if (import.meta.env.DEV && values.username === 'admin' && values.password === 'admin123') {
+      if (import.meta.env.DEV && values.email === 'admin@crane-seo.com' && values.password === 'admin123') {
         localStorage.setItem('access_token', 'dev-token-' + Date.now());
         localStorage.setItem('refresh_token', 'dev-refresh-token-' + Date.now());
         setUser({
           id: '1',
           name: '管理员',
-          email: 'admin@seo-platform.com',
+          email: 'admin@crane-seo.com',
           role: 'admin',
         });
         setAuthenticated(true);
@@ -99,15 +100,15 @@ const Login: React.FC = () => {
           form={form}
           onFinish={handleLogin}
           size="large"
-          initialValues={{ username: 'admin', password: 'admin123', remember: true }}
+          initialValues={{ email: 'admin@crane-seo.com', password: 'admin123', remember: true }}
         >
           <Form.Item
-            name="username"
-            rules={[{ required: true, message: '请输入用户名' }]}
+            name="email"
+            rules={[{ required: true, message: '请输入邮箱' }]}
           >
             <Input
               prefix={<UserOutlined style={{ color: '#bfbfbf' }} />}
-              placeholder="用户名"
+              placeholder="邮箱"
             />
           </Form.Item>
 
@@ -138,7 +139,7 @@ const Login: React.FC = () => {
 
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              提示：用户名 admin / 密码 admin123
+              提示：邮箱 admin@crane-seo.com / 密码 admin123
             </Text>
           </div>
 

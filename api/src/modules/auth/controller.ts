@@ -8,8 +8,8 @@ import { success, badRequest, unauthorized } from '../../shared/utils/response.j
 // ---------------------------------------------------------------------------
 
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
+  email: z.string().min(1, '请输入邮箱/用户名'),
+  password: z.string().min(1, '请输入密码'),
 });
 
 export const registerSchema = z.object({
