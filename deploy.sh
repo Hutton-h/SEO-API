@@ -433,30 +433,30 @@ setup_auto_renewal() {
 find_certs_and_domain() {
     local domain="$1"
     # 已有有效域名 → 只检查该域名的证书，绝不扫描其他域名
-    if [ -n "$domain" ] [ "$domain" "localhost" ]; then
-        ensure_cert_exists "$domain" echo "$domain" 0
-        1
+    if [ -n "$domain" ] && [ "$domain" != "localhost" ]; then
+        ensure_cert_exists "$domain" && echo "$domain" && return 0
+        return 1
     fi
     # 域名空或 localhost → 不扫描，返回空让调用方处理
-    1
+    return 1
 }
 
 # 检查证书是否存在（kejilion 路径 + Let's Encrypt 原路径，不做有效性验证）
 ensure_cert_exists() {
     local domain="$1"
-    if [ -f "/home/web/certs/${domain}_cert.pem" ] [ -f "/home/web/certs/${domain}_key.pem" ]; then
-        0
+    if [ -f "/home/web/certs/${domain}_cert.pem" ] && [ -f "/home/web/certs/${domain}_key.pem" ]; then
+        return 0
     fi
-    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
+    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
         mkdir -p /home/web/certs
         cp "/etc/letsencrypt/live/${domain}/fullchain.pem" "/home/web/certs/${domain}_cert.pem"
         cp "/etc/letsencrypt/live/${domain}/privkey.pem" "/home/web/certs/${domain}_key.pem"
         chmod 644 "/home/web/certs/${domain}_cert.pem"
         chmod 600 "/home/web/certs/${domain}_key.pem"
         log_ok "从 Let's Encrypt 路径恢复证书: ${domain}"
-        0
+        return 0
     fi
-    1
+    return 1
 }
 
 deploy_nginx_kejilion() {
@@ -476,7 +476,7 @@ deploy_nginx_kejilion() {
 
     # 3. 下载 map.conf（kejilion 依赖）
     local gh_proxy=""
-    [ -n "$GITHUB_PROXY" ] && gh_proxy="$GITHUB_PROXY"
+    [ -n "${GITHUB_PROXY:-}" ] && gh_proxy="$GITHUB_PROXY"
     if [ ! -f "$KEJILION_CONF_DIR/map.conf" ]; then
         wget -q -O "$KEJILION_CONF_DIR/map.conf" ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf 2>/dev/null || true
     fi
@@ -535,8 +535,8 @@ case "$CMD" in
             SSL_MODE="${SSL_MODE:-http}"
         fi
         # 如果已有有效域名，校验证书
-        if [ "$DOMAIN" "localhost" ] [ -n "$DOMAIN" ]; then
-            if [ "$SSL_MODE" = "http" ] ensure_cert_exists "$DOMAIN"; then
+        if [ "$DOMAIN" != "localhost" ] && [ -n "$DOMAIN" ]; then
+            if [ "$SSL_MODE" = "http" ] && ensure_cert_exists "$DOMAIN"; then
                 log_ok "检测到 SSL 证书，自动启用 HTTPS"
                 SSL_MODE="https"
                 sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
@@ -546,7 +546,7 @@ case "$CMD" in
             read -r -p "  域名 (如 seo.hutton.dpdns.org): " DOMAIN
             DOMAIN="${DOMAIN:-localhost}"
             sed -i "s/^DOMAIN=.*/DOMAIN=${DOMAIN}/" "$ENV_FILE"
-            if [ "$DOMAIN" "localhost" ] ensure_cert_exists "$DOMAIN"; then
+            if [ "$DOMAIN" != "localhost" ] && ensure_cert_exists "$DOMAIN"; then
                 SSL_MODE="https"
                 sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
             fi
