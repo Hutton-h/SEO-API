@@ -63,6 +63,7 @@ export interface Config {
   };
   openai: {
     apiKey: string;
+    baseUrl: string;
     model: string;
   };
   gsc: {
@@ -192,6 +193,7 @@ function loadConfig(): Config {
 
     openai: {
       apiKey: env('OPENAI_API_KEY', ''),
+      baseUrl: env('OPENAI_BASE_URL', ''),
       model: env('OPENAI_MODEL', 'gpt-4o-mini'),
     },
 

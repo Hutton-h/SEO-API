@@ -106,11 +106,12 @@ export interface TokenUsage {
 
 const openai = new OpenAI({
   apiKey: config.openai.apiKey,
+  baseURL: config.openai.baseUrl || undefined,
   maxRetries: 3,
   timeout: 60000,
 });
 
-const model = 'gpt-4o-mini';
+const model = config.openai.model || 'gpt-4o-mini';
 
 // ---------------------------------------------------------------------------
 // Token usage tracking

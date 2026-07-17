@@ -124,10 +124,15 @@ interactive_config() {
 
     echo ""
 
-    # ── OpenAI（可选）──
-    banner "  【OpenAI API】（可选 — 用于 AI 内容优化建议）"
+    # ── AI 模型（可选）──
+    banner "  【AI 模型 API】（可选 — 支持 OpenAI 兼容接口，用于 AI 内容优化建议）"
+    echo -e "  ${YELLOW}  支持 OpenAI / DeepSeek / Moonshot / 智谱 / 通义千问 / Ollama 等${NC}"
     read -r -p "    API Key (留空跳过): " oai_key
+    read -r -p "    API 地址 (默认 https://api.openai.com/v1): " oai_base
+    read -r -p "    模型名称 (默认 gpt-4o-mini): " oai_model
     OPENAI_API_KEY="${oai_key:-}"
+    OPENAI_BASE_URL="${oai_base:-https://api.openai.com/v1}"
+    OPENAI_MODEL="${oai_model:-gpt-4o-mini}"
 
     echo ""
 
@@ -218,9 +223,11 @@ generate_env_file() {
 DATAFORSEO_EMAIL=${DATAFORSEO_EMAIL}
 DATAFORSEO_API_KEY=${DATAFORSEO_API_KEY}
 
-# --- OpenAI API (可选) ---
+# --- AI 模型 (OpenAI 兼容 API，可选) ---
+# 支持 OpenAI / DeepSeek / Moonshot / 智谱 / 通义千问 / Ollama 等
 OPENAI_API_KEY=${OPENAI_API_KEY}
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=${OPENAI_BASE_URL}
+OPENAI_MODEL=${OPENAI_MODEL}
 
 # --- Google Cloud APIs (可选，免费额度内) ---
 GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
