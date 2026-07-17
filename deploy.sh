@@ -105,11 +105,24 @@ interactive_config() {
     if [ "$DOMAIN" = "localhost" ]; then
         SSL_MODE="http"
     else
-        read -r -p "  是否启用 HTTPS? [y/N]: " ssl_choice
-        if [[ "$ssl_choice" =~ ^[Yy]$ ]]; then
-            SSL_MODE="https"
+        # 自动检测已有证书
+        local auto_cert="/home/web/certs/${DOMAIN}_cert.pem"
+        local auto_key="/home/web/certs/${DOMAIN}_key.pem"
+        if [ -f "$auto_cert" ] && [ -f "$auto_key" ]; then
+            echo -e "  ${GREEN}✓ 检测到已有 SSL 证书: ${DOMAIN}_cert.pem${NC}"
+            read -r -p "  是否启用 HTTPS? [Y/n]: " ssl_choice
+            if [[ "$ssl_choice" =~ ^[Nn]$ ]]; then
+                SSL_MODE="http"
+            else
+                SSL_MODE="https"
+            fi
         else
-            SSL_MODE="http"
+            read -r -p "  是否启用 HTTPS? [y/N]: " ssl_choice
+            if [[ "$ssl_choice" =~ ^[Yy]$ ]]; then
+                SSL_MODE="https"
+            else
+                SSL_MODE="http"
+            fi
         fi
     fi
 
