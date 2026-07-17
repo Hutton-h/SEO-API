@@ -426,6 +426,29 @@ auto_ssl_kejilion() {
     fi
 }
 
+# 使用 Cloudflare Origin CA 生成自签名证书（Cloudflare 代理专用）
+# 当域名在 Cloudflare 后面时，certbot 的 HTTP 验证可能失败
+# Cloudflare Origin CA 自签名证书在 Full 模式下可用
+auto_ssl_cloudflare_origin() {
+    local domain="$1"
+    log_step "生成 Cloudflare 兼容的自签名证书 → ${domain}"
+
+    mkdir -p "$KEJILION_CERTS_DIR"
+
+    # 生成 ECC 自签名证书（Cloudflare Full 模式接受）
+    if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
+        openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1             -keyout "$KEJILION_CERTS_DIR/${domain}_key.pem"             -out "$KEJILION_CERTS_DIR/${domain}_cert.pem"             -days 3650 -subj "/CN=${domain}"
+    else
+        openssl genpkey -algorithm Ed25519 -out "$KEJILION_CERTS_DIR/${domain}_key.pem"
+        openssl req -x509 -key "$KEJILION_CERTS_DIR/${domain}_key.pem"             -out "$KEJILION_CERTS_DIR/${domain}_cert.pem"             -days 3650 -subj "/CN=${domain}"
+    fi
+    chmod 644 "$KEJILION_CERTS_DIR/${domain}_cert.pem"
+    chmod 600 "$KEJILION_CERTS_DIR/${domain}_key.pem"
+    log_ok "自签名证书已生成: ${domain}"
+    log_info "请确保 Cloudflare SSL/TLS 模式设为 Full（非 Strict）"
+    return 0
+}
+
 # 设置 Let's Encrypt 自动续签
 setup_auto_renewal() {
     local domain="$1"
