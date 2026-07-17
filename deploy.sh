@@ -485,20 +485,7 @@ deploy_nginx_kejilion() {
     local backend_name
     backend_name=$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)
     local has_cert=false
-    local cert_file="/home/web/certs/${DOMAIN}_cert.pem"
-    local key_file="/home/web/certs/${DOMAIN}_key.pem"
-    if [ -f "$cert_file" ] && [ -f "$key_file" ]; then
-        # 验证证书: 非自签名 + 未过期
-        issuer=$(openssl x509 -in "$cert_file" -noout -issuer 2>/dev/null | sed 's/issuer= //')
-        subject=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null | sed 's/subject= //')
-        if [ "$issuer" != "$subject" ] && openssl x509 -in "$cert_file" -noout -checkend 86400 2>/dev/null; then
-            has_cert=true
-        else
-            log_warn "证书无效（自签名或已过期），降级 HTTP 模式"
-            log_info "提示: 请在 Cloudflare 将 SSL/TLS 设为 Flexible，或重新申请证书"
-            SSL_MODE="http"
-        fi
-    fi
+    [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ] && has_cert=true
 
     local template
     if [ "$has_cert" = true ] && [ "$SSL_MODE" = "https" ]; then
