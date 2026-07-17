@@ -450,6 +450,57 @@ setup_auto_renewal() {
     fi
 }
 
+# 查找证书并推断域名（kejilion 路径 + certbot 原路径双兜底）
+find_certs_and_domain() {
+    local existing_domain="$1"
+    local found_domain=""
+
+    # 1. 如果已有域名，直接检查对应证书
+    if [ -n "$existing_domain" ] && [ "$existing_domain" != "localhost" ]; then
+        # 先检查 kejilion 路径
+        if [ -f "/home/web/certs/${existing_domain}_cert.pem" ] && [ -f "/home/web/certs/${existing_domain}_key.pem" ]; then
+            echo "$existing_domain"
+            return 0
+        fi
+        # 再检查 certbot 原路径，有则复制到 kejilion 路径
+        if [ -f "/etc/letsencrypt/live/${existing_domain}/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/${existing_domain}/privkey.pem" ]; then
+            mkdir -p /home/web/certs
+            cp "/etc/letsencrypt/live/${existing_domain}/fullchain.pem" "/home/web/certs/${existing_domain}_cert.pem"
+            cp "/etc/letsencrypt/live/${existing_domain}/privkey.pem" "/home/web/certs/${existing_domain}_key.pem"
+            chmod 644 "/home/web/certs/${existing_domain}_cert.pem"
+            chmod 600 "/home/web/certs/${existing_domain}_key.pem"
+            log_ok "从 certbot 路径恢复证书: ${existing_domain}"
+            echo "$existing_domain"
+            return 0
+        fi
+    fi
+
+    # 2. 扫描 kejilion 路径
+    found_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | head -1 | sed 's|.*/||; s|_cert\.pem||')
+    if [ -n "$found_domain" ] && [ "$found_domain" != "localhost" ]; then
+        echo "$found_domain"
+        return 0
+    fi
+
+    # 3. 扫描 certbot 原路径
+    for dir in /etc/letsencrypt/live/*/; do
+        local d=$(basename "$dir")
+        if [ -f "${dir}fullchain.pem" ] && [ -f "${dir}privkey.pem" ]; then
+            # 复制到 kejilion 路径
+            mkdir -p /home/web/certs
+            cp "${dir}fullchain.pem" "/home/web/certs/${d}_cert.pem"
+            cp "${dir}privkey.pem" "/home/web/certs/${d}_key.pem"
+            chmod 644 "/home/web/certs/${d}_cert.pem"
+            chmod 600 "/home/web/certs/${d}_key.pem"
+            log_ok "从 certbot 路径恢复证书: ${d}"
+            echo "$d"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 deploy_nginx_kejilion() {
     log_step "部署 Nginx 配置 → kejilion 模式"
 
@@ -463,10 +514,23 @@ deploy_nginx_kejilion() {
     chmod -R 755 "$target_html"
     log_ok "前端文件 → $target_html"
 
-    # 2. 检查证书
+    # 2. 检查证书（双路径兜底）
     local cert_file="$KEJILION_CERTS_DIR/${DOMAIN}_cert.pem"
     local key_file="$KEJILION_CERTS_DIR/${DOMAIN}_key.pem"
     local has_cert=false
+
+    # 先尝试从 certbot 路径恢复
+    if [ ! -f "$cert_file" ] || [ ! -f "$key_file" ]; then
+        if [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" ]; then
+            mkdir -p "$KEJILION_CERTS_DIR"
+            cp "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" "$cert_file"
+            cp "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" "$key_file"
+            chmod 644 "$cert_file"
+            chmod 600 "$key_file"
+            log_ok "从 certbot 路径恢复证书: ${DOMAIN}"
+        fi
+    fi
+
     if [ -f "$cert_file" ] && [ -f "$key_file" ]; then
         has_cert=true
         log_ok "SSL 证书已就绪"
@@ -906,24 +970,17 @@ main_deploy() {
         set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
         DOMAIN="${DOMAIN:-localhost}"
         SSL_MODE="${SSL_MODE:-http}"
-        # 自动检测证书，有证书就启用 HTTPS
-        if [ "$DOMAIN" != "localhost" ]; then
-            if [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ]; then
-                log_ok "检测到已有 SSL 证书: ${DOMAIN}"
-                if [ "$SSL_MODE" != "https" ]; then
-                    log_info "自动启用 HTTPS"
-                    SSL_MODE="https"
-                    sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
-                fi
+        # 自动检测证书
+        local cert_domain=$(find_certs_and_domain "$DOMAIN")
+        if [ -n "$cert_domain" ]; then
+            if [ "$DOMAIN" != "$cert_domain" ]; then
+                log_ok "检测到证书域名: ${cert_domain}"
+                DOMAIN="$cert_domain"
+                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
             fi
-        else
-            # DOMAIN=localhost 但可能有证书，尝试从证书文件名推断域名
-            local detected_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | head -1 | sed 's|.*/||; s|_cert\.pem||')
-            if [ -n "$detected_domain" ] && [ "$detected_domain" != "localhost" ]; then
-                log_ok "从证书文件检测到域名: ${detected_domain}"
-                DOMAIN="$detected_domain"
+            if [ "$SSL_MODE" != "https" ]; then
+                log_info "自动启用 HTTPS"
                 SSL_MODE="https"
-                sed -i "s/^DOMAIN=.*/DOMAIN=${detected_domain}/" "$ENV_FILE"
                 sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
             fi
         fi
@@ -984,28 +1041,22 @@ case "$CMD" in
             DOMAIN="${DOMAIN:-localhost}"
             SSL_MODE="${SSL_MODE:-http}"
         fi
-        # 如果 DOMAIN=localhost，尝试从证书推断
-        if [ "$DOMAIN" = "localhost" ]; then
-            local detected_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | head -1 | sed 's|.*/||; s|_cert\.pem||')
-            if [ -n "$detected_domain" ] && [ "$detected_domain" != "localhost" ]; then
-                log_ok "从证书文件检测到域名: ${detected_domain}"
-                DOMAIN="$detected_domain"
+        # 自动检测证书
+        local cert_domain=$(find_certs_and_domain "$DOMAIN")
+        if [ -n "$cert_domain" ]; then
+            if [ "$DOMAIN" != "$cert_domain" ]; then
+                log_ok "检测到证书域名: ${cert_domain}"
+                DOMAIN="$cert_domain"
+                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
+            fi
+            if [ "$SSL_MODE" != "https" ]; then
+                log_info "自动启用 HTTPS"
                 SSL_MODE="https"
-                sed -i "s/^DOMAIN=.*/DOMAIN=${detected_domain}/" "$ENV_FILE"
-                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
             fi
         fi
         build_frontend
         if [ "$DETECTED_KEJILION" = true ]; then
-            # 自动检测证书，有证书就启用 HTTPS
-            if [ "$DOMAIN" != "localhost" ] && [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ]; then
-                if [ "$SSL_MODE" != "https" ]; then
-                    log_ok "检测到已有 SSL 证书，自动启用 HTTPS"
-                    SSL_MODE="https"
-                    sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
-                fi
-            fi
-            # 重新生成 Nginx 配置（处理证书到位后的 HTTPS 启用）
             deploy_nginx_kejilion
         fi
         docker compose -f "$COMPOSE_FILE" build --parallel 2>&1
