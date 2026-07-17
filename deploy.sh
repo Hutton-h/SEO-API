@@ -281,7 +281,7 @@ JWT_EXPIRES_IN=7d
 JWT_REFRESH_EXPIRES_IN=30d
 
 # --- API Server ---
-API_PORT=8080
+API_PORT=8081
 API_HOST=0.0.0.0
 NODE_ENV=$( [ "$DETECTED_KEJILION" = true ] && echo 'production' || echo 'development' )
 
@@ -527,8 +527,8 @@ deploy_nginx_standalone() {
 build_and_start() {
     log_step "构建 & 启动 Docker 服务"
 
-    log_info "构建镜像..."
-    docker compose -f "$COMPOSE_FILE" build --parallel 2>&1 | tail -5
+    log_info "构建镜像...（首次约 3-5 分钟，请耐心等待）"
+    docker compose -f "$COMPOSE_FILE" build --parallel 2>&1
 
     log_info "启动容器..."
     docker compose -f "$COMPOSE_FILE" up -d
@@ -579,7 +579,7 @@ show_status() {
 
     echo ""
     echo -e "  API 健康检查:"
-    curl -s http://localhost:8080/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
+    curl -s http://localhost:8081/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
         || echo "    API 不可达"
 
     echo ""
@@ -589,7 +589,7 @@ show_status() {
         echo -e "    API 文档:  ${CYAN}${SSL_MODE}://${DOMAIN}/api-docs${NC}"
     else
         echo -e "    前端:      ${CYAN}http://localhost${NC}"
-        echo -e "    API 文档:  ${CYAN}http://localhost:8080/api-docs${NC}"
+        echo -e "    API 文档:  ${CYAN}http://localhost:8081/api-docs${NC}"
     fi
     echo -e "    登录:      ${YELLOW}admin / ${ADMIN_PASSWORD:-admin123}${NC}"
     echo ""
@@ -788,7 +788,7 @@ case "$CMD" in
             # 重新生成 Nginx 配置（处理证书到位后的 HTTPS 启用）
             deploy_nginx_kejilion
         fi
-        docker compose -f "$COMPOSE_FILE" build --parallel 2>&1 | tail -3
+        docker compose -f "$COMPOSE_FILE" build --parallel 2>&1
         docker compose -f "$COMPOSE_FILE" up -d --force-recreate
         run_init_sql
         log_ok "更新完成"
