@@ -385,6 +385,9 @@ deploy_nginx_kejilion() {
             log_info "证书路径: $KEJILION_CERTS_DIR/"
             log_info "本次以 HTTP 模式启动，证书到位后运行: bash deploy.sh update"
             sed -i 's|return 301 https://$host$request_uri;|# return 301 https://$host$request_uri;|' "$target_conf"
+            # 证书缺失时，注释掉整个 HTTPS (443) server block，避免 Nginx 启动失败
+            sed -i '/^# ---------- HTTPS (443) ----------$/,/^}$/s/^/#/' "$target_conf"
+            sed -i 's|^## ---------- HTTPS (443) ----------$|# ---------- HTTPS (443) 主站点（已注释，证书到位后恢复）|' "$target_conf"
         else
             log_ok "SSL 证书已就绪"
         fi
@@ -675,11 +678,8 @@ case "$CMD" in
         fi
         build_frontend
         if [ "$DETECTED_KEJILION" = true ]; then
-            local target_html="$KEJILION_HTML_DIR/seo-platform"
-            rm -rf "$target_html"
-            mkdir -p "$target_html"
-            cp -r "$FRONTEND_DIST/"* "$target_html/"
-            docker exec nginx nginx -s reload 2>/dev/null || true
+            # 重新生成 Nginx 配置（处理证书到位后的 HTTPS 启用）
+            deploy_nginx_kejilion
         fi
         docker compose -f "$COMPOSE_FILE" build --parallel 2>&1 | tail -3
         docker compose -f "$COMPOSE_FILE" up -d --force-recreate
