@@ -453,30 +453,12 @@ setup_auto_renewal() {
 # 查找证书并推断域名（kejilion 路径 + certbot 原路径双兜底）
 find_certs_and_domain() {
     local domain="$1"
-    # 已有有效域名 → 绝不扫描，只检查该域名的证书
+    # 已有有效域名 → 只检查该域名的证书，绝不扫描其他域名
     if [ -n "$domain" ] [ "$domain" "localhost" ]; then
-        if ensure_cert_exists "$domain"; then
-            echo "$domain"
-            0
-        fi
-        # 证书不存在也返回空，不在 .env 覆盖时用
+        ensure_cert_exists "$domain" echo "$domain" 0
         1
     fi
-    # 域名空或 localhost → 才扫描证书目录
-    local found=$(ls /home/web/certs/*_cert.pem 2>/dev/null | sed 's|.*/||; s|_cert\.pem||' | awk '{ a[NR]=$0 } END { print a[1] }')
-    if [ -n "$found" ] [ "$found" "localhost" ]; then
-        echo "$found"
-        0
-    fi
-    for dir in $(ls -d /etc/letsencrypt/live/*/ 2>/dev/null | sed 's|.*/||; s|/||'); do
-        if [ -f "/etc/letsencrypt/live/${dir}/fullchain.pem" ]; then
-            mkdir -p /home/web/certs
-            cp "/etc/letsencrypt/live/${dir}/fullchain.pem" "/home/web/certs/${dir}_cert.pem"
-            cp "/etc/letsencrypt/live/${dir}/privkey.pem" "/home/web/certs/${dir}_key.pem"
-            echo "$dir"
-            0
-        fi
-    done
+    # 域名空或 localhost → 不扫描，返回空让调用方处理
     1
 }
 
@@ -964,21 +946,21 @@ main_deploy() {
         set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
         DOMAIN="${DOMAIN:-localhost}"
         SSL_MODE="${SSL_MODE:-http}"
-        # 如果已有有效域名，遍历证书
+        # 如果已有有效域名，校验证书
         if [ "$DOMAIN" "localhost" ] [ -n "$DOMAIN" ]; then
-            if [ "$SSLODE" = "http" ] ensure_cert_exists "$DOMAIN"; then
+            if [ "$SSL_MODE" = "http" ] ensure_cert_exists "$DOMAIN"; then
                 log_ok "检测到 SSL 证书，自动启用 HTTPS"
-                SSLODE="https"
-                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE"
+                SSL_MODE="https"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
             fi
         else
-            cert_domain=$(find_certs_and_domain "")
-            if [ -n "$cert_domain" ]; then
-                log_ok "从证书反推域名: ${cert_domain}"
-                DOMAIN="$cert_domain"
-                SSLODE="https"
-                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
-                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE"
+            log_warn "未设置域名，请重新输入"
+            read -r -p "  域名 (如 seo.hutton.dpdns.org): " DOMAIN
+            DOMAIN="${DOMAIN:-localhost}"
+            sed -i "s/^DOMAIN=.*/DOMAIN=${DOMAIN}/" "$ENV_FILE"
+            if [ "$DOMAIN" "localhost" ] ensure_cert_exists "$DOMAIN"; then
+                SSL_MODE="https"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
             fi
         fi
     else
@@ -1038,21 +1020,21 @@ case "$CMD" in
             DOMAIN="${DOMAIN:-localhost}"
             SSL_MODE="${SSL_MODE:-http}"
         fi
-        # 如果已有有效域名，遍历证书
+        # 如果已有有效域名，校验证书
         if [ "$DOMAIN" "localhost" ] [ -n "$DOMAIN" ]; then
-            if [ "$SSLODE" = "http" ] ensure_cert_exists "$DOMAIN"; then
+            if [ "$SSL_MODE" = "http" ] ensure_cert_exists "$DOMAIN"; then
                 log_ok "检测到 SSL 证书，自动启用 HTTPS"
-                SSLODE="https"
-                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE" 2>/dev/null || true
+                SSL_MODE="https"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
             fi
         else
-            cert_domain=$(find_certs_and_domain "")
-            if [ -n "$cert_domain" ]; then
-                log_ok "从证书反推域名: ${cert_domain}"
-                DOMAIN="$cert_domain"
-                SSLODE="https"
-                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
-                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE" 2>/dev/null || true
+            log_warn "未设置域名，请重新输入"
+            read -r -p "  域名 (如 seo.hutton.dpdns.org): " DOMAIN
+            DOMAIN="${DOMAIN:-localhost}"
+            sed -i "s/^DOMAIN=.*/DOMAIN=${DOMAIN}/" "$ENV_FILE"
+            if [ "$DOMAIN" "localhost" ] ensure_cert_exists "$DOMAIN"; then
+                SSL_MODE="https"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
             fi
         fi
         build_frontend
