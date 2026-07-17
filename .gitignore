@@ -51,4 +51,5 @@ temp/
 *.tmp
 
 # Uploads
-uploads/
+uploads/admin-ui/vite.config.d.ts
+admin-ui/vite.config.js
