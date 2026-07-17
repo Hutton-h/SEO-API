@@ -735,8 +735,8 @@ case "$CMD" in
         if [ "$DETECTED_KEJILION" = true ]; then
             deploy_nginx_kejilion
         fi
-        docker compose -f "$COMPOSE_FILE" build --no-cache api crawler 2>&1
-        docker compose -f "$COMPOSE_FILE" up -d --force-recreate
+        docker compose -f "$COMPOSE_FILE" build api crawler 2>&1
+        docker compose -f "$COMPOSE_FILE" up -d
         run_init_sql
         log_ok "更新完成"
         ;;
