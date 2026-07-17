@@ -15,7 +15,7 @@ RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json* ./
 
 # Install all dependencies (including devDependencies for TypeScript compilation)
-RUN npm ci --include=dev
+RUN npm ci
 
 # Copy source code
 COPY tsconfig.json ./
