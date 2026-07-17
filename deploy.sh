@@ -281,7 +281,7 @@ JWT_EXPIRES_IN=7d
 JWT_REFRESH_EXPIRES_IN=30d
 
 # --- API Server ---
-API_PORT=8081
+API_PORT=48080
 API_HOST=0.0.0.0
 NODE_ENV=$( [ "$DETECTED_KEJILION" = true ] && echo 'production' || echo 'development' )
 
@@ -579,7 +579,7 @@ show_status() {
 
     echo ""
     echo -e "  API 健康检查:"
-    curl -s http://localhost:8081/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
+    curl -s http://localhost:48080/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
         || echo "    API 不可达"
 
     echo ""
@@ -589,7 +589,7 @@ show_status() {
         echo -e "    API 文档:  ${CYAN}${SSL_MODE}://${DOMAIN}/api-docs${NC}"
     else
         echo -e "    前端:      ${CYAN}http://localhost${NC}"
-        echo -e "    API 文档:  ${CYAN}http://localhost:8081/api-docs${NC}"
+        echo -e "    API 文档:  ${CYAN}http://localhost:48080/api-docs${NC}"
     fi
     echo -e "    登录:      ${YELLOW}admin / ${ADMIN_PASSWORD:-admin123}${NC}"
     echo ""
