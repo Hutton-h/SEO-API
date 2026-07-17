@@ -480,6 +480,96 @@ stop_services() {
     log_ok "已停止"
 }
 
+clean_all() {
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  ⚠️  一键删除 — 将清除所有 Crane SEO Platform 数据和容器    ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  将删除以下内容："
+    echo -e "  ${YELLOW}• Docker 容器 (api, crawler, postgres)${NC}"
+    echo -e "  ${YELLOW}• Docker 数据卷 (数据库全部数据)${NC}"
+    echo -e "  ${YELLOW}• Docker 镜像${NC}"
+    echo -e "  ${YELLOW}• Docker 网络${NC}"
+    echo -e "  ${YELLOW}• .env 配置文件${NC}"
+    echo -e "  ${YELLOW}• 前端构建产物${NC}"
+    if [ -d "$KEJILION_CONF_DIR" ]; then
+        echo -e "  ${YELLOW}• Nginx 站点配置${NC}"
+        echo -e "  ${YELLOW}• 前端静态文件${NC}"
+    fi
+    echo ""
+    read -r -p "  确认删除？输入 ${RED}DELETE${NC} 确认: " confirm
+
+    if [ "$confirm" != "DELETE" ]; then
+        log_info "已取消"
+        return
+    fi
+
+    echo ""
+    log_step "开始一键删除..."
+
+    # 1. 停止并删除容器 + 卷 + 网络 + 镜像
+    log_info "停止并删除 Docker 容器、卷、网络..."
+    if [ -f "$COMPOSE_FILE" ]; then
+        docker compose -f "$COMPOSE_FILE" down -v --rmi all --remove-orphans 2>&1 | tail -3
+    fi
+    # 兜底：手动删除可能残留的容器
+    for c in crane-seo-api crane-seo-crawler crane-seo-postgres; do
+        docker rm -f "$c" 2>/dev/null || true
+    done
+    # 删除网络
+    docker network rm crane-seo-network 2>/dev/null || true
+    # 删除匿名卷
+    docker volume prune -f 2>/dev/null || true
+
+    # 2. 删除 .env
+    if [ -f "$ENV_FILE" ]; then
+        rm -f "$ENV_FILE"
+        log_ok "已删除 .env"
+    fi
+
+    # 3. 删除前端构建产物
+    if [ -d "$FRONTEND_DIST" ]; then
+        rm -rf "$FRONTEND_DIST"
+        log_ok "已删除前端构建产物"
+    fi
+
+    # 4. kejilion 环境：删除 Nginx 配置和前端文件
+    if [ -d "$KEJILION_CONF_DIR" ]; then
+        local conf_target="$KEJILION_CONF_DIR/seo-platform.conf"
+        local html_target="$KEJILION_HTML_DIR/seo-platform"
+        if [ -f "$conf_target" ]; then
+            rm -f "$conf_target"
+            log_ok "已删除 Nginx 站点配置"
+        fi
+        if [ -d "$html_target" ]; then
+            rm -rf "$html_target"
+            log_ok "已删除前端静态文件"
+        fi
+        # 重载 Nginx
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'nginx'; then
+            docker exec nginx nginx -s reload 2>/dev/null || true
+            log_ok "Nginx 已重载"
+        fi
+    fi
+
+    # 5. 删除独立 nginx 配置中的域名
+    if [ -f "$NGINX_STANDALONE_CONF" ]; then
+        sed -i "s|server_name .*|server_name localhost;|" "$NGINX_STANDALONE_CONF" 2>/dev/null || true
+    fi
+
+    # 6. 清理 Docker 系统缓存
+    docker system prune -f 2>/dev/null || true
+
+    echo ""
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}  清理完成！所有 Crane SEO Platform 数据已删除${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "  如需重新部署: ${CYAN}bash deploy.sh${NC}"
+    echo ""
+}
+
 show_logs() {
     docker compose -f "$COMPOSE_FILE" logs -f --tail=100
 }
@@ -597,6 +687,10 @@ case "$CMD" in
         fi
         log_ok "已重启"
         ;;
+    clean)
+        detect_environment
+        clean_all
+        ;;
     help|--help|-h)
         echo ""
         echo "Crane SEO Platform — 部署脚本"
@@ -607,16 +701,18 @@ case "$CMD" in
         echo "  deploy     首次部署（交互式配置 + 构建 + 启动）"
         echo "  update     更新代码并重启"
         echo "  status     查看服务状态"
-        echo "  stop       停止服务"
+        echo "  stop       停止服务（保留数据）"
+        echo "  clean      一键删除所有容器/数据/配置（输入 DELETE 确认）"
         echo "  logs       查看日志"
         echo "  restart    重启服务"
         echo ""
         echo "示例: bash deploy.sh          # 首次部署"
         echo "      bash deploy.sh update   # 更新代码"
+        echo "      bash deploy.sh clean    # 一键彻底删除"
         ;;
     *)
         echo "未知命令: $CMD"
-        echo "用法: bash deploy.sh [deploy|update|status|stop|logs|restart]"
+        echo "用法: bash deploy.sh [deploy|update|status|stop|logs|restart|clean]"
         exit 1
         ;;
 esac
