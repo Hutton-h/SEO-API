@@ -464,17 +464,46 @@ find_certs_and_domain() {
 
 ensure_cert_exists() {
     local domain="$1"
-    [ -f "/home/web/certs/${domain}_cert.pem" ] [ -f "/home/web/certs/${domain}_key.pem" ] 0
-    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
+    local cert_file=""
+    local key_file=""
+
+    # 优先 kejilion 路径
+    if [ -f "/home/web/certs/${domain}_cert.pem" ] [ -f "/home/web/certs/${domain}_key.pem" ]; then
+        cert_file="/home/web/certs/${domain}_cert.pem"
+        key_file="/home/web/certs/${domain}_key.pem"
+    elif [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
         mkdir -p /home/web/certs
         cp "/etc/letsencrypt/live/${domain}/fullchain.pem" "/home/web/certs/${domain}_cert.pem"
         cp "/etc/letsencrypt/live/${domain}/privkey.pem" "/home/web/certs/${domain}_key.pem"
         chmod 644 "/home/web/certs/${domain}_cert.pem"
         chmod 600 "/home/web/certs/${domain}_key.pem"
         log_ok "从 certbot 路径恢复证书: ${domain}"
-        0
+        cert_file="/home/web/certs/${domain}_cert.pem"
+        key_file="/home/web/certs/${domain}_key.pem"
+    else
+        1
     fi
-    1
+
+    # 验证证书有效性：检查是否过期 + 域名是否匹配
+    if [ -f "$cert_file" ]; then
+        if openssl x509 -in "$cert_file" -noout -checkend 86400 2>/dev/null; then
+            # 检查证书的 CN 或 SAN 是否包含目标域名
+            local cert_domains=$(openssl x509 -in "$cert_file" -noout -text 2>/dev/null | grep -A1 "Subject Alternative Name" | tail -1 | tr ',' '\n' | sed 's/DNS://g' | tr -d ' ')
+            local cert_cn=$(openssl x509 -in "$cert_file" -noout -subject 2>/dev/null | sed 's/.*CN = //')
+            if echo "$cert_domains $cert_cn" | grep -qw "$domain"; then
+                0
+            fi
+            log_warn "证书域名不匹配: ${domain}，需要重新申请"
+            rm -f "$cert_file" "$key_file"
+            1
+        else
+            log_warn "证书已过期或即将过期，需要重新申请"
+            rm -f "$cert_file" "$key_file"
+            1
+        fi
+    else
+        1
+    fi
 }
 
 deploy_nginx_kejilion() {
