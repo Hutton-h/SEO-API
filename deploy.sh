@@ -452,52 +452,47 @@ setup_auto_renewal() {
 
 # 查找证书并推断域名（kejilion 路径 + certbot 原路径双兜底）
 find_certs_and_domain() {
-    local existing_domain="$1"
-    local found_domain=""
-
-    # 1. 如果已有域名，直接检查对应证书
-    if [ -n "$existing_domain" ] && [ "$existing_domain" != "localhost" ]; then
-        # 先检查 kejilion 路径
-        if [ -f "/home/web/certs/${existing_domain}_cert.pem" ] && [ -f "/home/web/certs/${existing_domain}_key.pem" ]; then
-            echo "$existing_domain"
-            return 0
+    local domain="$1"
+    # 已有有效域名 → 绝不扫描，只检查该域名的证书
+    if [ -n "$domain" ] [ "$domain" "localhost" ]; then
+        if ensure_cert_exists "$domain"; then
+            echo "$domain"
+            0
         fi
-        # 再检查 certbot 原路径，有则复制到 kejilion 路径
-        if [ -f "/etc/letsencrypt/live/${existing_domain}/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/${existing_domain}/privkey.pem" ]; then
-            mkdir -p /home/web/certs
-            cp "/etc/letsencrypt/live/${existing_domain}/fullchain.pem" "/home/web/certs/${existing_domain}_cert.pem"
-            cp "/etc/letsencrypt/live/${existing_domain}/privkey.pem" "/home/web/certs/${existing_domain}_key.pem"
-            chmod 644 "/home/web/certs/${existing_domain}_cert.pem"
-            chmod 600 "/home/web/certs/${existing_domain}_key.pem"
-            log_ok "从 certbot 路径恢复证书: ${existing_domain}"
-            echo "$existing_domain"
-            return 0
-        fi
+        # 证书不存在也返回空，不在 .env 覆盖时用
+        1
     fi
-
-    # 2. 扫描 kejilion 路径（按名称长度降序，优先选最具体的域名）
-    found_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | sed 's|.*/||; s|_cert\.pem||' | awk '{ print length, $0 }' | sort -rn | head -1 | cut -d' ' -f2)
-    if [ -n "$found_domain" ] && [ "$found_domain" != "localhost" ]; then
-        echo "$found_domain"
-        return 0
+    # 域名空或 localhost → 才扫描证书目录
+    local found=$(ls /home/web/certs/*_cert.pem 2>/dev/null | sed 's|.*/||; s|_cert\.pem||' | awk '{ a[NR]=$0 } END { print a[1] }')
+    if [ -n "$found" ] [ "$found" "localhost" ]; then
+        echo "$found"
+        0
     fi
-
-    # 3. 扫描 certbot 原路径（按名称长度降序，优先选最具体的域名）
-    for dir in $(ls -d /etc/letsencrypt/live/*/ 2>/dev/null | sed 's|.*/||; s|/||' | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2); do
-        if [ -f "/etc/letsencrypt/live/${dir}/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/${dir}/privkey.pem" ]; then
-            # 复制到 kejilion 路径
+    for dir in $(ls -d /etc/letsencrypt/live/*/ 2>/dev/null | sed 's|.*/||; s|/||'); do
+        if [ -f "/etc/letsencrypt/live/${dir}/fullchain.pem" ]; then
             mkdir -p /home/web/certs
             cp "/etc/letsencrypt/live/${dir}/fullchain.pem" "/home/web/certs/${dir}_cert.pem"
             cp "/etc/letsencrypt/live/${dir}/privkey.pem" "/home/web/certs/${dir}_key.pem"
-            chmod 644 "/home/web/certs/${dir}_cert.pem"
-            chmod 600 "/home/web/certs/${dir}_key.pem"
-            log_ok "从 certbot 路径恢复证书: ${dir}"
             echo "$dir"
-            return 0
+            0
         fi
     done
+    1
+}
 
-    return 1
+ensure_cert_exists() {
+    local domain="$1"
+    [ -f "/home/web/certs/${domain}_cert.pem" ] [ -f "/home/web/certs/${domain}_key.pem" ] 0
+    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
+        mkdir -p /home/web/certs
+        cp "/etc/letsencrypt/live/${domain}/fullchain.pem" "/home/web/certs/${domain}_cert.pem"
+        cp "/etc/letsencrypt/live/${domain}/privkey.pem" "/home/web/certs/${domain}_key.pem"
+        chmod 644 "/home/web/certs/${domain}_cert.pem"
+        chmod 600 "/home/web/certs/${domain}_key.pem"
+        log_ok "从 certbot 路径恢复证书: ${domain}"
+        0
+    fi
+    1
 }
 
 deploy_nginx_kejilion() {
@@ -969,18 +964,21 @@ main_deploy() {
         set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
         DOMAIN="${DOMAIN:-localhost}"
         SSL_MODE="${SSL_MODE:-http}"
-        # 自动检测证书
-        cert_domain=$(find_certs_and_domain "$DOMAIN")
-        if [ -n "$cert_domain" ]; then
-            if [ "$DOMAIN" != "$cert_domain" ]; then
-                log_ok "检测到证书域名: ${cert_domain}"
-                DOMAIN="$cert_domain"
-                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
+        # 如果已有有效域名，遍历证书
+        if [ "$DOMAIN" "localhost" ] [ -n "$DOMAIN" ]; then
+            if [ "$SSLODE" = "http" ] ensure_cert_exists "$DOMAIN"; then
+                log_ok "检测到 SSL 证书，自动启用 HTTPS"
+                SSLODE="https"
+                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE"
             fi
-            if [ "$SSL_MODE" != "https" ]; then
-                log_info "自动启用 HTTPS"
-                SSL_MODE="https"
-                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+        else
+            cert_domain=$(find_certs_and_domain "")
+            if [ -n "$cert_domain" ]; then
+                log_ok "从证书反推域名: ${cert_domain}"
+                DOMAIN="$cert_domain"
+                SSLODE="https"
+                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
+                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE"
             fi
         fi
     else
@@ -1040,18 +1038,21 @@ case "$CMD" in
             DOMAIN="${DOMAIN:-localhost}"
             SSL_MODE="${SSL_MODE:-http}"
         fi
-        # 自动检测证书
-        cert_domain=$(find_certs_and_domain "$DOMAIN")
-        if [ -n "$cert_domain" ]; then
-            if [ "$DOMAIN" != "$cert_domain" ]; then
-                log_ok "检测到证书域名: ${cert_domain}"
-                DOMAIN="$cert_domain"
-                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
+        # 如果已有有效域名，遍历证书
+        if [ "$DOMAIN" "localhost" ] [ -n "$DOMAIN" ]; then
+            if [ "$SSLODE" = "http" ] ensure_cert_exists "$DOMAIN"; then
+                log_ok "检测到 SSL 证书，自动启用 HTTPS"
+                SSLODE="https"
+                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE" 2>/dev/null || true
             fi
-            if [ "$SSL_MODE" != "https" ]; then
-                log_info "自动启用 HTTPS"
-                SSL_MODE="https"
-                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
+        else
+            cert_domain=$(find_certs_and_domain "")
+            if [ -n "$cert_domain" ]; then
+                log_ok "从证书反推域名: ${cert_domain}"
+                DOMAIN="$cert_domain"
+                SSLODE="https"
+                sed -i "s/^DOMAIN=.*/DOMAIN=${cert_domain}/" "$ENV_FILE"
+                sed -i 's/^SSLODE=.*/SSLODE=https/' "$ENV_FILE" 2>/dev/null || true
             fi
         fi
         build_frontend
