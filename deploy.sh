@@ -459,8 +459,9 @@ deploy_nginx_kejilion() {
     sed -i "s|{YOUR_DOMAIN}|${DOMAIN}|g" "$target_conf"
 
     if [ "$SSL_MODE" = "http" ]; then
-        # HTTP 模式：return 301 保持注释状态，HTTP server 块直接服务内容
+        # HTTP 模式：注释掉整个 HTTPS 443 块，避免 Nginx 因证书缺失启动失败
         log_info "HTTP 模式（无 SSL 跳转）"
+        sed -i '/^# ---------- HTTPS (443) 主站点 ----------$/,/^}/s/^/#/' "$target_conf"
     else
         # HTTPS 模式：取消注释 return 301，HTTP 请求自动跳转 HTTPS
         sed -i 's|# return 301 https://$host$request_uri;|return 301 https://$host$request_uri;|' "$target_conf"
