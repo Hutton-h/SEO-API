@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Table, Button, Modal, Form, Select, Input, Switch, Tag, Space,
-  Typography, message, Popconfirm, Tooltip, Row, Col, Statistic,
+  Typography, message, Popconfirm, Tooltip, Row, Col, Statistic, Spin, Empty, Alert,
 } from 'antd';
 import {
   PlusOutlined, PlayCircleOutlined, PauseCircleOutlined, DeleteOutlined,
@@ -9,7 +9,8 @@ import {
   CloseCircleOutlined, SyncOutlined, ScheduleOutlined,
 } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
-import type { ScheduledTask } from '@/services/schedule';
+import { useStore } from '@/store';
+import { scheduleAPI, ScheduledTask } from '@/services/schedule';
 import dayjs from 'dayjs';
 
 const { Text, Title } = Typography;
@@ -34,24 +35,44 @@ const cronPresets = [
   { label: '每30分钟', value: '*/30 * * * *' },
 ];
 
-const mockTasks: ScheduledTask[] = [
-  { id: '1', name: '主站爬虫', type: 'crawler', typeLabel: '爬虫任务', cronExpression: '0 2 * * *', status: 'active', lastRunAt: '2024-07-15T02:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T02:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-01' },
-  { id: '2', name: '关键词排名检测', type: 'ranking', typeLabel: '排名检测', cronExpression: '0 8 * * *', status: 'active', lastRunAt: '2024-07-15T08:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T08:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-15' },
-  { id: '3', name: '外链监控', type: 'backlink', typeLabel: '外链检查', cronExpression: '0 */6 * * *', status: 'active', lastRunAt: '2024-07-15T12:00:00', lastRunStatus: 'failed', nextRunAt: '2024-07-15T18:00:00', projectId: 'p2', projectName: '电商平台', createdAt: '2024-07-01' },
-  { id: '4', name: '周报自动生成', type: 'weekly_report', typeLabel: '周报生成', cronExpression: '0 9 * * 1', status: 'paused', lastRunAt: '2024-07-08T09:00:00', lastRunStatus: 'success', nextRunAt: null, projectId: 'p1', projectName: '主站优化', createdAt: '2024-07-05' },
-  { id: '5', name: '竞品变化检测', type: 'competitor_check', typeLabel: '竞品检测', cronExpression: '0 10 * * *', status: 'active', lastRunAt: '2024-07-15T10:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T10:00:00', projectId: 'p3', projectName: '博客站', createdAt: '2024-07-10' },
-  { id: '6', name: '宕机检查', type: 'downtime_check', typeLabel: '宕机检查', cronExpression: '*/5 * * * *', status: 'active', lastRunAt: '2024-07-15T14:55:00', lastRunStatus: 'success', nextRunAt: '2024-07-15T15:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-07-12' },
-];
-
 const Schedule: React.FC = () => {
-  const [tasks, setTasks] = useState(mockTasks);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleRefresh = () => { setLoading(true); setTimeout(() => setLoading(false), 800); };
+  const loadTasks = useCallback(async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await scheduleAPI.getTasks();
+      const result = (res as any).data || res;
+      setTasks(Array.isArray(result) ? result : result.data || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载任务列表失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadTasks();
+  }, [projectId, loadTasks]);
+
+  const handleRefresh = async () => {
+    await loadTasks();
+  };
 
   const handleAdd = () => {
     setEditingTask(null);
@@ -62,67 +83,83 @@ const Schedule: React.FC = () => {
 
   const handleEdit = (record: any) => {
     setEditingTask(record);
-    form.setFieldsValue(record);
+    form.setFieldsValue({
+      ...record,
+      status: record.status === 'active',
+    });
     setModalVisible(true);
   };
 
-  const handleSubmit = () => {
-    form.validateFields().then((values) => {
+  const handleSubmit = async () => {
+    try {
+      const values = await form.validateFields();
+      setSubmitting(true);
       const typeOption = taskTypeOptions.find((t) => t.value === values.type);
+      const payload = {
+        ...values,
+        status: values.status ? 'active' : 'paused',
+        typeLabel: typeOption?.label || values.type,
+        projectId: projectId || '',
+      };
+
       if (editingTask) {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === editingTask.id
-              ? { ...t, ...values, typeLabel: typeOption?.label || values.type }
-              : t
-          )
-        );
+        await scheduleAPI.updateTask(editingTask.id, payload);
         message.success('任务更新成功');
       } else {
-        const newTask = {
-          id: Date.now().toString(),
-          ...values,
-          typeLabel: typeOption?.label || values.type,
-          lastRunAt: null,
-          lastRunStatus: null,
-          nextRunAt: null,
-          createdAt: dayjs().format('YYYY-MM-DD'),
-        };
-        setTasks((prev) => [newTask, ...prev]);
+        await scheduleAPI.createTask(payload);
         message.success('任务创建成功');
       }
       setModalVisible(false);
-    });
+      await loadTasks();
+    } catch (err: any) {
+      if (err?.response) {
+        const msg = err?.response?.data?.error?.message || err?.message || '操作失败';
+        message.error(msg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    message.success('任务已删除');
+  const handleDelete = async (id: string) => {
+    try {
+      await scheduleAPI.deleteTask(id);
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      message.success('任务已删除');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '删除失败';
+      message.error(msg);
+    }
   };
 
-  const handleToggle = (id: string, checked: boolean) => {
-    setTasks((prev) =>
-      prev.map((t) =>
-        t.id === id ? { ...t, status: checked ? 'active' : 'paused' } : t
-      )
-    );
-    message.success(checked ? '任务已启用' : '任务已暂停');
-  };
-
-  const handleRunNow = (id: string) => {
-    setRunningId(id);
-    message.loading({ content: '正在执行...', key: 'run' });
-    setTimeout(() => {
-      setRunningId(null);
+  const handleToggle = async (id: string, checked: boolean) => {
+    try {
+      await scheduleAPI.toggleTask(id, checked);
       setTasks((prev) =>
         prev.map((t) =>
-          t.id === id
-            ? { ...t, lastRunAt: dayjs().toISOString(), lastRunStatus: 'success' }
-            : t
+          t.id === id ? { ...t, status: checked ? 'active' : 'paused' } : t
         )
       );
-      message.success({ content: '任务执行完成', key: 'run' });
-    }, 2000);
+      message.success(checked ? '任务已启用' : '任务已暂停');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '操作失败';
+      message.error(msg);
+    }
+  };
+
+  const handleRunNow = async (id: string) => {
+    setRunningId(id);
+    try {
+      await scheduleAPI.runTaskNow(id);
+      message.success('任务执行完成');
+      // 刷新任务列表以更新状态
+      await loadTasks();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '执行失败';
+      message.error(msg);
+    } finally {
+      setRunningId(null);
+    }
   };
 
   const columns = [
@@ -178,6 +215,47 @@ const Schedule: React.FC = () => {
     },
   ];
 
+  // ---- 渲染 ----
+
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="定时任务"
+          subtitle="管理自动化定时任务调度"
+        />
+        <Empty description="请先选择一个项目" />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="定时任务"
+          subtitle="管理自动化定时任务调度"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="定时任务"
+          subtitle="管理自动化定时任务调度"
+          actions={[
+            { label: '重试', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+          ]}
+        />
+        <Alert type="error" message="加载失败" description={error} showIcon />
+      </div>
+    );
+  }
+
   const activeCount = tasks.filter((t) => t.status === 'active').length;
   const pausedCount = tasks.filter((t) => t.status === 'paused').length;
   const failedCount = tasks.filter((t) => t.lastRunStatus === 'failed').length;
@@ -204,12 +282,16 @@ const Schedule: React.FC = () => {
           <Card><Statistic title="失败任务" value={failedCount} valueStyle={{ color: failedCount > 0 ? '#ff4d4f' : '#52c41a' }} prefix={<CloseCircleOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card><Statistic title="今日执行" value={8} prefix={<PlayCircleOutlined style={{ color: '#1677ff' }} />} /></Card>
+          <Card><Statistic title="今日执行" value={tasks.filter((t) => t.lastRunAt && dayjs(t.lastRunAt).isSame(dayjs(), 'day')).length} prefix={<PlayCircleOutlined style={{ color: '#1677ff' }} />} /></Card>
         </Col>
       </Row>
 
       <Card title="任务列表">
-        <Table columns={columns} dataSource={tasks} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
+        {tasks.length === 0 ? (
+          <Empty description="暂无定时任务，点击「新增任务」开始创建" />
+        ) : (
+          <Table columns={columns} dataSource={tasks} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
+        )}
       </Card>
 
       <Modal
@@ -217,6 +299,7 @@ const Schedule: React.FC = () => {
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={handleSubmit}
+        confirmLoading={submitting}
         width={600}
         destroyOnClose
       >

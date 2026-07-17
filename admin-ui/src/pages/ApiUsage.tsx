@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Table, Statistic, Typography, Space, Button, Tag,
-  Progress, Divider, Slider, Switch, Select, InputNumber, message, Alert,
+  Progress, Divider, Slider, Switch, Select, InputNumber, message, Alert, Spin, Empty,
 } from 'antd';
 import {
   DollarOutlined, ApiOutlined, RiseOutlined, FallOutlined,
@@ -15,58 +15,177 @@ import { BarChart, LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { apiUsageAPI } from '@/services/apiUsage';
 import dayjs from 'dayjs';
 
 echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text, Title } = Typography;
 
-const mockStats = {
-  totalCalls: 284500,
-  totalCost: 1245.80,
-  dailyAvgCalls: 9483,
-  estimatedMonthlyCost: 2580.00,
-  lastMonthCost: 1120.50,
-  costChange: 11.2,
-};
+interface StatsData {
+  totalCalls: number;
+  totalCost: number;
+  dailyAvgCalls: number;
+  estimatedMonthlyCost: number;
+  lastMonthCost: number;
+  costChange: number;
+}
 
-const mockServiceBreakdown = [
-  { service: 'DataForSEO', calls: 125000, cost: 450.00, unitPrice: 0.0036, percentage: 36.1 },
-  { service: 'OpenAI (GPT-4)', calls: 45000, cost: 380.00, unitPrice: 0.0084, percentage: 30.5 },
-  { service: 'ValueSERP', calls: 68000, cost: 210.00, unitPrice: 0.0031, percentage: 16.9 },
-  { service: 'Google APIs', calls: 35000, cost: 145.80, unitPrice: 0.0042, percentage: 11.7 },
-  { service: '其他服务', calls: 11500, cost: 60.00, unitPrice: 0.0052, percentage: 4.8 },
-];
+interface ServiceBreakdownItem {
+  service: string;
+  calls: number;
+  cost: number;
+  unitPrice: number;
+  percentage: number;
+}
 
-const mockDailyUsage = Array.from({ length: 30 }, (_, i) => ({
-  date: dayjs('2024-07-01').add(i, 'day').format('MM-DD'),
-  calls: Math.floor(Math.random() * 5000) + 6000,
-  cost: Math.floor(Math.random() * 30) + 25,
-}));
+interface DailyUsageItem {
+  date: string;
+  calls: number;
+  cost: number;
+}
+
+interface UsageAlert {
+  enabled: boolean;
+  threshold: number;
+  channels: string[];
+}
 
 const ApiUsage: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const [alertThreshold, setAlertThreshold] = useState(80);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<StatsData | null>(null);
+  const [serviceBreakdown, setServiceBreakdown] = useState<ServiceBreakdownItem[]>([]);
+  const [dailyUsage, setDailyUsage] = useState<DailyUsageItem[]>([]);
+  const [alertConfig, setAlertConfig] = useState<UsageAlert>({
+    enabled: true,
+    threshold: 80,
+    channels: ['email', 'feishu'],
+  });
   const [alertEnabled, setAlertEnabled] = useState(true);
+  const [alertThreshold, setAlertThreshold] = useState(80);
+  const [alertChannels, setAlertChannels] = useState<string[]>(['email', 'feishu']);
+  const [savingAlert, setSavingAlert] = useState(false);
 
-  const handleRefresh = () => { setLoading(true); setTimeout(() => setLoading(false), 800); };
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [statsRes, breakdownRes, dailyRes, alertRes] = await Promise.all([
+        apiUsageAPI.getStats(),
+        apiUsageAPI.getServiceBreakdown(),
+        apiUsageAPI.getDailyUsage(),
+        apiUsageAPI.getUsageAlert(),
+      ]);
 
-  const handleSaveAlert = () => {
-    message.success('用量预警配置已保存');
+      const statsData = (statsRes as any).data || statsRes;
+      const breakdownData = (breakdownRes as any).data || breakdownRes;
+      const dailyData = (dailyRes as any).data || dailyRes;
+      const alertData = (alertRes as any).data || alertRes;
+
+      setStats(statsData);
+      setServiceBreakdown(Array.isArray(breakdownData) ? breakdownData : breakdownData.data || []);
+      setDailyUsage(Array.isArray(dailyData) ? dailyData : dailyData.data || []);
+
+      const alertInfo = alertData || alertRes;
+      setAlertConfig(alertInfo);
+      setAlertEnabled(alertInfo.enabled ?? true);
+      setAlertThreshold(alertInfo.threshold ?? 80);
+      setAlertChannels(alertInfo.channels || ['email', 'feishu']);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleRefresh = () => {
+    loadData();
   };
+
+  const handleSaveAlert = async () => {
+    setSavingAlert(true);
+    try {
+      await apiUsageAPI.updateUsageAlert({
+        enabled: alertEnabled,
+        threshold: alertThreshold,
+        channels: alertChannels,
+      });
+      message.success('用量预警配置已保存');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '保存失败';
+      message.error(msg);
+    } finally {
+      setSavingAlert(false);
+    }
+  };
+
+  // ---- Loading state ----
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="API 用量与计费"
+          subtitle="监控 API 调用量、费用与成本趋势"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  // ---- Error state ----
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="API 用量与计费"
+          subtitle="监控 API 调用量、费用与成本趋势"
+        />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          action={
+            <Button onClick={handleRefresh} size="small">
+              重试
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // ---- Empty state ----
+  if (!stats) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="API 用量与计费"
+          subtitle="监控 API 调用量、费用与成本趋势"
+        />
+        <Empty description="暂无 API 用量数据" />
+      </div>
+    );
+  }
 
   const barOption = {
     tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e8e8e8', textStyle: { color: '#333' }, axisPointer: { type: 'shadow' } },
     legend: { data: ['调用次数', '费用'], bottom: 0 },
     grid: { left: '3%', right: '4%', bottom: '12%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: mockServiceBreakdown.map((d) => d.service), axisLabel: { color: '#999', rotate: 15 } },
+    xAxis: { type: 'category', data: serviceBreakdown.map((d) => d.service), axisLabel: { color: '#999', rotate: 15 } },
     yAxis: [
       { type: 'value', name: '次', axisLabel: { color: '#999', formatter: (v: number) => `${(v / 1000).toFixed(0)}k` }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
       { type: 'value', name: '$', axisLabel: { color: '#999', formatter: '${value}' }, splitLine: { show: false } },
     ],
     series: [
-      { name: '调用次数', type: 'bar', data: mockServiceBreakdown.map((d) => d.calls), itemStyle: { color: '#1677ff', borderRadius: [6, 6, 0, 0] }, barGap: '20%' },
-      { name: '费用', type: 'bar', yAxisIndex: 1, data: mockServiceBreakdown.map((d) => d.cost), itemStyle: { color: '#52c41a', borderRadius: [6, 6, 0, 0] } },
+      { name: '调用次数', type: 'bar', data: serviceBreakdown.map((d) => d.calls), itemStyle: { color: '#1677ff', borderRadius: [6, 6, 0, 0] }, barGap: '20%' },
+      { name: '费用', type: 'bar', yAxisIndex: 1, data: serviceBreakdown.map((d) => d.cost), itemStyle: { color: '#52c41a', borderRadius: [6, 6, 0, 0] } },
     ],
   };
 
@@ -74,14 +193,14 @@ const ApiUsage: React.FC = () => {
     tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e8e8e8', textStyle: { color: '#333' } },
     legend: { data: ['调用次数', '费用'], bottom: 0 },
     grid: { left: '3%', right: '4%', bottom: '12%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: mockDailyUsage.map((d) => d.date), axisLabel: { color: '#999', interval: 4 } },
+    xAxis: { type: 'category', data: dailyUsage.map((d) => d.date), axisLabel: { color: '#999', interval: 4 } },
     yAxis: [
       { type: 'value', name: '次', axisLabel: { color: '#999', formatter: (v: number) => `${(v / 1000).toFixed(0)}k` }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
       { type: 'value', name: '$', axisLabel: { color: '#999', formatter: '${value}' }, splitLine: { show: false } },
     ],
     series: [
-      { name: '调用次数', type: 'line', data: mockDailyUsage.map((d) => d.calls), smooth: true, lineStyle: { color: '#1677ff', width: 2 }, itemStyle: { color: '#1677ff' }, symbol: 'none', areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(22,119,255,0.15)' }, { offset: 1, color: 'rgba(22,119,255,0.02)' }] } } },
-      { name: '费用', type: 'line', yAxisIndex: 1, data: mockDailyUsage.map((d) => d.cost), smooth: true, lineStyle: { color: '#52c41a', width: 2, type: 'dashed' }, itemStyle: { color: '#52c41a' }, symbol: 'none' },
+      { name: '调用次数', type: 'line', data: dailyUsage.map((d) => d.calls), smooth: true, lineStyle: { color: '#1677ff', width: 2 }, itemStyle: { color: '#1677ff' }, symbol: 'none', areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(22,119,255,0.15)' }, { offset: 1, color: 'rgba(22,119,255,0.02)' }] } } },
+      { name: '费用', type: 'line', yAxisIndex: 1, data: dailyUsage.map((d) => d.cost), smooth: true, lineStyle: { color: '#52c41a', width: 2, type: 'dashed' }, itemStyle: { color: '#52c41a' }, symbol: 'none' },
     ],
   };
 
@@ -100,7 +219,7 @@ const ApiUsage: React.FC = () => {
     },
   ];
 
-  const costChange = mockStats.costChange;
+  const costChange = stats.costChange;
   const costChangeColor = costChange >= 0 ? '#ff4d4f' : '#52c41a';
   const costChangeIcon = costChange >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />;
 
@@ -120,7 +239,7 @@ const ApiUsage: React.FC = () => {
           <Card hoverable style={{ borderTop: '3px solid #1677ff' }}>
             <Statistic
               title="本月总调用次数"
-              value={mockStats.totalCalls}
+              value={stats.totalCalls}
               valueStyle={{ color: '#1677ff', fontSize: 28 }}
               prefix={<ApiOutlined />}
               suffix={<Text type="secondary" style={{ fontSize: 13 }}>次</Text>}
@@ -131,7 +250,7 @@ const ApiUsage: React.FC = () => {
           <Card hoverable style={{ borderTop: '3px solid #52c41a' }}>
             <Statistic
               title="本月总费用"
-              value={mockStats.totalCost}
+              value={stats.totalCost}
               precision={2}
               valueStyle={{ color: '#52c41a', fontSize: 28 }}
               prefix={<DollarOutlined />}
@@ -143,7 +262,7 @@ const ApiUsage: React.FC = () => {
           <Card hoverable style={{ borderTop: '3px solid #722ed1' }}>
             <Statistic
               title="日均调用"
-              value={mockStats.dailyAvgCalls}
+              value={stats.dailyAvgCalls}
               valueStyle={{ color: '#722ed1', fontSize: 28 }}
               prefix={<BarChartOutlined />}
               suffix={<Text type="secondary" style={{ fontSize: 13 }}>次/天</Text>}
@@ -154,7 +273,7 @@ const ApiUsage: React.FC = () => {
           <Card hoverable style={{ borderTop: `3px solid ${costChangeColor}` }}>
             <Statistic
               title="预估月费"
-              value={mockStats.estimatedMonthlyCost}
+              value={stats.estimatedMonthlyCost}
               precision={2}
               valueStyle={{ color: costChangeColor, fontSize: 28 }}
               prefix={<DollarOutlined />}
@@ -183,7 +302,7 @@ const ApiUsage: React.FC = () => {
                   <div style={{ background: '#f5f5f5', borderRadius: 12, padding: '20px 16px' }}>
                     <Text type="secondary">上月费用</Text>
                     <div style={{ fontSize: 28, fontWeight: 700, color: '#595959', marginTop: 8 }}>
-                      ${mockStats.lastMonthCost.toFixed(2)}
+                      ${stats.lastMonthCost.toFixed(2)}
                     </div>
                   </div>
                 </Col>
@@ -191,7 +310,7 @@ const ApiUsage: React.FC = () => {
                   <div style={{ background: `${costChangeColor}10`, borderRadius: 12, padding: '20px 16px', border: `1px solid ${costChangeColor}30` }}>
                     <Text type="secondary">本月预估</Text>
                     <div style={{ fontSize: 28, fontWeight: 700, color: costChangeColor, marginTop: 8 }}>
-                      ${mockStats.estimatedMonthlyCost.toFixed(2)}
+                      ${stats.estimatedMonthlyCost.toFixed(2)}
                     </div>
                   </div>
                 </Col>
@@ -200,7 +319,7 @@ const ApiUsage: React.FC = () => {
               <div style={{ textAlign: 'center' }}>
                 <Text type="secondary">预计超额</Text>
                 <div style={{ fontSize: 32, fontWeight: 700, color: costChangeColor, marginTop: 4 }}>
-                  ${((mockStats.estimatedMonthlyCost - mockStats.lastMonthCost).toFixed(2))}
+                  ${((stats.estimatedMonthlyCost - stats.lastMonthCost).toFixed(2))}
                 </div>
                 <Text style={{ fontSize: 12, color: costChangeColor }}>
                   {costChangeIcon} {Math.abs(costChange)}% 变化
@@ -246,7 +365,8 @@ const ApiUsage: React.FC = () => {
                 <Select
                   mode="multiple"
                   style={{ width: '100%' }}
-                  defaultValue={['email', 'feishu']}
+                  value={alertChannels}
+                  onChange={setAlertChannels}
                   options={[
                     { value: 'email', label: '邮件' },
                     { value: 'feishu', label: '飞书' },
@@ -257,7 +377,14 @@ const ApiUsage: React.FC = () => {
                 />
               </div>
 
-              <Button type="primary" block icon={<ThunderboltOutlined />} onClick={handleSaveAlert} disabled={!alertEnabled}>
+              <Button
+                type="primary"
+                block
+                icon={<ThunderboltOutlined />}
+                onClick={handleSaveAlert}
+                loading={savingAlert}
+                disabled={!alertEnabled}
+              >
                 保存预警设置
               </Button>
             </div>
@@ -265,7 +392,7 @@ const ApiUsage: React.FC = () => {
 
           <Card title="费用预估" style={{ marginTop: 16 }}>
             <Alert
-              message="按当前用量趋势，本月预估费用为 $2,580.00"
+              message={`按当前用量趋势，本月预估费用为 $${stats.estimatedMonthlyCost.toFixed(2)}`}
               type={costChange >= 0 ? 'warning' : 'success'}
               showIcon
               icon={<WarningOutlined />}
@@ -273,7 +400,7 @@ const ApiUsage: React.FC = () => {
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
               <Text type="secondary">日预算</Text>
-              <Text>$86.00</Text>
+              <Text>${(stats.estimatedMonthlyCost / 30).toFixed(2)}</Text>
             </div>
             <Progress percent={72} strokeColor="#1677ff" size="small" format={() => '72%'} />
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, marginBottom: 4 }}>
@@ -288,16 +415,16 @@ const ApiUsage: React.FC = () => {
       <Card title="费用明细" style={{ marginTop: 24 }}>
         <Table
           columns={costColumns}
-          dataSource={mockServiceBreakdown}
+          dataSource={serviceBreakdown}
           rowKey="service"
           pagination={false}
           size="middle"
           summary={() => (
             <Table.Summary.Row>
               <Table.Summary.Cell index={0}><Text strong>合计</Text></Table.Summary.Cell>
-              <Table.Summary.Cell index={1}><Text strong>{mockServiceBreakdown.reduce((a, b) => a + b.calls, 0).toLocaleString()}</Text></Table.Summary.Cell>
+              <Table.Summary.Cell index={1}><Text strong>{serviceBreakdown.reduce((a, b) => a + b.calls, 0).toLocaleString()}</Text></Table.Summary.Cell>
               <Table.Summary.Cell index={2}><Text>-</Text></Table.Summary.Cell>
-              <Table.Summary.Cell index={3}><Text strong style={{ color: '#1677ff', fontSize: 16 }}>${mockServiceBreakdown.reduce((a, b) => a + b.cost, 0).toFixed(2)}</Text></Table.Summary.Cell>
+              <Table.Summary.Cell index={3}><Text strong style={{ color: '#1677ff', fontSize: 16 }}>${serviceBreakdown.reduce((a, b) => a + b.cost, 0).toFixed(2)}</Text></Table.Summary.Cell>
               <Table.Summary.Cell index={4}><Text strong>100%</Text></Table.Summary.Cell>
             </Table.Summary.Row>
           )}

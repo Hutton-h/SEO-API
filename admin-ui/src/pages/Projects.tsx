@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Button, Modal, Form, Input, Select, Space, Tag, Dropdown, Typography, message, Popconfirm, Empty,
+  Card, Button, Modal, Form, Input, Select, Space, Tag, Dropdown, Typography, message, Popconfirm, Empty, Alert, Spin,
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined,
-  GlobalOutlined, SettingOutlined, EllipsisOutlined,
+  GlobalOutlined, SettingOutlined, EllipsisOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
+import { projectAPI } from '@/services/project';
 import dayjs from 'dayjs';
 
 const { Text, Paragraph } = Typography;
@@ -17,6 +18,18 @@ interface ProjectFormData {
   domain: string;
   description?: string;
   crawlFrequency?: 'daily' | 'weekly' | 'monthly';
+}
+
+interface Project {
+  id: string;
+  name: string;
+  domain: string;
+  status: 'active' | 'paused' | 'archived';
+  createdAt: string;
+  description?: string;
+  settings?: {
+    crawlFrequency?: string;
+  };
 }
 
 const statusColors: Record<string, string> = {
@@ -32,11 +45,37 @@ const statusLabels: Record<string, string> = {
 };
 
 const Projects: React.FC = () => {
-  const { projects, addProject, removeProject, updateProject } = useStore();
+  const { projects, setProjects, addProject, removeProject, updateProject } = useStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ProjectFormData>();
+
+  const loadProjects = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await projectAPI.getProjects();
+      const result = (res as any).data || res;
+      const data = Array.isArray(result) ? result : result.data || [];
+      setProjects?.(data);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [setProjects]);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  const handleRefresh = () => {
+    loadProjects();
+  };
 
   const handleAdd = () => {
     setEditingProject(null);
@@ -60,44 +99,104 @@ const Projects: React.FC = () => {
 
   const handleSubmit = async () => {
     try {
-      setLoading(true);
+      setSaving(true);
       const values = await form.validateFields();
       if (editingProject) {
-        updateProject(editingProject, {
+        const res = await projectAPI.updateProject(editingProject, {
           name: values.name,
           domain: values.domain,
-        });
-        message.success('项目已更新');
-      } else {
-        addProject({
-          id: Date.now().toString(),
-          name: values.name,
-          domain: values.domain,
-          status: 'active',
-          createdAt: new Date().toISOString(),
+          description: values.description,
           settings: {
             crawlFrequency: values.crawlFrequency || 'weekly',
           },
         });
+        const updatedData = (res as any).data || res;
+        updateProject?.(editingProject, updatedData);
+        message.success('项目已更新');
+      } else {
+        const res = await projectAPI.createProject({
+          name: values.name,
+          domain: values.domain,
+          description: values.description,
+          settings: {
+            crawlFrequency: values.crawlFrequency || 'weekly',
+          },
+        });
+        const newData = (res as any).data || res;
+        addProject?.(newData);
         message.success('项目创建成功');
       }
       setModalOpen(false);
-    } catch {
-      // form validation error
+    } catch (err: any) {
+      if (err?.errorFields) {
+        // form validation error - do nothing
+        return;
+      }
+      const msg = err?.response?.data?.error?.message || err?.message || '操作失败';
+      message.error(msg);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleDelete = (id: string) => {
-    removeProject(id);
-    message.success('项目已删除');
+  const handleDelete = async (id: string) => {
+    try {
+      await projectAPI.deleteProject(id);
+      removeProject?.(id);
+      message.success('项目已删除');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '删除失败';
+      message.error(msg);
+    }
   };
 
-  const handleStatusChange = (id: string, status: 'active' | 'paused' | 'archived') => {
-    updateProject(id, { status });
-    message.success(`项目状态已更新为 ${statusLabels[status]}`);
+  const handleStatusChange = async (id: string, status: 'active' | 'paused' | 'archived') => {
+    try {
+      const res = await projectAPI.updateProject(id, { status });
+      const updatedData = (res as any).data || res;
+      updateProject?.(id, updatedData);
+      message.success(`项目状态已更新 ${statusLabels[status]}`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '状态更新失败';
+      message.error(msg);
+    }
   };
+
+  // ---- Loading state ----
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="项目管理"
+          subtitle="管理您的 SEO 项目"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  // ---- Error state ----
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="项目管理"
+          subtitle="管理您的 SEO 项目"
+        />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          action={
+            <Button onClick={handleRefresh} size="small">
+              重试
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -105,12 +204,13 @@ const Projects: React.FC = () => {
         title="项目管理"
         subtitle={`共 ${projects.length} 个项目`}
         actions={[
+          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
           { label: '新建项目', type: 'primary', icon: <PlusOutlined />, onClick: handleAdd },
         ]}
       />
 
       <div className="project-grid">
-        {projects.length === 0 && (
+        {projects.length === 0 ? (
           <div style={{ gridColumn: '1 / -1', padding: '80px 0' }}>
             <Empty description="暂无项目">
               <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
@@ -118,100 +218,101 @@ const Projects: React.FC = () => {
               </Button>
             </Empty>
           </div>
-        )}
-        {projects.map((project) => (
-          <Card
-            key={project.id}
-            hoverable
-            style={{ borderTop: `3px solid ${project.status === 'active' ? '#1677ff' : project.status === 'paused' ? '#faad14' : '#d9d9d9'}` }}
-            actions={[
-              <EditOutlined key="edit" onClick={() => handleEdit(project.id)} />,
-              <Popconfirm
-                key="delete"
-                title="确定删除此项目？"
-                description="删除后数据不可恢复"
-                onConfirm={() => handleDelete(project.id)}
-                okText="确定"
-                cancelText="取消"
-              >
-                <DeleteOutlined style={{ color: '#ff4d4f' }} />
-              </Popconfirm>,
-              <Dropdown
-                key="more"
-                menu={{
-                  items: [
-                    {
-                      key: 'active',
-                      label: '设为运行中',
-                      icon: <span style={{ color: '#52c41a' }}>&#9679;</span>,
-                      disabled: project.status === 'active',
-                      onClick: () => handleStatusChange(project.id, 'active'),
-                    },
-                    {
-                      key: 'paused',
-                      label: '设为暂停',
-                      icon: <span style={{ color: '#faad14' }}>&#9679;</span>,
-                      disabled: project.status === 'paused',
-                      onClick: () => handleStatusChange(project.id, 'paused'),
-                    },
-                    {
-                      key: 'archived',
-                      label: '设为归档',
-                      icon: <span style={{ color: '#d9d9d9' }}>&#9679;</span>,
-                      disabled: project.status === 'archived',
-                      onClick: () => handleStatusChange(project.id, 'archived'),
-                    },
-                  ],
-                }}
-                trigger={['click']}
-              >
-                <EllipsisOutlined />
-              </Dropdown>,
-            ]}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-              <div
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 8,
-                  background: '#1677ff15',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 20,
-                  color: '#1677ff',
-                  flexShrink: 0,
-                }}
-              >
-                <GlobalOutlined />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text strong style={{ fontSize: 16 }}>
-                    {project.name}
-                  </Text>
-                  <Tag color={statusColors[project.status]}>{statusLabels[project.status]}</Tag>
-                </div>
-                <Paragraph
-                  type="secondary"
-                  style={{ margin: '4px 0', fontSize: 13 }}
-                  ellipsis
+        ) : (
+          projects.map((project) => (
+            <Card
+              key={project.id}
+              hoverable
+              style={{ borderTop: `3px solid ${project.status === 'active' ? '#1677ff' : project.status === 'paused' ? '#faad14' : '#d9d9d9'}` }}
+              actions={[
+                <EditOutlined key="edit" onClick={() => handleEdit(project.id)} />,
+                <Popconfirm
+                  key="delete"
+                  title="确定删除此项目？"
+                  description="删除后数据不可恢复"
+                  onConfirm={() => handleDelete(project.id)}
+                  okText="确定"
+                  cancelText="取消"
                 >
-                  {project.domain}
-                </Paragraph>
-                <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    <SettingOutlined /> {(project as any).settings?.crawlFrequency || 'weekly'} 爬取
-                  </Text>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    创建于 {dayjs(project.createdAt).format('YYYY-MM-DD')}
-                  </Text>
+                  <DeleteOutlined style={{ color: '#ff4d4f' }} />
+                </Popconfirm>,
+                <Dropdown
+                  key="more"
+                  menu={{
+                    items: [
+                      {
+                        key: 'active',
+                        label: '设为运行中',
+                        icon: <span style={{ color: '#52c41a' }}>&#9679;</span>,
+                        disabled: project.status === 'active',
+                        onClick: () => handleStatusChange(project.id, 'active'),
+                      },
+                      {
+                        key: 'paused',
+                        label: '设为暂停',
+                        icon: <span style={{ color: '#faad14' }}>&#9679;</span>,
+                        disabled: project.status === 'paused',
+                        onClick: () => handleStatusChange(project.id, 'paused'),
+                      },
+                      {
+                        key: 'archived',
+                        label: '设为归档',
+                        icon: <span style={{ color: '#d9d9d9' }}>&#9679;</span>,
+                        disabled: project.status === 'archived',
+                        onClick: () => handleStatusChange(project.id, 'archived'),
+                      },
+                    ],
+                  }}
+                  trigger={['click']}
+                >
+                  <EllipsisOutlined />
+                </Dropdown>,
+              ]}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
+                    background: '#1677ff15',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 20,
+                    color: '#1677ff',
+                    flexShrink: 0,
+                  }}
+                >
+                  <GlobalOutlined />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text strong style={{ fontSize: 16 }}>
+                      {project.name}
+                    </Text>
+                    <Tag color={statusColors[project.status]}>{statusLabels[project.status]}</Tag>
+                  </div>
+                  <Paragraph
+                    type="secondary"
+                    style={{ margin: '4px 0', fontSize: 13 }}
+                    ellipsis
+                  >
+                    {project.domain}
+                  </Paragraph>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      <SettingOutlined /> {(project as any).settings?.crawlFrequency || 'weekly'} 爬取
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      创建于 {dayjs(project.createdAt).format('YYYY-MM-DD')}
+                    </Text>
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          ))
+        )}
       </div>
 
       <Modal
@@ -219,7 +320,7 @@ const Projects: React.FC = () => {
         open={modalOpen}
         onOk={handleSubmit}
         onCancel={() => setModalOpen(false)}
-        confirmLoading={loading}
+        confirmLoading={saving}
         okText={editingProject ? '保存' : '创建'}
         cancelText="取消"
         width={520}

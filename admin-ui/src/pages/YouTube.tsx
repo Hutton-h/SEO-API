@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Progress,
+  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Progress, Empty, Spin, Alert, message,
 } from 'antd';
 import {
   YoutubeOutlined, ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined,
@@ -11,50 +11,92 @@ import * as echarts from 'echarts/core';
 import { BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import { useStore } from '@/store';
+import { youtubeAPI } from '@/services/youtube';
+import type { YouTubeKeyword, YouTubeVideo } from '@/services/youtube';
 import PageHeader from '@/components/PageHeader';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, CanvasRenderer]);
 
 const { Text } = Typography;
 
-const mockYouTubeKeywords = [
-  { id: '1', keyword: 'SEO教程', position: 2, previousPosition: 3, change: 1, views: 125000, avgViews: 25000, competition: 'high' },
-  { id: '2', keyword: '网站优化', position: 5, previousPosition: 4, change: -1, views: 89000, avgViews: 18000, competition: 'medium' },
-  { id: '3', keyword: 'SEO入门', position: 1, previousPosition: 1, change: 0, views: 210000, avgViews: 42000, competition: 'high' },
-  { id: '4', keyword: '关键词研究', position: 3, previousPosition: 6, change: 3, views: 67000, avgViews: 13500, competition: 'medium' },
-  { id: '5', keyword: 'SEO工具推荐', position: 7, previousPosition: 5, change: -2, views: 45000, avgViews: 9000, competition: 'low' },
-  { id: '6', keyword: 'Google排名', position: 4, previousPosition: 7, change: 3, views: 78000, avgViews: 15600, competition: 'medium' },
-  { id: '7', keyword: 'SEO审计', position: 8, previousPosition: 9, change: 1, views: 32000, avgViews: 6400, competition: 'low' },
-  { id: '8', keyword: '外链建设', position: 6, previousPosition: 8, change: 2, views: 55000, avgViews: 11000, competition: 'medium' },
-];
-
-const mockVideoStats = [
-  { title: 'SEO完全指南2024', views: 125000, likes: 8500, comments: 1200, watchTime: 45000, position: 2 },
-  { title: '网站排名提升10个技巧', views: 89000, likes: 6200, comments: 890, watchTime: 32000, position: 5 },
-  { title: 'SEO入门教程', views: 210000, likes: 15000, comments: 2100, watchTime: 78000, position: 1 },
-  { title: '关键词研究完整方法', views: 67000, likes: 4500, comments: 650, watchTime: 24000, position: 3 },
-];
-
 const YouTube: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [keywords, setKeywords] = useState<YouTubeKeyword[]>([]);
+  const [videos, setVideos] = useState<YouTubeVideo[]>([]);
 
-  const handleRefresh = () => {
+  const loadData = async () => {
+    if (!projectId) return;
     setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    setError(null);
+    try {
+      const [kwRes, vidRes] = await Promise.all([
+        youtubeAPI.getYouTubeKeywords(projectId),
+        youtubeAPI.getYouTubeVideos(projectId),
+      ]);
+
+      const kwResult = (kwRes as any).data || kwRes;
+      const vidResult = (vidRes as any).data || vidRes;
+
+      setKeywords(Array.isArray(kwResult) ? kwResult : kwResult.data || []);
+      setVideos(Array.isArray(vidResult) ? vidResult : vidResult.data || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [projectId]);
+
+  const handleRefresh = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await youtubeAPI.refreshYouTubeData(projectId);
+      message.success('YouTube 数据刷新成功');
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
+      setError(msg);
+      setLoading(false);
+    }
+  };
+
+  if (!projectId) return <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />;
+  if (loading && !keywords.length && !videos.length) {
+    return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
+  }
+  if (error && !keywords.length && !videos.length) {
+    return <Alert type="error" message="加载失败" description={error} showIcon style={{ margin: '20vh auto', maxWidth: 600 }} />;
+  }
+
+  const totalViews = keywords.reduce((acc, k) => acc + k.views, 0);
+  const totalLikes = videos.reduce((acc, v) => acc + v.likes, 0);
+  const totalComments = videos.reduce((acc, v) => acc + v.comments, 0);
 
   const viewsOption = {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '5%', containLabel: true },
     xAxis: {
       type: 'category',
-      data: mockVideoStats.map((v) => v.title.length > 10 ? v.title.slice(0, 10) + '...' : v.title),
+      data: videos.map((v) => v.title.length > 10 ? v.title.slice(0, 10) + '...' : v.title),
       axisLabel: { color: '#999', rotate: 15 },
     },
     yAxis: { type: 'value', name: '观看量', axisLabel: { color: '#999', formatter: (v: number) => (v / 1000).toFixed(0) + 'k' }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
     series: [
       {
-        type: 'bar', data: mockVideoStats.map((v) => v.views),
+        type: 'bar', data: videos.map((v) => v.views),
         itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#ff0000' }, { offset: 1, color: '#ff4444' }] }, borderRadius: [6, 6, 0, 0] },
         barWidth: '50%',
       },
@@ -108,16 +150,16 @@ const YouTube: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="追踪关键词" value={mockYouTubeKeywords.length} prefix={<YoutubeOutlined style={{ color: '#ff0000' }} />} /></Card>
+          <Card size="small"><Statistic title="追踪关键词" value={keywords.length} prefix={<YoutubeOutlined style={{ color: '#ff0000' }} />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="总观看量" value="701k" prefix={<EyeOutlined />} /></Card>
+          <Card size="small"><Statistic title="总观看量" value={(totalViews / 1000).toFixed(0) + 'k'} prefix={<EyeOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="总点赞" value="34.2k" prefix={<LikeOutlined />} /></Card>
+          <Card size="small"><Statistic title="总点赞" value={(totalLikes / 1000).toFixed(1) + 'k'} prefix={<LikeOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="总评论" value="4.84k" prefix={<CommentOutlined />} /></Card>
+          <Card size="small"><Statistic title="总评论" value={(totalComments / 1000).toFixed(2) + 'k'} prefix={<CommentOutlined />} /></Card>
         </Col>
       </Row>
 
@@ -126,11 +168,11 @@ const YouTube: React.FC = () => {
       </Card>
 
       <Card title="视频排名" style={{ marginBottom: 24 }}>
-        <Table columns={videoColumns} dataSource={mockVideoStats} rowKey="title" pagination={false} size="middle" loading={loading} />
+        <Table columns={videoColumns} dataSource={videos} rowKey="title" pagination={false} size="middle" loading={loading} />
       </Card>
 
       <Card title="关键词排名">
-        <Table columns={keywordColumns} dataSource={mockYouTubeKeywords} rowKey="id" pagination={false} size="middle" loading={loading} />
+        <Table columns={keywordColumns} dataSource={keywords} rowKey="id" pagination={false} size="middle" loading={loading} />
       </Card>
     </div>
   );

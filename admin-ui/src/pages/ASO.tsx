@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Progress,
+  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Progress, Empty, Spin, Alert, message,
 } from 'antd';
 import {
   AppleOutlined, AndroidOutlined, ReloadOutlined, ArrowUpOutlined,
@@ -11,53 +11,90 @@ import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import { useStore } from '@/store';
+import { asoAPI } from '@/services/aso';
+import type { ASOKeyword, ASOTrend } from '@/services/aso';
 import PageHeader from '@/components/PageHeader';
 
 echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text } = Typography;
 
-const mockASOKeywords = [
-  { id: '1', keyword: 'SEO工具', appStore: { position: 3, change: 1 }, googlePlay: { position: 5, change: 2 }, searchVolume: 8500, difficulty: 'medium' },
-  { id: '2', keyword: '网站优化', appStore: { position: 7, change: -1 }, googlePlay: { position: 4, change: 0 }, searchVolume: 6200, difficulty: 'low' },
-  { id: '3', keyword: 'SEO排名', appStore: { position: 2, change: 1 }, googlePlay: { position: 3, change: 1 }, searchVolume: 9800, difficulty: 'high' },
-  { id: '4', keyword: '关键词分析', appStore: { position: 5, change: 0 }, googlePlay: { position: 8, change: -2 }, searchVolume: 5400, difficulty: 'medium' },
-  { id: '5', keyword: 'SEO审计', appStore: { position: 4, change: 2 }, googlePlay: { position: 6, change: 1 }, searchVolume: 4800, difficulty: 'low' },
-  { id: '6', keyword: '网站分析', appStore: { position: 9, change: -3 }, googlePlay: { position: 12, change: 4 }, searchVolume: 7200, difficulty: 'medium' },
-];
-
-const mockTrend = [
-  { date: '01-07', appStore: 8, googlePlay: 10 },
-  { date: '01-14', appStore: 7, googlePlay: 9 },
-  { date: '01-21', appStore: 6, googlePlay: 7 },
-  { date: '01-28', appStore: 5, googlePlay: 6 },
-  { date: '02-04', appStore: 4, googlePlay: 5 },
-  { date: '02-11', appStore: 4, googlePlay: 4 },
-  { date: '02-18', appStore: 3, googlePlay: 4 },
-];
-
 const ASO: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [asoKeywords, setAsoKeywords] = useState<ASOKeyword[]>([]);
+  const [trend, setTrend] = useState<ASOTrend[]>([]);
   const [platform, setPlatform] = useState('all');
 
-  const handleRefresh = () => {
+  const loadData = async () => {
+    if (!projectId) return;
     setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    setError(null);
+    try {
+      const [kwRes, trendRes] = await Promise.all([
+        asoAPI.getASOKeywords(projectId),
+        asoAPI.getASOTrend(projectId),
+      ]);
+
+      const kwResult = (kwRes as any).data || kwRes;
+      const trendResult = (trendRes as any).data || trendRes;
+
+      setAsoKeywords(Array.isArray(kwResult) ? kwResult : kwResult.data || []);
+      setTrend(Array.isArray(trendResult) ? trendResult : trendResult.data || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [projectId]);
+
+  const handleRefresh = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await asoAPI.refreshASOData(projectId);
+      message.success('ASO 数据刷新成功');
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
+      setError(msg);
+      setLoading(false);
+    }
+  };
+
+  if (!projectId) return <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />;
+  if (loading && !asoKeywords.length && !trend.length) {
+    return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
+  }
+  if (error && !asoKeywords.length && !trend.length) {
+    return <Alert type="error" message="加载失败" description={error} showIcon style={{ margin: '20vh auto', maxWidth: 600 }} />;
+  }
 
   const trendOption = {
     tooltip: { trigger: 'axis' },
     legend: { data: ['App Store', 'Google Play'], bottom: 0 },
     grid: { left: '3%', right: '4%', bottom: '12%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: mockTrend.map((d) => d.date), axisLabel: { color: '#999' } },
+    xAxis: { type: 'category', data: trend.map((d) => d.date), axisLabel: { color: '#999' } },
     yAxis: { type: 'value', name: '排名', inverse: true, axisLabel: { color: '#999' }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
     series: [
       {
-        name: 'App Store', type: 'line', data: mockTrend.map((d) => d.appStore),
+        name: 'App Store', type: 'line', data: trend.map((d) => d.appStore),
         smooth: true, lineStyle: { color: '#1677ff', width: 3 }, itemStyle: { color: '#1677ff' }, symbol: 'circle', symbolSize: 6,
       },
       {
-        name: 'Google Play', type: 'line', data: mockTrend.map((d) => d.googlePlay),
+        name: 'Google Play', type: 'line', data: trend.map((d) => d.googlePlay),
         smooth: true, lineStyle: { color: '#52c41a', width: 3 }, itemStyle: { color: '#52c41a' }, symbol: 'circle', symbolSize: 6,
       },
     ],
@@ -106,10 +143,10 @@ const ASO: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="App Store 关键词" value={mockASOKeywords.length} prefix={<AppleOutlined />} /></Card>
+          <Card size="small"><Statistic title="App Store 关键词" value={asoKeywords.length} prefix={<AppleOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="Google Play 关键词" value={mockASOKeywords.length} prefix={<AndroidOutlined />} /></Card>
+          <Card size="small"><Statistic title="Google Play 关键词" value={asoKeywords.length} prefix={<AndroidOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small"><Statistic title="App Store 评分" value={4.6} prefix={<StarOutlined style={{ color: '#faad14' }} />} precision={1} /></Card>
@@ -133,7 +170,7 @@ const ASO: React.FC = () => {
           ]} />
         }
       >
-        <Table columns={columns} dataSource={mockASOKeywords} rowKey="id" pagination={false} size="middle" loading={loading} />
+        <Table columns={columns} dataSource={asoKeywords} rowKey="id" pagination={false} size="middle" loading={loading} />
       </Card>
     </div>
   );

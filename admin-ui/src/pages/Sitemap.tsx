@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Button, Typography, Space, message, Result, Tree, Collapse,
-  Tag, Table, Statistic, Divider, Descriptions, Alert,
+  Tag, Table, Statistic, Divider, Descriptions, Alert, Spin, Empty,
 } from 'antd';
 import {
   ReloadOutlined, FileTextOutlined, CheckCircleOutlined, WarningOutlined,
@@ -9,62 +9,11 @@ import {
   InfoCircleOutlined,
 } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { sitemapAPI } from '@/services/sitemap';
 import dayjs from 'dayjs';
 
 const { Text, Title, Paragraph } = Typography;
-
-const mockSitemapData = {
-  lastGenerated: '2024-07-15T06:00:00',
-  totalUrls: 2547,
-  xmlContent: `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://example.com/</loc>
-    <lastmod>2024-07-15</lastmod>
-    <changefreq>daily</changefreq>
-    <priority>1.0</priority>
-  </url>
-  <url>
-    <loc>https://example.com/about</loc>
-    <lastmod>2024-07-10</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://example.com/blog/</loc>
-    <lastmod>2024-07-14</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.9</priority>
-  </url>
-  <url>
-    <loc>https://example.com/blog/seo-tips</loc>
-    <lastmod>2024-07-13</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://example.com/services/seo-audit</loc>
-    <lastmod>2024-07-12</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url>
-  <url>
-    <loc>https://example.com/contact</loc>
-    <lastmod>2024-06-01</lastmod>
-    <changefreq>yearly</changefreq>
-    <priority>0.5</priority>
-  </url>
-</urlset>`,
-  validationErrors: [
-    { type: 'missing_lastmod', message: 'URL /products 缺少 lastmod 标签', line: 128 },
-    { type: 'invalid_freq', message: 'URL /blog/old-post 的 changefreq 值无效', line: 340 },
-  ],
-  validationWarnings: [
-    { type: 'low_priority', message: 'URL /archive 的 priority 值过低 (0.1)', line: 520 },
-    { type: 'orphan_url', message: 'URL /hidden-page 不在站点导航中', line: 680 },
-    { type: 'large_size', message: 'Sitemap 文件超过 50MB 建议拆分', line: 0 },
-  ],
-};
 
 const parseXmlToTree = (xml: string) => {
   const urls: { loc: string; lastmod: string; changefreq: string; priority: string }[] = [];
@@ -81,38 +30,181 @@ const parseXmlToTree = (xml: string) => {
   return urls;
 };
 
+interface ValidationIssue {
+  type: string;
+  message: string;
+  line: number;
+}
+
+interface SitemapInfo {
+  lastGenerated: string | null;
+  totalUrls: number;
+  xmlContent: string;
+}
+
 const Sitemap: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sitemapInfo, setSitemapInfo] = useState<SitemapInfo | null>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationIssue[]>([]);
+  const [validationWarnings, setValidationWarnings] = useState<ValidationIssue[]>([]);
   const [generating, setGenerating] = useState(false);
-  const [sitemapData, setSitemapData] = useState(mockSitemapData);
   const [validating, setValidating] = useState(false);
 
-  const handleRefresh = () => { setLoading(true); setTimeout(() => setLoading(false), 800); };
+  const loadSitemapData = useCallback(async () => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [infoRes, validationRes] = await Promise.all([
+        sitemapAPI.getSitemapInfo(projectId),
+        sitemapAPI.validateSitemap(projectId),
+      ]);
+      const info = (infoRes as any).data || infoRes;
+      const validation = (validationRes as any).data || validationRes;
+      setSitemapInfo({
+        lastGenerated: info.lastGenerated || null,
+        totalUrls: info.totalUrls || 0,
+        xmlContent: info.xmlContent || '',
+      });
+      setValidationErrors(validation.errors || []);
+      setValidationWarnings(validation.warnings || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
 
-  const handleGenerate = () => {
+  useEffect(() => {
+    loadSitemapData();
+  }, [loadSitemapData]);
+
+  const handleRefresh = () => {
+    loadSitemapData();
+  };
+
+  const handleGenerate = async () => {
+    if (!projectId) return;
     setGenerating(true);
     message.loading({ content: '正在生成 Sitemap...', key: 'gen' });
-    setTimeout(() => {
-      setGenerating(false);
-      setSitemapData({ ...sitemapData, lastGenerated: dayjs().format('YYYY-MM-DDTHH:mm:ss') });
+    try {
+      await sitemapAPI.generateSitemap(projectId);
       message.success({ content: 'Sitemap 生成成功', key: 'gen' });
-    }, 2000);
+      await loadSitemapData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '生成失败';
+      message.error({ content: msg, key: 'gen' });
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  const handleValidate = () => {
+  const handleValidate = async () => {
+    if (!projectId) return;
     setValidating(true);
     message.loading({ content: '正在验证 Sitemap...', key: 'val' });
-    setTimeout(() => {
-      setValidating(false);
+    try {
+      const res = await sitemapAPI.validateSitemap(projectId);
+      const validation = (res as any).data || res;
+      setValidationErrors(validation.errors || []);
+      setValidationWarnings(validation.warnings || []);
       message.success({ content: '验证完成', key: 'val' });
-    }, 1500);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '验证失败';
+      message.error({ content: msg, key: 'val' });
+    } finally {
+      setValidating(false);
+    }
   };
 
-  const handleDownload = () => {
-    message.success('Sitemap 下载已开始');
+  const handleDownload = async () => {
+    if (!projectId) return;
+    try {
+      await sitemapAPI.downloadSitemap(projectId);
+      message.success('Sitemap 下载已开始');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '下载失败';
+      message.error(msg);
+    }
   };
 
-  const urls = parseXmlToTree(sitemapData.xmlContent);
+  // ---- Loading state ----
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="Sitemap 管理"
+          subtitle="生成、预览和验证 XML Sitemap"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  // ---- Error state ----
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="Sitemap 管理"
+          subtitle="生成、预览和验证 XML Sitemap"
+        />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          action={
+            <Button onClick={handleRefresh} size="small">
+              重试
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // ---- Empty state (no project selected) ----
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="Sitemap 管理"
+          subtitle="生成、预览和验证 XML Sitemap"
+        />
+        <Empty description="请先选择一个项目" />
+      </div>
+    );
+  }
+
+  // ---- Empty state (no sitemap data) ----
+  if (!sitemapInfo) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="Sitemap 管理"
+          subtitle="生成、预览和验证 XML Sitemap"
+          actions={[
+            { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh },
+            { label: '生成 Sitemap', type: 'primary', icon: <CloudUploadOutlined />, onClick: handleGenerate, loading: generating },
+          ]}
+        />
+        <Empty description="暂无 Sitemap 数据">
+          <Button type="primary" icon={<CloudUploadOutlined />} onClick={handleGenerate} loading={generating}>
+            生成 Sitemap
+          </Button>
+        </Empty>
+      </div>
+    );
+  }
+
+  const urls = parseXmlToTree(sitemapInfo.xmlContent);
   const treeData = urls.map((url, idx) => ({
     title: (
       <Space size="small">
@@ -127,8 +219,8 @@ const Sitemap: React.FC = () => {
     ],
   }));
 
-  const hasErrors = sitemapData.validationErrors.length > 0;
-  const validationStatus = hasErrors ? 'error' : sitemapData.validationWarnings.length > 0 ? 'warning' : 'success';
+  const hasErrors = validationErrors.length > 0;
+  const validationStatus = hasErrors ? 'error' : validationWarnings.length > 0 ? 'warning' : 'success';
 
   return (
     <div className="page-container">
@@ -145,7 +237,7 @@ const Sitemap: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
-          <Card><Statistic title="Sitemap URL 数" value={sitemapData.totalUrls} valueStyle={{ color: '#1677ff' }} prefix={<FileTextOutlined />} /></Card>
+          <Card><Statistic title="Sitemap URL 数" value={sitemapInfo.totalUrls} valueStyle={{ color: '#1677ff' }} prefix={<FileTextOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card>
@@ -158,11 +250,11 @@ const Sitemap: React.FC = () => {
           </Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card><Statistic title="错误数" value={sitemapData.validationErrors.length} valueStyle={{ color: sitemapData.validationErrors.length > 0 ? '#ff4d4f' : '#52c41a' }} prefix={<CloseCircleOutlined />} /></Card>
+          <Card><Statistic title="错误数" value={validationErrors.length} valueStyle={{ color: validationErrors.length > 0 ? '#ff4d4f' : '#52c41a' }} prefix={<CloseCircleOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card>
-            <Statistic title="上次生成" value={sitemapData.lastGenerated ? dayjs(sitemapData.lastGenerated).format('MM-DD HH:mm') : '未生成'} valueStyle={{ fontSize: 16 }} prefix={<ClockCircleOutlined />} />
+            <Statistic title="上次生成" value={sitemapInfo.lastGenerated ? dayjs(sitemapInfo.lastGenerated).format('MM-DD HH:mm') : '未生成'} valueStyle={{ fontSize: 16 }} prefix={<ClockCircleOutlined />} />
           </Card>
         </Col>
       </Row>
@@ -175,7 +267,7 @@ const Sitemap: React.FC = () => {
           >
             <div style={{ maxHeight: 500, overflow: 'auto', background: '#fafafa', borderRadius: 8, padding: 16 }}>
               <pre style={{ margin: 0, fontSize: 11, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                {sitemapData.xmlContent}
+                {sitemapInfo.xmlContent}
               </pre>
             </div>
           </Card>
@@ -192,12 +284,12 @@ const Sitemap: React.FC = () => {
           </Card>
 
           <Card title="验证结果">
-            {sitemapData.validationErrors.length > 0 && (
+            {validationErrors.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <Text strong style={{ color: '#ff4d4f' }}>
-                  <CloseCircleOutlined /> 错误 ({sitemapData.validationErrors.length})
+                  <CloseCircleOutlined /> 错误 ({validationErrors.length})
                 </Text>
-                {sitemapData.validationErrors.map((err, i) => (
+                {validationErrors.map((err, i) => (
                   <Alert
                     key={i}
                     message={`第 ${err.line} 行: ${err.message}`}
@@ -209,12 +301,12 @@ const Sitemap: React.FC = () => {
               </div>
             )}
 
-            {sitemapData.validationWarnings.length > 0 && (
+            {validationWarnings.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <Text strong style={{ color: '#faad14' }}>
-                  <WarningOutlined /> 警告 ({sitemapData.validationWarnings.length})
+                  <WarningOutlined /> 警告 ({validationWarnings.length})
                 </Text>
-                {sitemapData.validationWarnings.map((warn, i) => (
+                {validationWarnings.map((warn, i) => (
                   <Alert
                     key={i}
                     message={`第 ${warn.line} 行: ${warn.message}`}
@@ -226,7 +318,7 @@ const Sitemap: React.FC = () => {
               </div>
             )}
 
-            {sitemapData.validationErrors.length === 0 && sitemapData.validationWarnings.length === 0 && (
+            {validationErrors.length === 0 && validationWarnings.length === 0 && (
               <Result
                 status="success"
                 title="Sitemap 验证通过"

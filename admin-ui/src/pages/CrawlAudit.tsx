@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Button, Tag, Progress, Space, Drawer, Select, Typography, Badge, Row, Col, Statistic, message,
+  Card, Table, Button, Tag, Progress, Space, Drawer, Select, Typography, Badge, Row, Col, Statistic, message, Spin, Empty, Alert,
 } from 'antd';
 import {
   PlayCircleOutlined, ReloadOutlined, BugOutlined, WarningOutlined,
@@ -13,35 +13,12 @@ import { BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { crawlAPI } from '@/services/crawl';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, CanvasRenderer]);
 
 const { Text, Paragraph } = Typography;
-
-// 模拟数据
-const mockPages = [
-  { id: '1', url: '/', title: '首页 - SEO Platform', statusCode: 200, loadTime: 1.2, seoScore: 92, lastCrawled: '2024-07-14T10:30:00' },
-  { id: '2', url: '/products', title: '产品中心', statusCode: 200, loadTime: 2.1, seoScore: 78, lastCrawled: '2024-07-14T10:30:00' },
-  { id: '3', url: '/blog', title: '博客', statusCode: 200, loadTime: 1.8, seoScore: 85, lastCrawled: '2024-07-14T10:30:00' },
-  { id: '4', url: '/about', title: '关于我们', statusCode: 200, loadTime: 0.9, seoScore: 88, lastCrawled: '2024-07-14T10:30:00' },
-  { id: '5', url: '/contact', title: '联系我们', statusCode: 301, loadTime: 0.5, seoScore: 65, lastCrawled: '2024-07-14T10:30:00' },
-  { id: '6', url: '/old-page', title: 'Not Found', statusCode: 404, loadTime: 0.3, seoScore: 30, lastCrawled: '2024-07-14T10:30:00' },
-  { id: '7', url: '/services/seo', title: 'SEO 服务', statusCode: 200, loadTime: 3.2, seoScore: 72, lastCrawled: '2024-07-14T10:30:00' },
-  { id: '8', url: '/pricing', title: '价格方案', statusCode: 500, loadTime: 5.1, seoScore: 25, lastCrawled: '2024-07-14T10:30:00' },
-];
-
-const mockIssues = [
-  { id: '1', type: 'meta', severity: 'critical', title: '缺少 Meta Description', description: '首页缺少 meta description 标签', url: '/', element: '<head>', suggestion: '添加 120-155 字符的描述标签' },
-  { id: '2', type: 'heading', severity: 'major', title: '缺少 H1 标签', description: '页面没有 H1 标题', url: '/products', element: '<body>', suggestion: '每个页面应有且仅有一个 H1 标签' },
-  { id: '3', type: 'image', severity: 'major', title: '图片缺少 Alt 属性', description: '3 张图片没有 alt 属性', url: '/products', element: '<img>', suggestion: '为所有图片添加描述性 alt 属性' },
-  { id: '4', type: 'speed', severity: 'critical', title: '页面加载速度慢', description: '加载时间超过 3 秒', url: '/services/seo', element: 'N/A', suggestion: '优化图片大小，启用压缩和缓存' },
-  { id: '5', type: 'canonical', severity: 'minor', title: '缺少 Canonical 标签', description: '建议添加 canonical 标签', url: '/about', element: '<head>', suggestion: '添加 canonical 标签避免重复内容' },
-  { id: '6', type: 'status', severity: 'critical', title: '404 错误页面', description: '页面返回 404 状态码', url: '/old-page', element: 'N/A', suggestion: '设置 301 重定向到相关页面' },
-  { id: '7', type: 'status', severity: 'critical', title: '500 服务器错误', description: '服务器内部错误', url: '/pricing', element: 'N/A', suggestion: '检查服务器配置和应用日志' },
-  { id: '8', type: 'meta', severity: 'minor', title: 'Title 标签过长', description: 'Title 超过 60 字符', url: '/blog', element: '<title>', suggestion: '将 Title 控制在 50-60 字符' },
-  { id: '9', type: 'schema', severity: 'info', title: '缺少结构化数据', description: '建议添加结构化数据', url: '/', element: '<head>', suggestion: '添加 JSON-LD 格式的结构化数据' },
-  { id: '10', type: 'mobile', severity: 'major', title: '移动端适配问题', description: '页面在移动端显示异常', url: '/products', element: 'N/A', suggestion: '使用响应式设计优化移动端体验' },
-];
 
 const severityConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
   critical: { color: '#ff4d4f', icon: <CloseCircleOutlined />, label: '严重' },
@@ -51,37 +28,119 @@ const severityConfig: Record<string, { color: string; icon: React.ReactNode; lab
 };
 
 const CrawlAudit: React.FC = () => {
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [crawling, setCrawling] = useState(false);
   const [progress, setProgress] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<any>(null);
   const [severityFilter, setSeverityFilter] = useState<string | undefined>();
-  const [loading, setLoading] = useState(false);
 
-  const handleStartCrawl = () => {
+  const [pages, setPages] = useState<any[]>([]);
+  const [issues, setIssues] = useState<any[]>([]);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const results = await Promise.allSettled([
+        crawlAPI.getPages(projectId!),
+        crawlAPI.getAllIssues(projectId!),
+      ]);
+
+      const extractArr = (result: PromiseSettledResult<any>): any[] => {
+        if (result.status === 'fulfilled') {
+          const res = result.value;
+          const d = (res as any).data !== undefined ? (res as any).data : res;
+          return Array.isArray(d) ? d : (d?.data || d?.pages || d?.issues || []);
+        }
+        return [];
+      };
+
+      setPages(extractArr(results[0]));
+      setIssues(extractArr(results[1]));
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [projectId]);
+
+  const handleStartCrawl = async () => {
     setCrawling(true);
     setProgress(0);
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setCrawling(false);
-          message.success('爬虫任务完成');
-          return 100;
-        }
-        return prev + Math.random() * 15;
-      });
-    }, 500);
+    try {
+      const res = await crawlAPI.startCrawl(projectId!);
+      message.success('爬虫任务已启动');
+      const interval = setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            setCrawling(false);
+            loadData();
+            message.success('爬虫任务完成');
+            return 100;
+          }
+          return prev + Math.random() * 15;
+        });
+      }, 500);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '启动爬虫失败';
+      message.error(msg);
+      setCrawling(false);
+    }
   };
 
   const handleRefresh = () => {
-    setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    loadData();
   };
 
-  const filteredIssues = severityFilter
-    ? mockIssues.filter((i) => i.severity === severityFilter)
-    : mockIssues;
+  // ---- 空状态 / 加载状态 / 错误状态 ----
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader title="爬虫审计" subtitle="网站 SEO 爬虫检测与问题分析" />
+        <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader title="爬虫审计" subtitle="网站 SEO 爬虫检测与问题分析" />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader title="爬虫审计" subtitle="网站 SEO 爬虫检测与问题分析" />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          style={{ marginTop: 24 }}
+          action={<Button size="small" onClick={handleRefresh}>重试</Button>}
+        />
+      </div>
+    );
+  }
+
+  const filteredIssues = severityFilter ? issues.filter((i) => i.severity === severityFilter) : issues;
 
   const showIssueDetail = (issue: any) => {
     setSelectedIssue(issue);
@@ -149,8 +208,8 @@ const CrawlAudit: React.FC = () => {
       render: (severity: string) => {
         const config = severityConfig[severity];
         return (
-          <Tag color={config.color} icon={config.icon}>
-            {config.label}
+          <Tag color={config?.color} icon={config?.icon}>
+            {config?.label || severity}
           </Tag>
         );
       },
@@ -179,12 +238,13 @@ const CrawlAudit: React.FC = () => {
     },
   ];
 
-  // 统计
-  const criticalCount = mockIssues.filter((i) => i.severity === 'critical').length;
-  const majorCount = mockIssues.filter((i) => i.severity === 'major').length;
-  const minorCount = mockIssues.filter((i) => i.severity === 'minor').length;
-  const infoCount = mockIssues.filter((i) => i.severity === 'info').length;
-  const avgScore = Math.round(mockPages.reduce((acc, p) => acc + p.seoScore, 0) / mockPages.length);
+  const criticalCount = issues.filter((i) => i.severity === 'critical').length;
+  const majorCount = issues.filter((i) => i.severity === 'major').length;
+  const minorCount = issues.filter((i) => i.severity === 'minor').length;
+  const infoCount = issues.filter((i) => i.severity === 'info').length;
+  const avgScore = pages.length > 0
+    ? Math.round(pages.reduce((acc, p) => acc + (p.seoScore || 0), 0) / pages.length)
+    : 0;
 
   return (
     <div className="page-container">
@@ -215,7 +275,7 @@ const CrawlAudit: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="页面总数" value={mockPages.length} prefix={<FileSearchOutlined />} />
+            <Statistic title="页面总数" value={pages.length} prefix={<FileSearchOutlined />} />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
@@ -230,7 +290,7 @@ const CrawlAudit: React.FC = () => {
         </Col>
         <Col xs={12} sm={6}>
           <Card size="small">
-            <Statistic title="总问题数" value={mockIssues.length} prefix={<WarningOutlined />} />
+            <Statistic title="总问题数" value={issues.length} prefix={<WarningOutlined />} />
           </Card>
         </Col>
       </Row>
@@ -244,7 +304,9 @@ const CrawlAudit: React.FC = () => {
             placeholder="筛选状态码"
             allowClear
             style={{ width: 140 }}
-            onChange={(val) => {}}
+            onChange={(val) => {
+              // 状态码筛选可以在这里通过 state 实现
+            }}
             options={[
               { value: 200, label: '200 正常' },
               { value: 301, label: '301 重定向' },
@@ -256,7 +318,7 @@ const CrawlAudit: React.FC = () => {
       >
         <Table
           columns={pageColumns}
-          dataSource={mockPages}
+          dataSource={pages}
           rowKey="id"
           pagination={{ pageSize: 10 }}
           size="middle"

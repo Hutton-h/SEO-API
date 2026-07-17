@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Card, Row, Col, Table, Progress, Typography, Space, Statistic, Button, Tag, Select,
-  Input,
+  Card, Row, Col, Table, Progress, Typography, Space, Statistic, Button, Input, Spin, Empty, Alert,
 } from 'antd';
 import {
   SearchOutlined, RiseOutlined, ReloadOutlined, CheckCircleOutlined,
@@ -14,10 +13,12 @@ import { PieChart } from 'echarts/charts';
 import { TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { serpFeaturesAPI } from '@/services/serpFeatures';
 
 echarts.use([PieChart, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
 const featureConfig = [
   { key: 'featuredSnippet', name: 'Featured Snippet', icon: <StarOutlined />, color: '#1677ff', description: '精选摘要' },
@@ -31,37 +32,77 @@ const featureConfig = [
   { key: 'reviewStars', name: 'Review Stars', icon: <StarOutlined />, color: '#f5222d', description: '评价星级' },
 ];
 
-const mockStats = {
-  totalKeywords: 1250,
-  features: featureConfig.map((f) => ({
-    ...f,
-    count: Math.floor(Math.random() * 400) + 50,
-    percentage: Math.floor(Math.random() * 50) + 10,
-  })),
-};
+interface FeatureStat {
+  key: string;
+  name: string;
+  icon: React.ReactNode;
+  color: string;
+  description: string;
+  count: number;
+  percentage: number;
+}
 
-const mockKeywords = [
-  { keyword: 'SEO优化', featuredSnippet: true, knowledgeGraph: true, peopleAlsoAsk: true, videoCarousel: false, localPack: false, imagePack: true, topStories: false, siteLinks: true, reviewStars: false },
-  { keyword: '网站排名', featuredSnippet: false, knowledgeGraph: false, peopleAlsoAsk: true, videoCarousel: true, localPack: false, imagePack: false, topStories: false, siteLinks: false, reviewStars: true },
-  { keyword: '关键词研究', featuredSnippet: true, knowledgeGraph: false, peopleAlsoAsk: true, videoCarousel: false, localPack: false, imagePack: true, topStories: false, siteLinks: true, reviewStars: false },
-  { keyword: '外链建设', featuredSnippet: false, knowledgeGraph: false, peopleAlsoAsk: false, videoCarousel: true, localPack: false, imagePack: false, topStories: true, siteLinks: false, reviewStars: false },
-  { keyword: '内容营销', featuredSnippet: true, knowledgeGraph: true, peopleAlsoAsk: true, videoCarousel: true, localPack: false, imagePack: true, topStories: true, siteLinks: true, reviewStars: true },
-  { keyword: '本地SEO', featuredSnippet: false, knowledgeGraph: true, peopleAlsoAsk: true, videoCarousel: false, localPack: true, imagePack: false, topStories: false, siteLinks: false, reviewStars: true },
-  { keyword: '技术SEO', featuredSnippet: true, knowledgeGraph: false, peopleAlsoAsk: false, videoCarousel: false, localPack: false, imagePack: false, topStories: false, siteLinks: true, reviewStars: false },
-  { keyword: '移动端优化', featuredSnippet: false, knowledgeGraph: true, peopleAlsoAsk: true, videoCarousel: false, localPack: false, imagePack: true, topStories: false, siteLinks: false, reviewStars: false },
-];
+interface KeywordItem {
+  keyword: string;
+  [key: string]: any;
+}
 
 const SerpFeatures: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore(s => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<FeatureStat[]>([]);
+  const [keywords, setKeywords] = useState<KeywordItem[]>([]);
+  const [totalKeywords, setTotalKeywords] = useState(0);
   const [searchText, setSearchText] = useState('');
 
-  const handleRefresh = () => { setLoading(true); setTimeout(() => setLoading(false), 800); };
+  useEffect(() => {
+    if (!projectId) { setLoading(false); return; }
+    loadData();
+  }, [projectId]);
 
-  const filteredKeywords = mockKeywords.filter((k) =>
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await serpFeaturesAPI.getFeatureStats(projectId!);
+      const result = (res as any).data || res;
+      const data = result.data || result;
+      if (data) {
+        setTotalKeywords(data.totalKeywords || 0);
+        const featureStats = featureConfig.map((f) => {
+          const found = (data.features || []).find((item: any) => item.key === f.key);
+          return {
+            ...f,
+            count: found?.count || 0,
+            percentage: found?.percentage || 0,
+          };
+        });
+        setStats(featureStats);
+      }
+      const detailsRes = await serpFeaturesAPI.getFeatureDetails(projectId!, '');
+      const detailsResult = (detailsRes as any).data || detailsRes;
+      const keywordData = Array.isArray(detailsResult) ? detailsResult : detailsResult.data || [];
+      setKeywords(keywordData);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = () => { loadData(); };
+
+  if (!projectId) return <Empty description="请先选择一个项目" />;
+  if (loading) return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
+  if (error) return <Alert type="error" message="加载失败" description={error} showIcon />;
+
+  const filteredKeywords = keywords.filter((k) =>
     k.keyword.toLowerCase().includes(searchText.toLowerCase())
   );
 
-  const pieData = mockStats.features.map((f) => ({ name: f.name, value: f.count, itemStyle: { color: f.color } }));
+  const pieData = stats.map((f) => ({ name: f.name, value: f.count, itemStyle: { color: f.color } }));
 
   const pieOption = {
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -112,6 +153,14 @@ const SerpFeatures: React.FC = () => {
     })),
   ];
 
+  const avgFeaturesPerKeyword = keywords.length > 0
+    ? (keywords.reduce((sum, k) => sum + featureConfig.filter((f) => k[f.key]).length, 0) / keywords.length)
+    : 0;
+
+  const topFeature = stats.length > 0
+    ? stats.reduce((max, f) => (f.count > max.count ? f : max), stats[0])
+    : null;
+
   return (
     <div className="page-container">
       <PageHeader
@@ -120,18 +169,18 @@ const SerpFeatures: React.FC = () => {
         actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading }]}
       />
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[16, 16]} style={{ margin: 24 }}>
         <Col xs={12} sm={6}>
-          <Card><Statistic title="关键词总数" value={mockStats.totalKeywords} valueStyle={{ color: '#1677ff' }} prefix={<SearchOutlined />} /></Card>
+          <Card><Statistic title="关键词总数" value={totalKeywords} valueStyle={{ color: '#1677ff' }} prefix={<SearchOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card><Statistic title="SERP 特性种类" value={featureConfig.length} valueStyle={{ color: '#52c41a' }} prefix={<GlobalOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card><Statistic title="平均特性数/词" value={3.2} precision={1} valueStyle={{ color: '#fa8c16' }} prefix={<RiseOutlined />} /></Card>
+          <Card><Statistic title="平均特性数/词" value={avgFeaturesPerKeyword} precision={1} valueStyle={{ color: '#fa8c16' }} prefix={<RiseOutlined />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card><Statistic title="覆盖率最高" value="Featured Snippet" valueStyle={{ color: '#1677ff', fontSize: 16 }} prefix={<StarOutlined />} /></Card>
+          <Card><Statistic title="覆盖率最高" value={topFeature?.name || '-'} valueStyle={{ color: '#1677ff', fontSize: 16 }} prefix={<StarOutlined />} /></Card>
         </Col>
       </Row>
 
@@ -140,7 +189,7 @@ const SerpFeatures: React.FC = () => {
           <Card title="特性出现率统计" className="chart-card">
             <Table
               columns={featureTableColumns}
-              dataSource={mockStats.features}
+              dataSource={stats}
               rowKey="key"
               pagination={false}
               size="middle"

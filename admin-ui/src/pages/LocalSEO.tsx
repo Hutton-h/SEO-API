@@ -1,35 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Descriptions, Progress,
+  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Descriptions, Progress, Empty, Spin, Alert, message,
 } from 'antd';
 import {
   EnvironmentOutlined, PhoneOutlined, StarOutlined, ReloadOutlined,
   ArrowUpOutlined, ArrowDownOutlined, MinusOutlined,
 } from '@ant-design/icons';
+import { useStore } from '@/store';
+import { geoAPI } from '@/services/geo';
+import type { GMBProfile, LocalRanking } from '@/services/geo';
 import PageHeader from '@/components/PageHeader';
 
 const { Text } = Typography;
-
-const mockGMBProfile = {
-  businessName: 'Crane SEO 优化服务',
-  category: 'SEO 服务机构',
-  address: '上海市浦东新区张江高科技园区',
-  phone: '+86 400-123-4567',
-  rating: 4.8,
-  reviewCount: 256,
-  status: 'verified',
-};
-
-const mockLocalRankings = [
-  { id: '1', keyword: 'SEO公司 上海', position: 2, previousPosition: 3, change: 1, mapPack: true },
-  { id: '2', keyword: '网站优化 上海', position: 5, previousPosition: 4, change: -1, mapPack: true },
-  { id: '3', keyword: '搜索引擎优化公司', position: 3, previousPosition: 5, change: 2, mapPack: false },
-  { id: '4', keyword: '上海SEO服务', position: 1, previousPosition: 1, change: 0, mapPack: true },
-  { id: '5', keyword: '网站排名优化', position: 7, previousPosition: 8, change: 1, mapPack: false },
-  { id: '6', keyword: '本地SEO优化', position: 4, previousPosition: 2, change: -2, mapPack: true },
-  { id: '7', keyword: 'SEO外包', position: 9, previousPosition: 12, change: 3, mapPack: false },
-  { id: '8', keyword: 'Google排名', position: 6, previousPosition: 6, change: 0, mapPack: true },
-];
 
 const locations = [
   { label: '上海市', value: 'shanghai' },
@@ -39,13 +21,66 @@ const locations = [
 ];
 
 const LocalSEO: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [gmbProfile, setGmbProfile] = useState<GMBProfile | null>(null);
+  const [localRankings, setLocalRankings] = useState<LocalRanking[]>([]);
   const [compareLocation, setCompareLocation] = useState<string>('beijing');
 
-  const handleRefresh = () => {
+  const loadData = async () => {
+    if (!projectId) return;
     setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    setError(null);
+    try {
+      const [profileRes, rankingsRes] = await Promise.all([
+        geoAPI.getGMBProfile(projectId),
+        geoAPI.getLocalRankings(projectId),
+      ]);
+
+      const profileResult = (profileRes as any).data || profileRes;
+      const rankingsResult = (rankingsRes as any).data || rankingsRes;
+
+      setGmbProfile(profileResult);
+      setLocalRankings(Array.isArray(rankingsResult) ? rankingsResult : rankingsResult.data || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [projectId]);
+
+  const handleRefresh = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await geoAPI.refreshLocalSEO(projectId);
+      message.success('本地 SEO 数据刷新成功');
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
+      setError(msg);
+      setLoading(false);
+    }
+  };
+
+  if (!projectId) return <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />;
+  if (loading && !gmbProfile && !localRankings.length) {
+    return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
+  }
+  if (error && !gmbProfile && !localRankings.length) {
+    return <Alert type="error" message="加载失败" description={error} showIcon style={{ margin: '20vh auto', maxWidth: 600 }} />;
+  }
 
   const columns = [
     {
@@ -98,66 +133,68 @@ const LocalSEO: React.FC = () => {
       />
 
       {/* GMB 档案卡片 */}
-      <Card title="Google My Business 档案" style={{ marginBottom: 24 }}>
-        <Row gutter={[24, 16]}>
-          <Col xs={24} md={12}>
-            <Descriptions column={1} size="small" bordered>
-              <Descriptions.Item label="商家名称">{mockGMBProfile.businessName}</Descriptions.Item>
-              <Descriptions.Item label="类别">{mockGMBProfile.category}</Descriptions.Item>
-              <Descriptions.Item label="地址">
-                <Space>
-                  <EnvironmentOutlined />
-                  {mockGMBProfile.address}
-                </Space>
-              </Descriptions.Item>
-              <Descriptions.Item label="电话">
-                <Space>
-                  <PhoneOutlined />
-                  {mockGMBProfile.phone}
-                </Space>
-              </Descriptions.Item>
-            </Descriptions>
-          </Col>
-          <Col xs={24} md={12}>
-            <Row gutter={[16, 16]}>
-              <Col span={12}>
-                <Card size="small">
-                  <Statistic
-                    title="评分"
-                    value={mockGMBProfile.rating}
-                    prefix={<StarOutlined style={{ color: '#faad14' }} />}
-                    precision={1}
-                  />
-                </Card>
-              </Col>
-              <Col span={12}>
-                <Card size="small">
-                  <Statistic title="评论数" value={mockGMBProfile.reviewCount} />
-                </Card>
-              </Col>
-              <Col span={12}>
-                <Card size="small">
-                  <Statistic
-                    title="状态"
-                    value=" "
-                    prefix={<Tag color="green">已验证</Tag>}
-                  />
-                </Card>
-              </Col>
-              <Col span={12}>
-                <Card size="small">
-                  <Statistic
-                    title="完整度"
-                    value={92}
-                    suffix="%"
-                    valueStyle={{ color: '#52c41a' }}
-                  />
-                </Card>
-              </Col>
-            </Row>
-          </Col>
-        </Row>
-      </Card>
+      {gmbProfile && (
+        <Card title="Google My Business 档案" style={{ marginBottom: 24 }}>
+          <Row gutter={[24, 16]}>
+            <Col xs={24} md={12}>
+              <Descriptions column={1} size="small" bordered>
+                <Descriptions.Item label="商家名称">{gmbProfile.businessName}</Descriptions.Item>
+                <Descriptions.Item label="类别">{gmbProfile.category}</Descriptions.Item>
+                <Descriptions.Item label="地址">
+                  <Space>
+                    <EnvironmentOutlined />
+                    {gmbProfile.address}
+                  </Space>
+                </Descriptions.Item>
+                <Descriptions.Item label="电话">
+                  <Space>
+                    <PhoneOutlined />
+                    {gmbProfile.phone}
+                  </Space>
+                </Descriptions.Item>
+              </Descriptions>
+            </Col>
+            <Col xs={24} md={12}>
+              <Row gutter={[16, 16]}>
+                <Col span={12}>
+                  <Card size="small">
+                    <Statistic
+                      title="评分"
+                      value={gmbProfile.rating}
+                      prefix={<StarOutlined style={{ color: '#faad14' }} />}
+                      precision={1}
+                    />
+                  </Card>
+                </Col>
+                <Col span={12}>
+                  <Card size="small">
+                    <Statistic title="评论数" value={gmbProfile.reviewCount} />
+                  </Card>
+                </Col>
+                <Col span={12}>
+                  <Card size="small">
+                    <Statistic
+                      title="状态"
+                      value=" "
+                      prefix={<Tag color="green">已验证</Tag>}
+                    />
+                  </Card>
+                </Col>
+                <Col span={12}>
+                  <Card size="small">
+                    <Statistic
+                      title="完整度"
+                      value={92}
+                      suffix="%"
+                      valueStyle={{ color: '#52c41a' }}
+                    />
+                  </Card>
+                </Col>
+              </Row>
+            </Col>
+          </Row>
+        </Card>
+      )}
 
       {/* 位置对比 */}
       <Card
@@ -177,7 +214,7 @@ const LocalSEO: React.FC = () => {
       >
         <Table
           columns={columns}
-          dataSource={mockLocalRankings}
+          dataSource={localRankings}
           rowKey="id"
           pagination={false}
           size="middle"

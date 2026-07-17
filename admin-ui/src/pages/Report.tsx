@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Row, Col, Statistic, Typography, Button, Table, Tag, Progress, Space, List, message, Spin,
+  Card, Row, Col, Statistic, Typography, Button, Table, Tag, Progress, Space, List, message, Spin, Empty, Alert,
 } from 'antd';
 import {
   FileTextOutlined, DownloadOutlined, ReloadOutlined, TrophyOutlined,
@@ -12,44 +12,13 @@ import * as echarts from 'echarts/core';
 import { GaugeChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { reportAPI, ReportData } from '@/services/report';
+import dayjs from 'dayjs';
 
 echarts.use([GaugeChart, CanvasRenderer]);
 
 const { Text, Title, Paragraph } = Typography;
-
-const mockReportData = {
-  seoHealthScore: 87,
-  overview: {
-    totalKeywords: 3845,
-    totalPages: 56720,
-    totalBacklinks: 1245,
-    averageRank: 8.1,
-    organicTraffic: 125000,
-    organicTrafficChange: 12.5,
-  },
-  modules: [
-    { name: '技术 SEO', score: 92, total: 100, issues: 3, status: 'good' },
-    { name: '内容优化', score: 78, total: 100, issues: 12, status: 'warning' },
-    { name: '外链分析', score: 85, total: 100, issues: 8, status: 'good' },
-    { name: '关键词排名', score: 82, total: 100, issues: 15, status: 'warning' },
-    { name: '移动端体验', score: 88, total: 100, issues: 5, status: 'good' },
-    { name: '页面速度', score: 72, total: 100, issues: 18, status: 'critical' },
-  ],
-  topKeywords: [
-    { keyword: 'SEO优化服务', position: 3, change: 2, searchVolume: 12000 },
-    { keyword: '搜索引擎优化', position: 2, change: 1, searchVolume: 15000 },
-    { keyword: 'SEO审计', position: 4, change: 0, searchVolume: 4800 },
-    { keyword: '内容营销策略', position: 5, change: 1, searchVolume: 9200 },
-    { keyword: '外链建设', position: 8, change: 7, searchVolume: 5400 },
-  ],
-  recommendations: [
-    { priority: 'high', title: '修复页面速度问题', description: 'LCP 超过 2.5 秒，影响排名和用户体验', impact: '高' },
-    { priority: 'high', title: '添加 FAQ 结构化数据', description: 'TOP 页面缺少 FAQ schema', impact: '高' },
-    { priority: 'medium', title: '扩展长尾关键词覆盖', description: '23 个高潜力长尾关键词待覆盖', impact: '中' },
-    { priority: 'medium', title: '增加高质量外链', description: 'DA 值低于行业平均水平', impact: '中' },
-    { priority: 'low', title: '优化图片 Alt 标签', description: '部分页面图片缺少 Alt 标签', impact: '低' },
-  ],
-};
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode }> = {
   good: { color: '#52c41a', icon: <CheckCircleOutlined /> },
@@ -64,30 +33,137 @@ const priorityConfig: Record<string, { color: string }> = {
 };
 
 const Report: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reportData, setReportData] = useState<ReportData | null>(null);
   const [generating, setGenerating] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const handleRefresh = () => {
+  const loadReport = useCallback(async () => {
+    if (!projectId) return;
     setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    setError(null);
+    try {
+      const res = await reportAPI.getReport(projectId);
+      const result = (res as any).data || res;
+      setReportData(result);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载报告失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadReport();
+  }, [projectId, loadReport]);
+
+  const handleRefresh = async () => {
+    await loadReport();
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
+    if (!projectId) return;
     setGenerating(true);
-    setTimeout(() => {
-      setGenerating(false);
+    try {
+      const res = await reportAPI.generateReport(projectId);
+      const result = (res as any).data || res;
+      setReportData(result);
       message.success('报告生成完成');
-    }, 2000);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '生成报告失败';
+      message.error(msg);
+    } finally {
+      setGenerating(false);
+    }
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    if (!projectId) return;
     setExporting(true);
-    setTimeout(() => {
-      setExporting(false);
+    try {
+      const res = await reportAPI.exportPDF(projectId);
+      // 创建 Blob 并触发下载
+      const blob = new Blob([res as any], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `SEO报告_${dayjs().format('YYYYMMDD')}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
       message.success('PDF 报告已导出');
-    }, 2000);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '导出PDF失败';
+      message.error(msg);
+    } finally {
+      setExporting(false);
+    }
   };
+
+  // ---- 渲染 ----
+
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="综合报告"
+          subtitle="SEO 健康评估与优化建议"
+        />
+        <Empty description="请先选择一个项目" />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="综合报告"
+          subtitle="SEO 健康评估与优化建议"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="综合报告"
+          subtitle="SEO 健康评估与优化建议"
+          actions={[
+            { label: '重试', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+          ]}
+        />
+        <Alert type="error" message="加载失败" description={error} showIcon />
+      </div>
+    );
+  }
+
+  if (!reportData) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="综合报告"
+          subtitle="SEO 健康评估与优化建议"
+          actions={[
+            { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+            { label: '生成报告', type: 'primary', icon: <FileTextOutlined />, onClick: handleGenerate, loading: generating },
+          ]}
+        />
+        <Empty description="暂无报告数据，请点击「生成报告」按钮" />
+      </div>
+    );
+  }
 
   const gaugeOption = {
     series: [
@@ -126,7 +202,7 @@ const Report: React.FC = () => {
           fontSize: 14,
           color: '#999',
         },
-        data: [{ value: mockReportData.seoHealthScore, name: 'SEO 健康评分' }],
+        data: [{ value: reportData.seoHealthScore, name: 'SEO 健康评分' }],
       },
     ],
   };
@@ -166,13 +242,13 @@ const Report: React.FC = () => {
           <Card title="SEO 健康评分" style={{ textAlign: 'center' }}>
             <ReactEChartsCore echarts={echarts} option={gaugeOption} style={{ height: 280 }} notMerge />
             <Text type="secondary">
-              基于 {mockReportData.modules.length} 个维度的综合评估
+              基于 {reportData.modules.length} 个维度的综合评估
             </Text>
           </Card>
         </Col>
         <Col xs={24} md={14}>
           <Card title="模块评分">
-            {mockReportData.modules.map((mod) => (
+            {reportData.modules.map((mod) => (
               <div key={mod.name} style={{ marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                   <Space>
@@ -203,28 +279,28 @@ const Report: React.FC = () => {
       {/* 概览数据 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="关键词" value={mockReportData.overview.totalKeywords.toLocaleString()} /></Card>
+          <Card size="small"><Statistic title="关键词" value={reportData.overview.totalKeywords.toLocaleString()} /></Card>
         </Col>
         <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="页面数" value={mockReportData.overview.totalPages.toLocaleString()} /></Card>
+          <Card size="small"><Statistic title="页面数" value={reportData.overview.totalPages.toLocaleString()} /></Card>
         </Col>
         <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="外链" value={mockReportData.overview.totalBacklinks.toLocaleString()} /></Card>
+          <Card size="small"><Statistic title="外链" value={reportData.overview.totalBacklinks.toLocaleString()} /></Card>
         </Col>
         <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="平均排名" value={mockReportData.overview.averageRank} /></Card>
+          <Card size="small"><Statistic title="平均排名" value={reportData.overview.averageRank} /></Card>
         </Col>
         <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="自然流量" value={(mockReportData.overview.organicTraffic / 1000).toFixed(1)} suffix="k" /></Card>
+          <Card size="small"><Statistic title="自然流量" value={(reportData.overview.organicTraffic / 1000).toFixed(1)} suffix="k" /></Card>
         </Col>
         <Col xs={12} sm={4}>
           <Card size="small">
             <Statistic
               title="流量变化"
-              value={mockReportData.overview.organicTrafficChange}
+              value={reportData.overview.organicTrafficChange}
               suffix="%"
-              prefix={<ArrowUpOutlined />}
-              valueStyle={{ color: '#52c41a' }}
+              prefix={reportData.overview.organicTrafficChange >= 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+              valueStyle={{ color: reportData.overview.organicTrafficChange >= 0 ? '#52c41a' : '#ff4d4f' }}
             />
           </Card>
         </Col>
@@ -234,13 +310,13 @@ const Report: React.FC = () => {
       <Row gutter={[24, 24]}>
         <Col xs={24} lg={12}>
           <Card title="TOP 关键词排名">
-            <Table columns={keywordColumns} dataSource={mockReportData.topKeywords} rowKey="keyword" pagination={false} size="small" />
+            <Table columns={keywordColumns} dataSource={reportData.topKeywords} rowKey="keyword" pagination={false} size="small" />
           </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card title="优化建议">
             <List
-              dataSource={mockReportData.recommendations}
+              dataSource={reportData.recommendations}
               renderItem={(item) => (
                 <List.Item>
                   <List.Item.Meta

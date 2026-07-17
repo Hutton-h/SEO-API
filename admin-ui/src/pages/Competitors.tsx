@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Modal, Form, Input, Space, Progress, message, Popconfirm,
+  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Modal, Form, Input, Space, Progress, message, Popconfirm, Empty, Spin, Alert,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, TeamOutlined,
@@ -11,62 +11,141 @@ import * as echarts from 'echarts/core';
 import { BarChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import { useStore } from '@/store';
+import { competitorAPI } from '@/services/competitor';
+import type { Competitor, KeywordOverlap } from '@/services/competitor';
 import PageHeader from '@/components/PageHeader';
 
 echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text, Paragraph } = Typography;
 
-const mockCompetitors = [
-  { id: '1', name: '本站', domain: 'example.com', keywords: 3845, traffic: 125000, domainAuthority: 52, topKeywords: 245, avgPosition: 8.5, backlinks: 1245 },
-  { id: '2', name: '竞品A', domain: 'competitor-a.com', keywords: 5200, traffic: 210000, domainAuthority: 68, topKeywords: 380, avgPosition: 5.2, backlinks: 3200 },
-  { id: '3', name: '竞品B', domain: 'competitor-b.com', keywords: 3100, traffic: 95000, domainAuthority: 45, topKeywords: 180, avgPosition: 10.8, backlinks: 890 },
-  { id: '4', name: '竞品C', domain: 'competitor-c.com', keywords: 2800, traffic: 78000, domainAuthority: 38, topKeywords: 120, avgPosition: 12.5, backlinks: 650 },
-  { id: '5', name: '竞品D', domain: 'competitor-d.com', keywords: 4500, traffic: 180000, domainAuthority: 58, topKeywords: 310, avgPosition: 6.8, backlinks: 2100 },
-];
-
-const mockKeywordOverlap = [
-  { keyword: 'SEO优化', ourRank: 3, compARank: 2, compBRank: 5, compCRank: 8, compDRank: 1 },
-  { keyword: '网站排名', ourRank: 7, compARank: 4, compBRank: 12, compCRank: 15, compDRank: 6 },
-  { keyword: '搜索引擎优化', ourRank: 2, compARank: 1, compBRank: 3, compCRank: 7, compDRank: 4 },
-  { keyword: '关键词研究', ourRank: 5, compARank: 3, compBRank: 8, compCRank: 10, compDRank: 5 },
-  { keyword: 'SEO工具', ourRank: 4, compARank: 6, compBRank: 9, compCRank: 11, compDRank: 3 },
-  { keyword: '外链建设', ourRank: 8, compARank: 5, compBRank: 10, compCRank: 13, compDRank: 7 },
-];
-
 const Competitors: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [competitors, setCompetitors] = useState<Competitor[]>([]);
+  const [keywordOverlap, setKeywordOverlap] = useState<KeywordOverlap[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
 
-  const handleRefresh = () => {
+  const loadData = async () => {
+    if (!projectId) return;
     setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    setError(null);
+    try {
+      const [overviewRes, overlapRes] = await Promise.all([
+        competitorAPI.getOverview(projectId),
+        competitorAPI.getKeywordOverlap(projectId),
+      ]);
+
+      const overviewResult = (overviewRes as any).data || overviewRes;
+      const overlapResult = (overlapRes as any).data || overlapRes;
+
+      setCompetitors(Array.isArray(overviewResult) ? overviewResult : overviewResult.data || []);
+      setKeywordOverlap(Array.isArray(overlapResult) ? overlapResult : overlapResult.data || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [projectId]);
+
+  const handleRefresh = async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    await loadData();
   };
 
   const handleAddCompetitor = async () => {
+    if (!projectId) return;
     try {
       const values = await form.validateFields();
-      message.success(`成功添加竞品: ${values.name}`);
-      setModalOpen(false);
-      form.resetFields();
+      setLoading(true);
+      try {
+        await competitorAPI.addCompetitor(projectId, values);
+        message.success(`成功添加竞品: ${values.name}`);
+        setModalOpen(false);
+        form.resetFields();
+        await loadData();
+      } catch (err: any) {
+        const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+        message.error(msg);
+      } finally {
+        setLoading(false);
+      }
     } catch {
       // validation error
     }
   };
 
+  const handleRemoveCompetitor = async (competitorId: string) => {
+    if (!projectId) return;
+    try {
+      setLoading(true);
+      await competitorAPI.removeCompetitor(projectId, competitorId);
+      message.success('竞品移除成功');
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '移除失败';
+      message.error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!projectId) return <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />;
+  if (loading && !competitors.length && !keywordOverlap.length) {
+    return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
+  }
+  if (error && !competitors.length && !keywordOverlap.length) {
+    return <Alert type="error" message="加载失败" description={error} showIcon style={{ margin: '20vh auto', maxWidth: 600 }} />;
+  }
+
+  // 计算统计数据
+  const ourSite = competitors.find((c) => c.id === '1');
+  const competitorCount = competitors.filter((c) => c.id !== '1').length;
+  const avgDA = competitorCount > 0
+    ? Math.round(competitors.filter((c) => c.id !== '1').reduce((acc, c) => acc + c.domainAuthority, 0) / competitorCount)
+    : 0;
+  const leadingKeywords = keywordOverlap.filter((k) => {
+    const ourRank = k.ourRank;
+    const otherRanks = [k.compARank, k.compBRank, k.compCRank, k.compDRank].filter((r) => r > 0);
+    return otherRanks.length > 0 && ourRank <= Math.min(...otherRanks);
+  }).length;
+
+  // 动态生成竞品系列名称
+  const competitorNames = competitors.filter((c) => c.id !== '1').map((c) => c.name);
+  const allNames = ['本站', ...competitorNames];
+  const colors = ['#1677ff', '#52c41a', '#fa8c16', '#ff4d4f', '#722ed1'];
+
   const overlapOption = {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    legend: { data: ['本站', '竞品A', '竞品B', '竞品C', '竞品D'], top: 0 },
+    legend: { data: allNames.slice(0, Math.min(competitors.length, 5)), top: 0 },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '15%', containLabel: true },
-    xAxis: { type: 'category', data: mockKeywordOverlap.map((k) => k.keyword), axisLabel: { color: '#999', rotate: 20 } },
+    xAxis: { type: 'category', data: keywordOverlap.map((k) => k.keyword), axisLabel: { color: '#999', rotate: 20 } },
     yAxis: { type: 'value', name: '排名', inverse: true, axisLabel: { color: '#999' }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
     series: [
-      { name: '本站', type: 'bar', data: mockKeywordOverlap.map((k) => k.ourRank), itemStyle: { color: '#1677ff', borderRadius: [4, 4, 0, 0] } },
-      { name: '竞品A', type: 'bar', data: mockKeywordOverlap.map((k) => k.compARank), itemStyle: { color: '#52c41a', borderRadius: [4, 4, 0, 0] } },
-      { name: '竞品B', type: 'bar', data: mockKeywordOverlap.map((k) => k.compBRank), itemStyle: { color: '#fa8c16', borderRadius: [4, 4, 0, 0] } },
-      { name: '竞品C', type: 'bar', data: mockKeywordOverlap.map((k) => k.compCRank), itemStyle: { color: '#ff4d4f', borderRadius: [4, 4, 0, 0] } },
-      { name: '竞品D', type: 'bar', data: mockKeywordOverlap.map((k) => k.compDRank), itemStyle: { color: '#722ed1', borderRadius: [4, 4, 0, 0] } },
+      { name: '本站', type: 'bar', data: keywordOverlap.map((k) => k.ourRank), itemStyle: { color: colors[0], borderRadius: [4, 4, 0, 0] } },
+      ...competitors.filter((c) => c.id !== '1').slice(0, 4).map((comp, idx) => {
+        const rankKey = `comp${String.fromCharCode(65 + idx)}Rank` as keyof KeywordOverlap;
+        return {
+          name: comp.name,
+          type: 'bar' as const,
+          data: keywordOverlap.map((k) => (k as any)[rankKey] || 0),
+          itemStyle: { color: colors[idx + 1], borderRadius: [4, 4, 0, 0] as any },
+        };
+      }),
     ],
   };
 
@@ -93,7 +172,7 @@ const Competitors: React.FC = () => {
     {
       title: '操作', key: 'actions', width: 80,
       render: (_: any, record: any) => record.id !== '1' ? (
-        <Popconfirm title="确定移除此竞品？" okText="确定" cancelText="取消">
+        <Popconfirm title="确定移除此竞品？" okText="确定" cancelText="取消" onConfirm={() => handleRemoveCompetitor(record.id)}>
           <Button type="link" danger icon={<DeleteOutlined />} size="small" />
         </Popconfirm>
       ) : null,
@@ -113,21 +192,21 @@ const Competitors: React.FC = () => {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="追踪竞品" value={mockCompetitors.length - 1} prefix={<TeamOutlined style={{ color: '#1677ff' }} />} /></Card>
+          <Card size="small"><Statistic title="追踪竞品" value={competitorCount} prefix={<TeamOutlined style={{ color: '#1677ff' }} />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="关键词重叠" value={mockKeywordOverlap.length} prefix={<TrophyOutlined style={{ color: '#faad14' }} />} /></Card>
+          <Card size="small"><Statistic title="关键词重叠" value={keywordOverlap.length} prefix={<TrophyOutlined style={{ color: '#faad14' }} />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="领先关键词" value={2} suffix={`/ ${mockKeywordOverlap.length}`} prefix={<RiseOutlined style={{ color: '#52c41a' }} />} /></Card>
+          <Card size="small"><Statistic title="领先关键词" value={leadingKeywords} suffix={`/ ${keywordOverlap.length}`} prefix={<RiseOutlined style={{ color: '#52c41a' }} />} /></Card>
         </Col>
         <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="竞品平均 DA" value={52} prefix={<GlobalOutlined style={{ color: '#722ed1' }} />} /></Card>
+          <Card size="small"><Statistic title="竞品平均 DA" value={avgDA} prefix={<GlobalOutlined style={{ color: '#722ed1' }} />} /></Card>
         </Col>
       </Row>
 
       <Card title="竞品概览" style={{ marginBottom: 24 }}>
-        <Table columns={columns} dataSource={mockCompetitors} rowKey="id" pagination={false} size="middle" loading={loading} />
+        <Table columns={columns} dataSource={competitors} rowKey="id" pagination={false} size="middle" loading={loading} />
       </Card>
 
       <Card title="关键词重叠矩阵">
@@ -141,6 +220,7 @@ const Competitors: React.FC = () => {
         onCancel={() => { setModalOpen(false); form.resetFields(); }}
         okText="添加"
         cancelText="取消"
+        confirmLoading={loading}
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="name" label="竞品名称" rules={[{ required: true, message: '请输入竞品名称' }]}>

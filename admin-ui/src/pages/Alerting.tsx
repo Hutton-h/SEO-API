@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Table, Button, Modal, Form, Select, Input, InputNumber, Switch,
   Tag, Badge, Timeline, Space, Typography, message, Row, Col, Statistic, Popconfirm,
+  Spin, Empty, Alert,
 } from 'antd';
 import {
   PlusOutlined, BellOutlined, DeleteOutlined, EditOutlined,
@@ -9,6 +10,8 @@ import {
   ExclamationCircleOutlined, InfoCircleOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { alertingAPI, AlertRule, AlertHistory } from '@/services/alerting';
 import dayjs from 'dayjs';
 
 const { Text, Title } = Typography;
@@ -30,37 +33,58 @@ const channelOptions = [
   { value: 'sms', label: '短信' },
 ];
 
-const mockRules = [
-  { id: '1', name: '主站排名骤降', type: 'ranking_drop', typeLabel: '排名骤降', threshold: 10, channel: ['email', 'feishu'], enabled: true, createdAt: '2024-06-01', updatedAt: '2024-07-10' },
-  { id: '2', name: '流量暴跌预警', type: 'traffic_drop', typeLabel: '流量暴跌', threshold: 20, channel: ['email'], enabled: true, createdAt: '2024-06-15', updatedAt: '2024-07-12' },
-  { id: '3', name: '外链丢失检测', type: 'backlink_loss', typeLabel: '外链丢失', threshold: 5, channel: ['slack'], enabled: false, createdAt: '2024-07-01', updatedAt: '2024-07-01' },
-  { id: '4', name: '爬虫异常监控', type: 'crawl_error', typeLabel: '爬虫异常', threshold: 3, channel: ['dingtalk'], enabled: true, createdAt: '2024-07-05', updatedAt: '2024-07-14' },
-  { id: '5', name: '网站宕机检测', type: 'downtime', typeLabel: '宕机', threshold: 1, channel: ['email', 'sms'], enabled: true, createdAt: '2024-07-10', updatedAt: '2024-07-15' },
-];
-
-const mockHistory = [
-  { id: 'h1', ruleId: '1', ruleName: '主站排名骤降', severity: 'critical' as const, severityColor: '#ff4d4f', message: '关键词"SEO优化"排名从第3位降至第15位，超过阈值', projectName: '主站优化', acknowledged: false, createdAt: '2024-07-15T09:30:00' },
-  { id: 'h2', ruleId: '2', ruleName: '流量暴跌预警', severity: 'warning' as const, severityColor: '#faad14', message: '当日流量下降25%，超过20%阈值', projectName: '电商平台', acknowledged: false, createdAt: '2024-07-15T08:15:00' },
-  { id: 'h3', ruleId: '5', ruleName: '网站宕机检测', severity: 'critical' as const, severityColor: '#ff4d4f', message: '主站响应超时，可能已宕机', projectName: '主站优化', acknowledged: true, createdAt: '2024-07-14T22:00:00' },
-  { id: 'h4', ruleId: '4', ruleName: '爬虫异常监控', severity: 'warning' as const, severityColor: '#faad14', message: '爬虫返回5次503错误，超过3次阈值', projectName: '博客站', acknowledged: true, createdAt: '2024-07-14T15:30:00' },
-  { id: 'h5', ruleId: '3', ruleName: '外链丢失检测', severity: 'info' as const, severityColor: '#1677ff', message: '检测到3个外链被移除', projectName: '企业官网', acknowledged: false, createdAt: '2024-07-14T10:00:00' },
-  { id: 'h6', ruleId: '1', ruleName: '主站排名骤降', severity: 'warning' as const, severityColor: '#faad14', message: '关键词"SEO服务"排名从第5位降至第12位', projectName: '主站优化', acknowledged: true, createdAt: '2024-07-13T14:20:00' },
-];
+const severityConfig: Record<string, { color: string; icon: React.ReactNode }> = {
+  critical: { color: '#ff4d4f', icon: <CloseCircleOutlined /> },
+  warning: { color: '#faad14', icon: <WarningOutlined /> },
+  info: { color: '#1677ff', icon: <InfoCircleOutlined /> },
+};
 
 const Alerting: React.FC = () => {
-  const [rules, setRules] = useState(mockRules);
-  const [history, setHistory] = useState(mockHistory);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [history, setHistory] = useState<AlertHistory[]>([]);
+  const [summary, setSummary] = useState<{ unacknowledged: number; critical: number; warning: number; total: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [ruleModalVisible, setRuleModalVisible] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
   const [ruleForm] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const unacknowledgedCount = history.filter((h) => !h.acknowledged).length;
-  const criticalCount = history.filter((h) => h.severity === 'critical' && !h.acknowledged).length;
-
-  const handleRefresh = () => {
+  const loadData = useCallback(async () => {
+    if (!projectId) return;
     setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    setError(null);
+    try {
+      const [rulesRes, historyRes, summaryRes] = await Promise.all([
+        alertingAPI.getAlertRules(),
+        alertingAPI.getAlertHistory(),
+        alertingAPI.getAlertSummary(),
+      ]);
+      const rulesData = (rulesRes as any).data || rulesRes;
+      const historyData = (historyRes as any).data || historyRes;
+      const summaryData = (summaryRes as any).data || summaryRes;
+      setRules(Array.isArray(rulesData) ? rulesData : rulesData.data || []);
+      setHistory(Array.isArray(historyData) ? historyData : historyData.data || []);
+      setSummary(summaryData);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载告警数据失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [projectId, loadData]);
+
+  const handleRefresh = async () => {
+    await loadData();
   };
 
   const handleAddRule = () => {
@@ -76,56 +100,70 @@ const Alerting: React.FC = () => {
     setRuleModalVisible(true);
   };
 
-  const handleRuleSubmit = () => {
-    ruleForm.validateFields().then((values) => {
+  const handleRuleSubmit = async () => {
+    try {
+      const values = await ruleForm.validateFields();
+      setSubmitting(true);
       const typeOption = alertTypeOptions.find((t) => t.value === values.type);
+      const payload = {
+        ...values,
+        typeLabel: typeOption?.label || values.type,
+      };
+
       if (editingRule) {
-        setRules((prev) =>
-          prev.map((r) =>
-            r.id === editingRule.id
-              ? { ...r, ...values, typeLabel: typeOption?.label || values.type, updatedAt: dayjs().format('YYYY-MM-DD') }
-              : r
-          )
-        );
+        await alertingAPI.updateAlertRule(editingRule.id, payload);
         message.success('规则更新成功');
       } else {
-        const newRule = {
-          id: Date.now().toString(),
-          ...values,
-          typeLabel: typeOption?.label || values.type,
-          createdAt: dayjs().format('YYYY-MM-DD'),
-          updatedAt: dayjs().format('YYYY-MM-DD'),
-        };
-        setRules((prev) => [newRule, ...prev]);
+        await alertingAPI.createAlertRule(payload);
         message.success('规则创建成功');
       }
       setRuleModalVisible(false);
-    });
+      await loadData();
+    } catch (err: any) {
+      if (err?.response) {
+        const msg = err?.response?.data?.error?.message || err?.message || '操作失败';
+        message.error(msg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleDeleteRule = (id: string) => {
-    setRules((prev) => prev.filter((r) => r.id !== id));
-    message.success('规则已删除');
+  const handleDeleteRule = async (id: string) => {
+    try {
+      await alertingAPI.deleteAlertRule(id);
+      setRules((prev) => prev.filter((r) => r.id !== id));
+      message.success('规则已删除');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '删除失败';
+      message.error(msg);
+    }
   };
 
-  const handleToggleRule = (id: string, checked: boolean) => {
-    setRules((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, enabled: checked } : r))
-    );
-    message.success(checked ? '规则已启用' : '规则已禁用');
+  const handleToggleRule = async (id: string, checked: boolean) => {
+    try {
+      await alertingAPI.toggleAlertRule(id, checked);
+      setRules((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, enabled: checked } : r))
+      );
+      message.success(checked ? '规则已启用' : '规则已禁用');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '操作失败';
+      message.error(msg);
+    }
   };
 
-  const handleAcknowledge = (id: string) => {
-    setHistory((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, acknowledged: true } : h))
-    );
-    message.success('告警已确认');
-  };
-
-  const severityConfig: Record<string, { color: string; icon: React.ReactNode }> = {
-    critical: { color: '#ff4d4f', icon: <CloseCircleOutlined /> },
-    warning: { color: '#faad14', icon: <WarningOutlined /> },
-    info: { color: '#1677ff', icon: <InfoCircleOutlined /> },
+  const handleAcknowledge = async (id: string) => {
+    try {
+      await alertingAPI.acknowledgeAlert(id);
+      setHistory((prev) =>
+        prev.map((h) => (h.id === id ? { ...h, acknowledged: true } : h))
+      );
+      message.success('告警已确认');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '确认失败';
+      message.error(msg);
+    }
   };
 
   const ruleColumns = [
@@ -205,6 +243,50 @@ const Alerting: React.FC = () => {
     };
   });
 
+  // ---- 渲染 ----
+
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="告警中心"
+          subtitle="监控告警规则管理与历史记录"
+        />
+        <Empty description="请先选择一个项目" />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="告警中心"
+          subtitle="监控告警规则管理与历史记录"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="告警中心"
+          subtitle="监控告警规则管理与历史记录"
+          actions={[
+            { label: '重试', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+          ]}
+        />
+        <Alert type="error" message="加载失败" description={error} showIcon />
+      </div>
+    );
+  }
+
+  const unacknowledgedCount = summary?.unacknowledged ?? history.filter((h) => !h.acknowledged).length;
+  const criticalCount = summary?.critical ?? history.filter((h) => h.severity === 'critical' && !h.acknowledged).length;
+
   return (
     <div className="page-container">
       <PageHeader
@@ -219,12 +301,12 @@ const Alerting: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
           <Card>
-            <Statistic title="未处理告警" value={unacknowledgedCount} prefix={<Badge status="error" />} valueStyle={{ color: '#ff4d4f' }} />
+            <Statistic title="未处理告警" value={unacknowledgedCount} prefix={<Badge status="error" />} valueStyle={{ color: unacknowledgedCount > 0 ? '#ff4d4f' : '#52c41a' }} />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
           <Card>
-            <Statistic title="严重告警" value={criticalCount} prefix={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />} valueStyle={{ color: '#ff4d4f' }} />
+            <Statistic title="严重告警" value={criticalCount} prefix={<ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />} valueStyle={{ color: criticalCount > 0 ? '#ff4d4f' : '#52c41a' }} />
           </Card>
         </Col>
         <Col xs={12} sm={6}>
@@ -240,11 +322,19 @@ const Alerting: React.FC = () => {
       </Row>
 
       <Card title="告警规则" style={{ marginBottom: 24 }} extra={<Text type="secondary">共 {rules.length} 条规则</Text>}>
-        <Table columns={ruleColumns} dataSource={rules} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
+        {rules.length === 0 ? (
+          <Empty description="暂无告警规则，点击「新增规则」开始创建" />
+        ) : (
+          <Table columns={ruleColumns} dataSource={rules} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
+        )}
       </Card>
 
       <Card title="告警历史" extra={<Text type="secondary">最近 {history.length} 条记录</Text>}>
-        <Timeline items={historyTimelineItems} />
+        {history.length === 0 ? (
+          <Empty description="暂无告警历史" />
+        ) : (
+          <Timeline items={historyTimelineItems} />
+        )}
       </Card>
 
       <Modal
@@ -252,6 +342,7 @@ const Alerting: React.FC = () => {
         open={ruleModalVisible}
         onCancel={() => setRuleModalVisible(false)}
         onOk={handleRuleSubmit}
+        confirmLoading={submitting}
         width={600}
         destroyOnClose
       >

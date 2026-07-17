@@ -1,73 +1,204 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Form, Input, Button, ColorPicker, Switch, Typography,
-  Space, message, Upload, Divider, Descriptions, Tag,
+  Space, message, Upload, Divider, Descriptions, Tag, Alert, Spin, Empty,
 } from 'antd';
 import {
   UploadOutlined, SaveOutlined, GlobalOutlined, ReloadOutlined,
   PictureOutlined, CheckCircleOutlined, InfoCircleOutlined,
 } from '@ant-design/icons';
 import { useStore } from '@/store';
+import { whitelabelAPI } from '@/services/whitelabel';
 import PageHeader from '@/components/PageHeader';
 
 const { Text, Title } = Typography;
 
+interface WhitelabelConfig {
+  brandName: string;
+  logoUrl: string;
+  primaryColor: string;
+  customDomain: string;
+  enabled?: boolean;
+}
+
 const WhiteLabel: React.FC = () => {
-  const { branding, setBranding } = useStore();
+  const { setBranding } = useStore();
   const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [previewConfig, setPreviewConfig] = useState({
-    brandName: branding.brandName,
-    logoUrl: branding.logoUrl,
-    primaryColor: branding.primaryColor,
-    customDomain: branding.customDomain,
+  const [verifyingDomain, setVerifyingDomain] = useState(false);
+  const [domainVerified, setDomainVerified] = useState<boolean | null>(null);
+  const [config, setConfig] = useState<WhitelabelConfig>({
+    brandName: '',
+    logoUrl: '',
+    primaryColor: '#1677ff',
+    customDomain: '',
+    enabled: false,
+  });
+  const [previewConfig, setPreviewConfig] = useState<WhitelabelConfig>({
+    brandName: '',
+    logoUrl: '',
+    primaryColor: '#1677ff',
+    customDomain: '',
   });
 
-  const handleSave = () => {
-    form.validateFields().then((values) => {
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await whitelabelAPI.getConfig();
+      const data = (res as any).data || res;
+      const cfg: WhitelabelConfig = {
+        brandName: data.brandName || '',
+        logoUrl: data.logoUrl || '',
+        primaryColor: data.primaryColor || '#1677ff',
+        customDomain: data.customDomain || '',
+        enabled: data.enabled ?? false,
+      };
+      setConfig(cfg);
+      setPreviewConfig(cfg);
+      form.setFieldsValue({
+        brandName: cfg.brandName,
+        logoUrl: cfg.logoUrl,
+        primaryColor: cfg.primaryColor,
+        customDomain: cfg.customDomain,
+        enabled: cfg.enabled,
+      });
+      setBranding?.(cfg);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [form, setBranding]);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const handleRefresh = () => {
+    loadConfig();
+  };
+
+  const handleSave = async () => {
+    try {
+      const values = await form.validateFields();
       setSaving(true);
-      const config = {
+      const payload: WhitelabelConfig = {
         brandName: values.brandName,
         logoUrl: values.logoUrl,
         primaryColor: typeof values.primaryColor === 'string' ? values.primaryColor : values.primaryColor?.toHexString?.() || '#1677ff',
         customDomain: values.customDomain,
+        enabled: values.enabled,
       };
-      setTimeout(() => {
-        setBranding(config);
-        setPreviewConfig(config);
-        setSaving(false);
-        message.success('白标配置已保存');
-      }, 800);
-    });
-  };
-
-  const handleRefresh = () => {
-    setLoading(true);
-    form.setFieldsValue({
-      brandName: branding.brandName,
-      logoUrl: branding.logoUrl,
-      primaryColor: branding.primaryColor,
-      customDomain: branding.customDomain,
-    });
-    setPreviewConfig({
-      brandName: branding.brandName,
-      logoUrl: branding.logoUrl,
-      primaryColor: branding.primaryColor,
-      customDomain: branding.customDomain,
-    });
-    setTimeout(() => setLoading(false), 500);
+      await whitelabelAPI.updateConfig(payload);
+      setConfig(payload);
+      setPreviewConfig(payload);
+      setBranding?.(payload);
+      message.success('白标配置已保存');
+    } catch (err: any) {
+      if (err?.errorFields) {
+        // form validation error - do nothing
+        return;
+      }
+      const msg = err?.response?.data?.error?.message || err?.message || '保存失败';
+      message.error(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleFormChange = () => {
     const values = form.getFieldsValue();
     setPreviewConfig({
-      brandName: values.brandName || branding.brandName,
-      logoUrl: values.logoUrl || branding.logoUrl,
-      primaryColor: typeof values.primaryColor === 'string' ? values.primaryColor : values.primaryColor?.toHexString?.() || branding.primaryColor,
-      customDomain: values.customDomain || branding.customDomain,
+      brandName: values.brandName || config.brandName,
+      logoUrl: values.logoUrl || config.logoUrl,
+      primaryColor: typeof values.primaryColor === 'string' ? values.primaryColor : values.primaryColor?.toHexString?.() || config.primaryColor,
+      customDomain: values.customDomain || config.customDomain,
     });
   };
+
+  const handleUploadLogo = async (file: File) => {
+    try {
+      const res = await whitelabelAPI.uploadLogo(file);
+      const data = (res as any).data || res;
+      const url = data.url || data.logoUrl || '';
+      if (url) {
+        form.setFieldsValue({ logoUrl: url });
+        setPreviewConfig((prev) => ({ ...prev, logoUrl: url }));
+        message.success('Logo 上传成功');
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '上传失败';
+      message.error(msg);
+    }
+    return false; // prevent default upload behavior
+  };
+
+  const handleVerifyDomain = async () => {
+    const domain = form.getFieldValue('customDomain');
+    if (!domain) {
+      message.warning('请先输入自定义域名');
+      return;
+    }
+    setVerifyingDomain(true);
+    setDomainVerified(null);
+    try {
+      const res = await whitelabelAPI.verifyDomain(domain);
+      const data = (res as any).data || res;
+      const valid = data.valid ?? data.success ?? false;
+      setDomainVerified(valid);
+      if (valid) {
+        message.success('域名验证通过');
+      } else {
+        message.warning('域名验证未通过，请检查 DNS 配置');
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '验证失败';
+      message.error(msg);
+      setDomainVerified(false);
+    } finally {
+      setVerifyingDomain(false);
+    }
+  };
+
+  // ---- Loading state ----
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="白标配置"
+          subtitle="自定义品牌标识与外观"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  // ---- Error state ----
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="白标配置"
+          subtitle="自定义品牌标识与外观"
+        />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          action={
+            <Button onClick={handleRefresh} size="small">
+              重试
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -87,10 +218,11 @@ const WhiteLabel: React.FC = () => {
               form={form}
               layout="vertical"
               initialValues={{
-                brandName: branding.brandName,
-                logoUrl: branding.logoUrl,
-                primaryColor: branding.primaryColor,
-                customDomain: branding.customDomain,
+                brandName: config.brandName,
+                logoUrl: config.logoUrl,
+                primaryColor: config.primaryColor,
+                customDomain: config.customDomain,
+                enabled: config.enabled,
               }}
               onValuesChange={handleFormChange}
               size="large"
@@ -115,7 +247,7 @@ const WhiteLabel: React.FC = () => {
                 <Upload
                   listType="picture-card"
                   maxCount={1}
-                  beforeUpload={() => false}
+                  beforeUpload={handleUploadLogo}
                   showUploadList={{ showPreviewIcon: true }}
                 >
                   <div>
@@ -129,8 +261,31 @@ const WhiteLabel: React.FC = () => {
                 <ColorPicker showText format="hex" />
               </Form.Item>
 
-              <Form.Item name="customDomain" label="自定义域名">
-                <Input placeholder="app.yourcompany.com" prefix={<GlobalOutlined />} />
+              <Form.Item
+                label="自定义域名"
+              >
+                <Space.Compact style={{ width: '100%' }}>
+                  <Form.Item name="customDomain" noStyle>
+                    <Input placeholder="app.yourcompany.com" prefix={<GlobalOutlined />} />
+                  </Form.Item>
+                  <Button
+                    icon={<CheckCircleOutlined />}
+                    onClick={handleVerifyDomain}
+                    loading={verifyingDomain}
+                  >
+                    验证
+                  </Button>
+                </Space.Compact>
+                {domainVerified === true && (
+                  <Text type="success" style={{ fontSize: 12 }}>
+                    <CheckCircleOutlined /> 域名验证通过
+                  </Text>
+                )}
+                {domainVerified === false && (
+                  <Text type="danger" style={{ fontSize: 12 }}>
+                    域名验证失败，请检查配置
+                  </Text>
+                )}
               </Form.Item>
 
               <Divider />

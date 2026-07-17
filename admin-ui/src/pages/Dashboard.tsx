@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Row, Col, Card, Table, Tag, Progress, Typography, Space, Badge, Button } from 'antd';
+import { Row, Col, Card, Table, Tag, Progress, Typography, Space, Badge, Button, Spin, Empty, Alert } from 'antd';
 import {
   ProjectOutlined,
   KeyOutlined,
@@ -27,6 +27,16 @@ import { CanvasRenderer } from 'echarts/renderers';
 import StatCard from '@/components/StatCard';
 import PageHeader from '@/components/PageHeader';
 import { useNavigate } from 'react-router-dom';
+import { useStore } from '@/store';
+import { projectAPI } from '@/services/project';
+import { keywordAPI } from '@/services/keyword';
+import { crawlAPI } from '@/services/crawl';
+import { apiUsageAPI } from '@/services/apiUsage';
+import { monitorAPI } from '@/services/monitor';
+import { alertingAPI } from '@/services/alerting';
+import { contentAPI } from '@/services/content';
+import { rankingAPI } from '@/services/ranking';
+import { scheduleAPI } from '@/services/schedule';
 import dayjs from 'dayjs';
 
 echarts.use([
@@ -41,66 +51,180 @@ echarts.use([
 
 const { Text } = Typography;
 
-// 模拟数据
-const mockStats = {
-  projects: 12,
-  keywords: 3845,
-  pagesCrawled: 56720,
-  seoHealthScore: 87,
-};
-
-const mockAlertSummary = {
-  unacknowledged: 3,
-  critical: 1,
-};
-
-const mockApiCost = {
-  monthlyCost: 1245.80,
-  change: 11.2,
-};
-
-const mockSLA = {
-  uptime: 99.87,
-};
-
-const mockContentScore = {
-  average: 78,
-};
-
-const mockRankingTrend = [
-  { date: '2024-01', avgPosition: 12.5, top10: 45 },
-  { date: '2024-02', avgPosition: 11.8, top10: 48 },
-  { date: '2024-03', avgPosition: 10.3, top10: 52 },
-  { date: '2024-04', avgPosition: 9.8, top10: 55 },
-  { date: '2024-05', avgPosition: 9.2, top10: 58 },
-  { date: '2024-06', avgPosition: 8.5, top10: 62 },
-  { date: '2024-07', avgPosition: 8.1, top10: 65 },
-];
-
-const mockRecentTasks = [
-  { id: '1', project: '主站优化', pages: 2500, status: 'completed', date: '2024-07-14', issues: 45 },
-  { id: '2', project: '电商平台', pages: 1800, status: 'running', date: '2024-07-14', issues: 12 },
-  { id: '3', project: '博客站', pages: 890, status: 'completed', date: '2024-07-13', issues: 23 },
-  { id: '4', project: '企业官网', pages: 1200, status: 'failed', date: '2024-07-13', issues: 0 },
-  { id: '5', project: '移动端优化', pages: 1500, status: 'completed', date: '2024-07-12', issues: 67 },
-];
-
-const mockIssueDistribution = [
-  { name: '严重', value: 45, color: '#ff4d4f' },
-  { name: '重要', value: 128, color: '#faad14' },
-  { name: '次要', value: 256, color: '#1677ff' },
-  { name: '提示', value: 89, color: '#52c41a' },
-];
-
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleRefresh = () => {
+  const [projectCount, setProjectCount] = useState(0);
+  const [keywordCount, setKeywordCount] = useState(0);
+  const [pagesCrawled, setPagesCrawled] = useState(0);
+  const [seoHealthScore, setSeoHealthScore] = useState(0);
+  const [alertSummary, setAlertSummary] = useState({ unacknowledged: 0, critical: 0 });
+  const [apiCost, setApiCost] = useState({ monthlyCost: 0, change: 0 });
+  const [sla, setSla] = useState({ uptime: 0 });
+  const [contentScore, setContentScore] = useState({ average: 0 });
+  const [rankingTrend, setRankingTrend] = useState<any[]>([]);
+  const [recentTasks, setRecentTasks] = useState<any[]>([]);
+  const [issueDistribution, setIssueDistribution] = useState<any[]>([]);
+
+  const loadAllData = async () => {
     setLoading(true);
-    setTimeout(() => setLoading(false), 1000);
+    setError(null);
+    try {
+      const results = await Promise.allSettled([
+        projectAPI.getProjects(),
+        keywordAPI.getKeywords ? keywordAPI.getKeywords(projectId!) : Promise.resolve({ data: [] }),
+        crawlAPI.getPages(projectId!),
+        crawlAPI.getAllIssues ? crawlAPI.getAllIssues(projectId!) : Promise.resolve({ data: [] }),
+        apiUsageAPI.getStats ? apiUsageAPI.getStats(projectId!) : Promise.resolve({ data: {} }),
+        monitorAPI.getSLAInfo ? monitorAPI.getSLAInfo(projectId!) : Promise.resolve({ data: {} }),
+        alertingAPI.getAlertSummary ? alertingAPI.getAlertSummary(projectId!) : Promise.resolve({ data: {} }),
+        contentAPI.getAnalysisHistory ? contentAPI.getAnalysisHistory(projectId!) : Promise.resolve({ data: [] }),
+        rankingAPI.getRankings ? rankingAPI.getRankings(projectId!) : Promise.resolve({ data: { trend: [] } }),
+        scheduleAPI.getTasks ? scheduleAPI.getTasks(projectId!) : Promise.resolve({ data: [] }),
+      ]);
+
+      const extractData = (result: PromiseSettledResult<any>, defaultValue: any = null) => {
+        if (result.status === 'fulfilled') {
+          const res = result.value;
+          const d = (res as any).data !== undefined ? (res as any).data : res;
+          return d;
+        }
+        return defaultValue;
+      };
+
+      // Projects
+      const projectsData = extractData(results[0], []);
+      const projects = Array.isArray(projectsData) ? projectsData : (projectsData?.data || projectsData?.projects || []);
+      setProjectCount(Array.isArray(projects) ? projects.length : 0);
+
+      // Keywords
+      const keywordsData = extractData(results[1], []);
+      const keywords = Array.isArray(keywordsData) ? keywordsData : (keywordsData?.data || keywordsData?.keywords || []);
+      setKeywordCount(Array.isArray(keywords) ? keywords.length : 0);
+
+      // Pages crawled
+      const pagesData = extractData(results[2], []);
+      const pages = Array.isArray(pagesData) ? pagesData : (pagesData?.data || pagesData?.pages || []);
+      setPagesCrawled(Array.isArray(pages) ? pages.length : 0);
+
+      // Issues for SEO health score and distribution
+      const issuesData = extractData(results[3], []);
+      const issues = Array.isArray(issuesData) ? issuesData : (issuesData?.data || issuesData?.issues || []);
+      if (Array.isArray(issues) && issues.length > 0) {
+        const totalPages = Array.isArray(pages) ? pages.length : 1;
+        const totalIssues = issues.length;
+        const score = Math.max(0, Math.round(100 - (totalIssues / Math.max(totalPages, 1)) * 20));
+        setSeoHealthScore(Math.min(100, score));
+
+        const critical = issues.filter((i: any) => i.severity === 'critical').length;
+        const major = issues.filter((i: any) => i.severity === 'major').length;
+        const minor = issues.filter((i: any) => i.severity === 'minor').length;
+        const info = issues.filter((i: any) => i.severity === 'info').length;
+        setIssueDistribution([
+          { name: '严重', value: critical, color: '#ff4d4f' },
+          { name: '重要', value: major, color: '#faad14' },
+          { name: '次要', value: minor, color: '#1677ff' },
+          { name: '提示', value: info, color: '#52c41a' },
+        ]);
+      }
+
+      // API usage
+      const apiUsageData = extractData(results[4], {});
+      const cost = (apiUsageData as any)?.monthlyCost ?? (apiUsageData as any)?.cost ?? 0;
+      const change = (apiUsageData as any)?.change ?? (apiUsageData as any)?.monthlyChange ?? 0;
+      setApiCost({ monthlyCost: cost, change });
+
+      // SLA
+      const slaData = extractData(results[5], {});
+      setSla({ uptime: (slaData as any)?.uptime ?? (slaData as any)?.availability ?? 99.9 });
+
+      // Alert summary
+      const alertData = extractData(results[6], {});
+      setAlertSummary({
+        unacknowledged: (alertData as any)?.unacknowledged ?? (alertData as any)?.pending ?? 0,
+        critical: (alertData as any)?.critical ?? 0,
+      });
+
+      // Content score
+      const contentData = extractData(results[7], []);
+      const analyses = Array.isArray(contentData) ? contentData : (contentData?.data || contentData?.analyses || []);
+      if (Array.isArray(analyses) && analyses.length > 0) {
+        const avg = analyses.reduce((acc: number, item: any) => acc + (item.score || item.quality || 0), 0) / analyses.length;
+        setContentScore({ average: Math.round(avg) });
+      }
+
+      // Ranking trend
+      const rankingData = extractData(results[8], {});
+      const trend = (rankingData as any)?.trend ?? (rankingData as any)?.rankingHistory ?? [];
+      setRankingTrend(Array.isArray(trend) ? trend : []);
+
+      // Recent tasks
+      const tasksData = extractData(results[9], []);
+      const tasks = Array.isArray(tasksData) ? tasksData : (tasksData?.data || tasksData?.tasks || []);
+      setRecentTasks(Array.isArray(tasks) ? tasks.slice(0, 5) : []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载数据失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadAllData();
+  }, [projectId]);
+
+  const handleRefresh = () => {
+    loadAllData();
+  };
+
+  // ---- 空状态 / 加载状态 / 错误状态 ----
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader title="仪表盘" subtitle="SEO 运营数据总览" />
+        <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader title="仪表盘" subtitle="SEO 运营数据总览" />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader title="仪表盘" subtitle="SEO 运营数据总览" />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          style={{ marginTop: 24 }}
+          action={
+            <Button size="small" onClick={handleRefresh}>
+              重试
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // ---- 图表配置 ----
   const rankingOption = {
     tooltip: {
       trigger: 'axis',
@@ -121,7 +245,7 @@ const Dashboard: React.FC = () => {
     },
     xAxis: {
       type: 'category',
-      data: mockRankingTrend.map((d) => d.date.slice(5)),
+      data: rankingTrend.map((d: any) => (d.date || d.month || '').slice(-5)),
       axisLine: { lineStyle: { color: '#e8e8e8' } },
       axisLabel: { color: '#999' },
     },
@@ -146,7 +270,7 @@ const Dashboard: React.FC = () => {
       {
         name: '平均排名',
         type: 'line',
-        data: mockRankingTrend.map((d) => d.avgPosition),
+        data: rankingTrend.map((d: any) => d.avgPosition ?? d.averagePosition ?? 0),
         smooth: true,
         lineStyle: { color: '#1677ff', width: 3 },
         itemStyle: { color: '#1677ff' },
@@ -167,7 +291,7 @@ const Dashboard: React.FC = () => {
         name: 'TOP10 关键词数',
         type: 'line',
         yAxisIndex: 1,
-        data: mockRankingTrend.map((d) => d.top10),
+        data: rankingTrend.map((d: any) => d.top10 ?? d.top10Count ?? 0),
         smooth: true,
         lineStyle: { color: '#52c41a', width: 3 },
         itemStyle: { color: '#52c41a' },
@@ -213,7 +337,7 @@ const Dashboard: React.FC = () => {
         emphasis: {
           label: { show: true, fontSize: 16, fontWeight: 'bold' },
         },
-        data: mockIssueDistribution.map((item) => ({
+        data: issueDistribution.map((item) => ({
           ...item,
           itemStyle: { color: item.color },
         })),
@@ -232,7 +356,7 @@ const Dashboard: React.FC = () => {
       title: '页面数',
       dataIndex: 'pages',
       key: 'pages',
-      render: (pages: number) => pages.toLocaleString(),
+      render: (pages: number) => (pages ?? 0).toLocaleString(),
     },
     {
       title: '状态',
@@ -286,7 +410,7 @@ const Dashboard: React.FC = () => {
       <div className="dashboard-stats">
         <StatCard
           title="项目总数"
-          value={mockStats.projects}
+          value={projectCount}
           icon={<ProjectOutlined />}
           color="#1677ff"
           trend={8}
@@ -294,7 +418,7 @@ const Dashboard: React.FC = () => {
         />
         <StatCard
           title="关键词总数"
-          value={mockStats.keywords.toLocaleString()}
+          value={keywordCount.toLocaleString()}
           icon={<KeyOutlined />}
           color="#52c41a"
           trend={12}
@@ -302,7 +426,7 @@ const Dashboard: React.FC = () => {
         />
         <StatCard
           title="爬取页面数"
-          value={mockStats.pagesCrawled.toLocaleString()}
+          value={pagesCrawled.toLocaleString()}
           icon={<FileTextOutlined />}
           color="#722ed1"
           trend={15}
@@ -310,7 +434,7 @@ const Dashboard: React.FC = () => {
         />
         <StatCard
           title="SEO 健康分"
-          value={mockStats.seoHealthScore}
+          value={seoHealthScore}
           suffix="分"
           icon={<HeartOutlined />}
           color="#fa8c16"
@@ -318,7 +442,7 @@ const Dashboard: React.FC = () => {
         />
       </div>
 
-      {/* 新增：告警/API/SLA/内容质量卡片 */}
+      {/* 告警/API/SLA/内容质量卡片 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
           <Card
@@ -330,11 +454,11 @@ const Dashboard: React.FC = () => {
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>未处理告警</Text>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#ff4d4f' }}>
-                  {mockAlertSummary.unacknowledged}
+                  {alertSummary.unacknowledged}
                   <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>条</Text>
                 </div>
-                {mockAlertSummary.critical > 0 && (
-                  <Badge status="error" text={`${mockAlertSummary.critical} 条严重`} style={{ fontSize: 12 }} />
+                {alertSummary.critical > 0 && (
+                  <Badge status="error" text={`${alertSummary.critical} 条严重`} style={{ fontSize: 12 }} />
                 )}
               </div>
               <div style={{ width: 44, height: 44, borderRadius: 10, background: '#ff4d4f15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -353,10 +477,10 @@ const Dashboard: React.FC = () => {
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>API 费用 (本月)</Text>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#52c41a' }}>
-                  ${mockApiCost.monthlyCost.toLocaleString()}
+                  ${apiCost.monthlyCost.toLocaleString()}
                 </div>
-                <Text style={{ fontSize: 12, color: '#ff4d4f' }}>
-                  +{mockApiCost.change}% vs 上月
+                <Text style={{ fontSize: 12, color: apiCost.change >= 0 ? '#ff4d4f' : '#52c41a' }}>
+                  {apiCost.change >= 0 ? '+' : ''}{apiCost.change}% vs 上月
                 </Text>
               </div>
               <div style={{ width: 44, height: 44, borderRadius: 10, background: '#52c41a15', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -375,7 +499,7 @@ const Dashboard: React.FC = () => {
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>SLA 可用率</Text>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#1677ff' }}>
-                  {mockSLA.uptime}%
+                  {sla.uptime}%
                 </div>
                 <Text style={{ fontSize: 12, color: '#52c41a' }}>正常运行</Text>
               </div>
@@ -395,7 +519,7 @@ const Dashboard: React.FC = () => {
               <div>
                 <Text type="secondary" style={{ fontSize: 13 }}>内容质量 (平均分)</Text>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#fa8c16' }}>
-                  {mockContentScore.average}
+                  {contentScore.average}
                   <Text type="secondary" style={{ fontSize: 13, marginLeft: 4 }}>/100</Text>
                 </div>
                 <Text style={{ fontSize: 12, color: '#52c41a' }}>良好</Text>
@@ -452,7 +576,7 @@ const Dashboard: React.FC = () => {
       >
         <Table
           columns={taskColumns}
-          dataSource={mockRecentTasks}
+          dataSource={recentTasks}
           rowKey="id"
           pagination={false}
           size="middle"

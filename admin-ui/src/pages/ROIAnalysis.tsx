@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Row, Col, Form, InputNumber, Button, Statistic, Table, Typography, Space, message, DatePicker, Divider,
+  Spin, Empty, Alert,
 } from 'antd';
 import {
   DollarOutlined, RiseOutlined, FallOutlined, TrophyOutlined,
@@ -12,54 +13,81 @@ import { BarChart, LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { roiAPI } from '@/services/roi';
 import dayjs from 'dayjs';
 
 echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text, Title } = Typography;
 
-const mockROIData = [
-  { month: '2024-01', seoCost: 5000, apiCost: 1200, toolCost: 800, estimatedTrafficValue: 12000, conversionValue: 8000, roi: 2.86, roiPercent: 286 },
-  { month: '2024-02', seoCost: 5200, apiCost: 1350, toolCost: 800, estimatedTrafficValue: 13500, conversionValue: 9500, roi: 3.13, roiPercent: 313 },
-  { month: '2024-03', seoCost: 5500, apiCost: 1500, toolCost: 800, estimatedTrafficValue: 15000, conversionValue: 11000, roi: 3.33, roiPercent: 333 },
-  { month: '2024-04', seoCost: 5300, apiCost: 1400, toolCost: 800, estimatedTrafficValue: 14500, conversionValue: 10500, roi: 3.33, roiPercent: 333 },
-  { month: '2024-05', seoCost: 5600, apiCost: 1600, toolCost: 800, estimatedTrafficValue: 16000, conversionValue: 12000, roi: 3.50, roiPercent: 350 },
-  { month: '2024-06', seoCost: 5800, apiCost: 1700, toolCost: 800, estimatedTrafficValue: 17500, conversionValue: 13500, roi: 3.76, roiPercent: 376 },
-  { month: '2024-07', seoCost: 6000, apiCost: 1800, toolCost: 800, estimatedTrafficValue: 19000, conversionValue: 15000, roi: 3.95, roiPercent: 395 },
-];
+interface ROIEntry {
+  month: string;
+  seoCost: number;
+  apiCost: number;
+  toolCost: number;
+  estimatedTrafficValue: number;
+  conversionValue: number;
+  roi: number;
+  roiPercent: number;
+}
 
-const mockApiCosts = [
-  { service: 'DataForSEO', cost: 800, calls: 45000 },
-  { service: 'OpenAI', cost: 500, calls: 12000 },
-  { service: 'ValueSERP', cost: 300, calls: 8000 },
-  { service: 'Google API', cost: 150, calls: 3000 },
-  { service: '其他', cost: 50, calls: 1000 },
-];
+interface ApiCostItem {
+  service: string;
+  cost: number;
+  calls: number;
+}
 
 const ROIAnalysis: React.FC = () => {
+  const projectId = useStore(s => s.currentProject?.id);
   const [form] = Form.useForm();
-  const [roiData, setRoiData] = useState(mockROIData);
-  const [loading, setLoading] = useState(false);
+  const [roiData, setRoiData] = useState<ROIEntry[]>([]);
+  const [apiCostData, setApiCostData] = useState<ApiCostItem[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const latestData = roiData[roiData.length - 1];
-  const prevData = roiData[roiData.length - 2];
-  const totalCost = roiData.reduce((a, b) => a + b.seoCost + b.apiCost + b.toolCost, 0);
-  const totalValue = roiData.reduce((a, b) => a + b.estimatedTrafficValue + b.conversionValue, 0);
-  const overallROI = totalValue > 0 ? ((totalValue - totalCost) / totalCost * 100) : 0;
-  const totalApiCost = roiData.reduce((a, b) => a + b.apiCost, 0);
+  useEffect(() => {
+    if (!projectId) { setLoading(false); return; }
+    loadData();
+  }, [projectId]);
 
-  const handleRefresh = () => { setLoading(true); setTimeout(() => setLoading(false), 800); };
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [roiRes, summaryRes, apiCostRes] = await Promise.all([
+        roiAPI.getROIData(),
+        roiAPI.getROISummary(),
+        roiAPI.getApiCostSummary(),
+      ]);
+      const roiResult = (roiRes as any).data || roiRes;
+      const summaryResult = (summaryRes as any).data || summaryRes;
+      const apiCostResult = (apiCostRes as any).data || apiCostRes;
+      setRoiData(Array.isArray(roiResult) ? roiResult : roiResult.data || []);
+      setSummary(summaryResult);
+      setApiCostData(Array.isArray(apiCostResult) ? apiCostResult : apiCostResult.data || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = () => { loadData(); };
 
   const handleAddEntry = () => {
     form.validateFields().then((values) => {
-      const entry = {
+      const avgApiCost = roiData.length > 0 ? roiData.reduce((a, b) => a + b.apiCost, 0) / roiData.length : 0;
+      const entry: ROIEntry = {
         month: values.month ? values.month.format('YYYY-MM') : dayjs().format('YYYY-MM'),
         seoCost: values.seoCost || 0,
-        apiCost: totalApiCost / roiData.length,
+        apiCost: avgApiCost,
         toolCost: values.toolCost || 800,
         estimatedTrafficValue: values.trafficValue || 0,
         conversionValue: values.conversionValue || 0,
-        roi: ((values.trafficValue + values.conversionValue) - (values.seoCost + totalApiCost / roiData.length + (values.toolCost || 800))) / (values.seoCost + totalApiCost / roiData.length + (values.toolCost || 800)) + 1,
+        roi: ((values.trafficValue + values.conversionValue) - (values.seoCost + avgApiCost + (values.toolCost || 800))) / (values.seoCost + avgApiCost + (values.toolCost || 800)) + 1,
         roiPercent: 0,
       };
       entry.roiPercent = Math.round(entry.roi * 100);
@@ -68,6 +96,17 @@ const ROIAnalysis: React.FC = () => {
       form.resetFields();
     });
   };
+
+  if (!projectId) return <Empty description="请先选择一个项目" />;
+  if (loading) return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
+  if (error) return <Alert type="error" message="加载失败" description={error} showIcon />;
+
+  const latestData = roiData.length > 0 ? roiData[roiData.length - 1] : null;
+  const prevData = roiData.length > 1 ? roiData[roiData.length - 2] : null;
+  const totalCost = roiData.reduce((a, b) => a + b.seoCost + b.apiCost + b.toolCost, 0);
+  const totalValue = roiData.reduce((a, b) => a + b.estimatedTrafficValue + b.conversionValue, 0);
+  const overallROI = totalValue > 0 ? ((totalValue - totalCost) / totalCost * 100) : 0;
+  const totalApiCost = roiData.reduce((a, b) => a + b.apiCost, 0);
 
   const barOption = {
     tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e8e8e8', textStyle: { color: '#333' } },
@@ -114,7 +153,7 @@ const ROIAnalysis: React.FC = () => {
         actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading }]}
       />
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[16, 16]} style={{ margin: 24 }}>
         <Col xs={12} sm={6}>
           <Card>
             <Statistic title="总投入" value={totalCost} prefix="$" precision={0} valueStyle={{ color: '#1677ff' }} suffix={<DollarOutlined />} />
@@ -129,11 +168,11 @@ const ROIAnalysis: React.FC = () => {
           <Card>
             <Statistic
               title="整体 ROI"
-              value={overallROI}
+              value={overROI}
               suffix="%"
               precision={1}
               valueStyle={{ color: overallROI >= 0 ? '#52c41a' : '#ff4d4f' }}
-              prefix={overallROI >= 0 ? <RiseOutlined /> : <FallOutlined />}
+              prefix={overROI >= 0 ? <RiseOutlined /> : <FallOutlined />}
             />
           </Card>
         </Col>
@@ -160,7 +199,7 @@ const ROIAnalysis: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} lg={10}>
-          <Card title="新增 ROI 记录" style={{ marginBottom: 24 }}>
+          <Card title="新增 ROI 记录" style={{ margin: 24 }}>
             <Form form={form} layout="vertical" size="middle">
               <Form.Item name="month" label="月份">
                 <DatePicker picker="month" style={{ width: '100%' }} />
@@ -191,7 +230,7 @@ const ROIAnalysis: React.FC = () => {
         </Col>
         <Col xs={24} lg={8}>
           <Card title="API 费用汇总" className="chart-card">
-            <Table columns={apiCostColumns} dataSource={mockApiCosts} rowKey="service" pagination={false} size="small" />
+            <Table columns={apiCostColumns} dataSource={apiCostData} rowKey="service" pagination={false} size="small" />
             <Divider style={{ margin: '12px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <Text strong>合计</Text>

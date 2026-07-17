@@ -1,12 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Table, Button, Tag, Typography, Space, Statistic,
-  message, DatePicker, Select,
+  message, Alert, Spin, Empty,
 } from 'antd';
 import {
-  ReloadOutlined, ThunderboltOutlined, RiseOutlined, FallOutlined,
-  SwapOutlined, EditOutlined, DeleteOutlined, PlusOutlined, MinusOutlined,
-  ExclamationCircleOutlined,
+  ReloadOutlined, ThunderboltOutlined,
+  SwapOutlined, EditOutlined, DeleteOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -14,37 +13,79 @@ import { PieChart } from 'echarts/charts';
 import { TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { competitorChangeAPI } from '@/services/competitorChange';
 import dayjs from 'dayjs';
 
 echarts.use([PieChart, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text } = Typography;
 
-const mockChanges = [
-  { id: '1', competitorName: '竞品A', competitorUrl: 'https://competitor-a.com', pageUrl: '/blog/seo-guide', field: '标题', oldValue: 'SEO Guide', newValue: 'The Ultimate SEO Guide 2024', changeType: 'modified' as const, detectedAt: '2024-07-15T09:00:00', projectId: 'p1' },
-  { id: '2', competitorName: '竞品B', competitorUrl: 'https://competitor-b.com', pageUrl: '/pricing', field: '价格', oldValue: '$99/mo', newValue: '$79/mo', changeType: 'modified' as const, detectedAt: '2024-07-15T08:30:00', projectId: 'p1' },
-  { id: '3', competitorName: '竞品A', competitorUrl: 'https://competitor-a.com', pageUrl: '/new-feature', field: '新页面', oldValue: '', newValue: 'https://competitor-a.com/ai-tools', changeType: 'added' as const, detectedAt: '2024-07-14T16:00:00', projectId: 'p1' },
-  { id: '4', competitorName: '竞品C', competitorUrl: 'https://competitor-c.com', pageUrl: '/old-page', field: '页面', oldValue: 'https://competitor-c.com/old-page', newValue: '', changeType: 'removed' as const, detectedAt: '2024-07-14T14:00:00', projectId: 'p2' },
-  { id: '5', competitorName: '竞品B', competitorUrl: 'https://competitor-b.com', pageUrl: '/about', field: 'Meta Description', oldValue: 'Learn about our company', newValue: 'Leading SEO platform trusted by 10000+ businesses worldwide', changeType: 'modified' as const, detectedAt: '2024-07-14T10:00:00', projectId: 'p1' },
-  { id: '6', competitorName: '竞品A', competitorUrl: 'https://competitor-a.com', pageUrl: '/services', field: 'H1标签', oldValue: 'Services', newValue: 'Professional SEO Services', changeType: 'modified' as const, detectedAt: '2024-07-13T22:00:00', projectId: 'p1' },
-  { id: '7', competitorName: '竞品D', competitorUrl: 'https://competitor-d.com', pageUrl: '/blog/', field: '新增博客', oldValue: '', newValue: 'https://competitor-d.com/blog/10-new-posts', changeType: 'added' as const, detectedAt: '2024-07-13T18:00:00', projectId: 'p2' },
-  { id: '8', competitorName: '竞品C', competitorUrl: 'https://competitor-c.com', pageUrl: '/contact', field: '联系表单', oldValue: 'https://competitor-c.com/contact', newValue: '', changeType: 'removed' as const, detectedAt: '2024-07-13T12:00:00', projectId: 'p2' },
-];
+interface ChangeItem {
+  id: string;
+  competitorName: string;
+  competitorUrl: string;
+  pageUrl: string;
+  field: string;
+  oldValue: string;
+  newValue: string;
+  changeType: 'added' | 'modified' | 'removed';
+  detectedAt: string;
+  projectId: string;
+}
 
 const CompetitorChanges: React.FC = () => {
-  const [changes, setChanges] = useState(mockChanges);
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [changes, setChanges] = useState<ChangeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
 
-  const handleRefresh = () => { setLoading(true); setTimeout(() => setLoading(false), 800); };
+  const loadData = useCallback(async () => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await competitorChangeAPI.getChanges(projectId);
+      const result = (res as any).data || res;
+      const data = Array.isArray(result) ? result : result.data || [];
+      setChanges(data);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
 
-  const handleDetect = () => {
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleRefresh = () => {
+    loadData();
+  };
+
+  const handleDetect = async () => {
+    if (!projectId) return;
     setDetecting(true);
     message.loading({ content: '正在检测竞品变更...', key: 'detect' });
-    setTimeout(() => {
+    try {
+      const res = await competitorChangeAPI.runDetection(projectId);
+      const result = (res as any).data || res;
+      const newChanges = Array.isArray(result) ? result : result.data || [];
+      const count = newChanges.length;
+      message.success({ content: `检测完成，发现 ${count} 处变更`, key: 'detect' });
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '检测失败';
+      message.error({ content: msg, key: 'detect' });
+    } finally {
       setDetecting(false);
-      message.success({ content: '检测完成，发现 3 处变更', key: 'detect' });
-    }, 2500);
+    }
   };
 
   const changeTypeConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
@@ -52,6 +93,55 @@ const CompetitorChanges: React.FC = () => {
     modified: { color: '#1677ff', text: '修改', icon: <EditOutlined /> },
     removed: { color: '#ff4d4f', text: '删除', icon: <DeleteOutlined /> },
   };
+
+  // ---- Loading state ----
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="竞品变更追踪"
+          subtitle="实时监控竞品网站内容与结构变化"
+        />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  // ---- Error state ----
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="竞品变更追踪"
+          subtitle="实时监控竞品网站内容与结构变化"
+        />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          action={
+            <Button onClick={handleRefresh} size="small">
+              重试
+            </Button>
+          }
+        />
+      </div>
+    );
+  }
+
+  // ---- Empty state (no project selected) ----
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="竞品变更追踪"
+          subtitle="实时监控竞品网站内容与结构变化"
+        />
+        <Empty description="请先选择一个项目" />
+      </div>
+    );
+  }
 
   const addedCount = changes.filter((c) => c.changeType === 'added').length;
   const modifiedCount = changes.filter((c) => c.changeType === 'modified').length;
@@ -75,7 +165,7 @@ const CompetitorChanges: React.FC = () => {
   };
 
   const columns = [
-    { title: '竞品', dataIndex: 'competitorName', key: 'competitorName', render: (text: string, record: any) => <Text strong>{text}</Text> },
+    { title: '竞品', dataIndex: 'competitorName', key: 'competitorName', render: (text: string) => <Text strong>{text}</Text> },
     { title: '页面', dataIndex: 'pageUrl', key: 'pageUrl', ellipsis: true, render: (text: string) => <Text style={{ fontFamily: 'monospace', fontSize: 12 }}>{text}</Text> },
     { title: '字段', dataIndex: 'field', key: 'field', render: (text: string) => <Tag>{text}</Tag> },
     {
@@ -129,12 +219,20 @@ const CompetitorChanges: React.FC = () => {
       <Row gutter={[24, 24]}>
         <Col xs={24} lg={16}>
           <Card title="变更列表" className="chart-card">
-            <Table columns={columns} dataSource={changes} rowKey="id" pagination={{ pageSize: 10 }} size="middle" scroll={{ x: 900 }} />
+            {changes.length === 0 ? (
+              <Empty description="暂无变更记录" />
+            ) : (
+              <Table columns={columns} dataSource={changes} rowKey="id" pagination={{ pageSize: 10 }} size="middle" scroll={{ x: 900 }} />
+            )}
           </Card>
         </Col>
         <Col xs={24} lg={8}>
           <Card title="变更类型分布" className="chart-card">
-            <ReactEChartsCore echarts={echarts} option={pieOption} style={{ height: 350 }} notMerge />
+            {changes.length === 0 ? (
+              <Empty description="暂无变更数据" />
+            ) : (
+              <ReactEChartsCore echarts={echarts} option={pieOption} style={{ height: 350 }} notMerge />
+            )}
           </Card>
         </Col>
       </Row>

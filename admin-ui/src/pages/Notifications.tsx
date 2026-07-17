@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Row, Col, Switch, Form, Input, Button, Tag, Table, Typography,
-  Space, message, Divider, Modal, Result, Badge,
+  Space, message, Divider, Badge, Spin, Empty, Alert,
 } from 'antd';
 import {
   MailOutlined, SendOutlined, SettingOutlined, ReloadOutlined,
@@ -9,6 +9,7 @@ import {
   SlackOutlined, WechatOutlined, PlusOutlined, ApiOutlined,
 } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
+import { notificationsAPI } from '@/services/notifications';
 import dayjs from 'dayjs';
 
 const { Text, Title, Paragraph } = Typography;
@@ -33,7 +34,7 @@ const channelConfigFields: Record<string, { name: string; label: string; placeho
     { name: 'smtpHost', label: 'SMTP 服务器', placeholder: 'smtp.example.com' },
     { name: 'smtpPort', label: 'SMTP 端口', placeholder: '587' },
     { name: 'username', label: '邮箱账号', placeholder: 'admin@example.com' },
-    { name: 'password', label: '邮箱密码/授权码', placeholder: '输入密码' },
+    { name: 'password', label: '邮箱密码/授权码', placeholder: '密码' },
     { name: 'fromName', label: '发件人名称', placeholder: 'SEO Platform' },
   ],
   dingtalk: [
@@ -42,28 +43,13 @@ const channelConfigFields: Record<string, { name: string; label: string; placeho
   ],
   feishu: [
     { name: 'webhookUrl', label: 'Webhook URL', placeholder: 'https://open.feishu.cn/open-apis/bot/v2/hook/xxx' },
-    { name: 'secret', label: '签名密钥', placeholder: '输入签名密钥' },
+    { name: 'secret', label: '签名密钥', placeholder: '签名密钥' },
   ],
   slack: [
     { name: 'webhookUrl', label: 'Webhook URL', placeholder: 'https://hooks.slack.com/services/xxx' },
     { name: 'channel', label: '频道', placeholder: '#seo-alerts' },
   ],
 };
-
-const mockChannels = [
-  { id: 'c1', type: 'email', typeLabel: '邮件', enabled: true, config: { smtpHost: 'smtp.example.com', smtpPort: '587', username: 'admin@example.com', fromName: 'SEO Platform' }, lastTestAt: '2024-07-15T10:00:00', lastTestStatus: 'success', createdAt: '2024-06-01' },
-  { id: 'c2', type: 'dingtalk', typeLabel: '钉钉', enabled: true, config: { webhookUrl: 'https://oapi.dingtalk.com/robot/send?access_token=xxx', secret: 'SEC***' }, lastTestAt: null, lastTestStatus: null, createdAt: '2024-06-15' },
-  { id: 'c3', type: 'feishu', typeLabel: '飞书', enabled: false, config: { webhookUrl: '', secret: '' }, lastTestAt: null, lastTestStatus: null, createdAt: '2024-07-01' },
-  { id: 'c4', type: 'slack', typeLabel: 'Slack', enabled: true, config: { webhookUrl: 'https://hooks.slack.com/services/xxx', channel: '#seo-alerts' }, lastTestAt: '2024-07-14T15:00:00', lastTestStatus: 'success', createdAt: '2024-07-10' },
-];
-
-const mockSendRecords = [
-  { id: 's1', channelId: 'c1', channelType: '邮件', recipient: 'admin@example.com', subject: '告警: 主站排名骤降', status: 'success', errorMessage: null, sentAt: '2024-07-15T09:30:00' },
-  { id: 's2', channelId: 'c2', channelType: '钉钉', recipient: 'SEO群组', subject: '流量暴跌预警', status: 'success', errorMessage: null, sentAt: '2024-07-15T08:15:00' },
-  { id: 's3', channelId: 'c4', channelType: 'Slack', recipient: '#seo-alerts', subject: '爬虫异常通知', status: 'failed', errorMessage: 'Rate limit exceeded', sentAt: '2024-07-14T15:30:00' },
-  { id: 's4', channelId: 'c1', channelType: '邮件', recipient: 'admin@example.com', subject: '周报已生成', status: 'success', errorMessage: null, sentAt: '2024-07-14T09:00:00' },
-  { id: 's5', channelId: 'c2', channelType: '钉钉', recipient: 'SEO群组', subject: '宕机检测通知', status: 'success', errorMessage: null, sentAt: '2024-07-14T22:00:00' },
-];
 
 interface ChannelItem {
   id: string;
@@ -75,19 +61,62 @@ interface ChannelItem {
   lastTestStatus: string | null;
   createdAt: string;
 }
+
+interface SendRecord {
+  id: string;
+  channelId: string;
+  channelType: string;
+  recipient: string;
+  subject: string;
+  status: string;
+  errorMessage: string | null;
+  sentAt: string;
+}
+
 const Notifications: React.FC = () => {
-  const [channels, setChannels] = useState<ChannelItem[]>(mockChannels as ChannelItem[]);
-  const [sendRecords] = useState(mockSendRecords);
+  const [channels, setChannels] = useState<ChannelItem[]>([]);
+  const [sendRecords, setSendRecords] = useState<SendRecord[]>([]);
   const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
   const [testLoading, setTestLoading] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [configForm] = Form.useForm();
 
-  const handleRefresh = () => { setLoading(true); setTimeout(() => setLoading(false), 800); };
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const handleToggle = (id: string, enabled: boolean) => {
-    setChannels((prev) => prev.map((c) => (c.id === id ? { ...c, enabled } : c)));
-    message.success(enabled ? '渠道已启用' : '渠道已禁用');
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [channelsRes, recordsRes] = await Promise.all([
+        notificationsAPI.getChannels(),
+        notificationsAPI.getSendRecords(),
+      ]);
+      const channelsResult = (channelsRes as any).data || channelsRes;
+      const recordsResult = (recordsRes as any).data || recordsRes;
+      setChannels(Array.isArray(channelsResult) ? channelsResult : channelsResult.data || []);
+      setSendRecords(Array.isArray(recordsResult) ? recordsResult : recordsResult.data || []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = () => { loadData(); };
+
+  const handleToggle = async (id: string, enabled: boolean) => {
+    try {
+      await notificationsAPI.toggleChannel(id, { enabled });
+      setChannels((prev) => prev.map((c) => (c.id === id ? { ...c, enabled } : c)));
+      message.success(enabled ? '渠道已启用' : '渠道已禁用');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '操作失败';
+      message.error(msg);
+    }
   };
 
   const handleEdit = (channel: any) => {
@@ -95,19 +124,26 @@ const Notifications: React.FC = () => {
     configForm.setFieldsValue(channel.config);
   };
 
-  const handleSaveConfig = (channelId: string) => {
-    configForm.validateFields().then((values) => {
+  const handleSaveConfig = async (channelId: string) => {
+    try {
+      const values = await configForm.validateFields();
+      await notificationsAPI.updateChannel(channelId, values);
       setChannels((prev) =>
         prev.map((c) => (c.id === channelId ? { ...c, config: { ...c.config, ...values } } : c))
       );
       setEditingChannelId(null);
       message.success('配置已保存');
-    });
+    } catch (err: any) {
+      if (err?.errorFields) return; // form validation error
+      const msg = err?.response?.data?.error?.message || err?.message || '保存失败';
+      message.error(msg);
+    }
   };
 
-  const handleTest = (channelId: string) => {
+  const handleTest = async (channelId: string) => {
     setTestLoading(channelId);
-    setTimeout(() => {
+    try {
+      await notificationsAPI.testChannel(channelId);
       setChannels((prev) =>
         prev.map((c) =>
           c.id === channelId
@@ -115,10 +151,24 @@ const Notifications: React.FC = () => {
             : c
         )
       );
-      setTestLoading(null);
       message.success('测试发送成功');
-    }, 1500);
+    } catch (err: any) {
+      setChannels((prev) =>
+        prev.map((c) =>
+          c.id === channelId
+            ? { ...c, lastTestAt: dayjs().toISOString(), lastTestStatus: 'failed' }
+            : c
+        )
+      );
+      const msg = err?.response?.data?.error?.message || err?.message || '测试失败';
+      message.error(msg);
+    } finally {
+      setTestLoading(null);
+    }
   };
+
+  if (loading) return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
+  if (error) return <Alert type="error" message="加载失败" description={error} showIcon />;
 
   const recordColumns = [
     { title: '渠道', dataIndex: 'channelType', key: 'channelType', render: (text: string) => <Tag>{text}</Tag> },

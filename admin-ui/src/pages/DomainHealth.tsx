@@ -1,237 +1,243 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Row, Col, Input, Button, Typography, Space, Progress, Tag, Statistic,
-  Descriptions, List, Collapse, Divider, Result, Badge, message, Empty,
+  Descriptions, Divider, Empty, message, Spin, Alert,
 } from 'antd';
 import {
-  GlobalOutlined, SafetyCertificateOutlined, ThunderboltOutlined,
-  CheckCircleOutlined, CloseCircleOutlined, WarningOutlined,
-  ClockCircleOutlined, SearchOutlined, ReloadOutlined,
-  DesktopOutlined, MobileOutlined,
+  SearchOutlined, ReloadOutlined, TrophyOutlined, ReadOutlined,
+  PercentageOutlined, NodeIndexOutlined, BuildOutlined, SmileOutlined,
+  MehOutlined, FrownOutlined, BulbOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
 import { GaugeChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
-import dayjs from 'dayjs';
+import { domainHealthAPI } from '@/services/domainHealth';
 
 echarts.use([GaugeChart, CanvasRenderer]);
 
-const { Text, Title } = Typography;
-
-const mockHealthData = {
-  domain: 'example.com',
-  overallScore: 87,
-  domainInfo: {
-    registrar: 'Namecheap, Inc.',
-    creationDate: '2015-03-15',
-    expirationDate: '2027-03-15',
-    domainAge: 9.3,
-    nameservers: ['ns1.example.com', 'ns2.example.com'],
-  },
-  sslStatus: {
-    valid: true,
-    issuer: "Let's Encrypt",
-    validFrom: '2024-06-01',
-    validTo: '2024-09-01',
-    daysRemaining: 46,
-    status: 'valid' as const,
-  },
-  pageSpeed: {
-    desktop: { score: 92, fcp: 1.2, lcp: 2.1, cls: 0.05, tbt: 45 },
-    mobile: { score: 74, fcp: 2.8, lcp: 4.2, cls: 0.08, tbt: 180 },
-  },
-  issues: [
-    { title: '移动端性能偏低', description: 'Mobile LCP 超过 4秒，建议优化图片和JS加载', severity: 'warning' as const },
-    { title: 'SSL证书即将过期', description: 'SSL证书将在 46 天后过期，建议提前续期', severity: 'warning' as const },
-    { title: '缺少HSTS头', description: '未配置 HTTP Strict-Transport-Security 响应头', severity: 'info' as const },
-    { title: 'DNS 预解析未启用', description: '建议启用 DNS prefetch 以提升第三方资源加载速度', severity: 'info' as const },
-  ],
-  checkedAt: '2024-07-15T10:00:00',
-};
+const { Text, Title, Paragraph } = Typography;
 
 const DomainHealth: React.FC = () => {
   const [domain, setDomain] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<any[]>([]);
 
-  const handleCheck = () => {
-    if (!domain) { message.warning('请输入域名'); return; }
-    setLoading(true);
-    setTimeout(() => {
-      setResult({ ...mockHealthData, domain });
-      setLoading(false);
-      message.success('检测完成');
-    }, 2000);
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
+  const loadHistory = async () => {
+    try {
+      const res = await domainHealthAPI.getHealthHistory(domain);
+      const data = (res as any).data || res;
+      setHistory(Array.isArray(data) ? data : data.data || []);
+    } catch (err: any) {
+      // silently fail for history
+    }
   };
 
-  const healthGaugeOption = (score: number) => ({
+  const handleCheck = async () => {
+    if (!domain) { message.warning('请输入域名');; }
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await domainHealthAPI.checkDomain(domain);
+      const data = (res as any).data || res;
+      setResult(data.data || data);
+      message.success('检测完成');
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '检测失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = () => { setResult(null); setError(null); };
+
+  const gaugeOption = (value: number, name: string, color: string) => ({
     series: [{
-      type: 'gauge', radius: '90%', center: ['50%', '55%'],
+      type: 'gauge', radius: '85%', center: ['50%', '55%'],
       startAngle: 210, endAngle: -30, min: 0, max: 100,
-      axisLine: { show: true, lineStyle: { width: 20, color: [[0.3, '#ff4d4f'], [0.6, '#faad14'], [1, '#52c41a']] } },
+      axisLine: { show: true, lineStyle: { width: 16, color: [[0.3, '#ff4d4f'], [0.6, '#faad14'], [1, color]] } },
       axisTick: { show: false }, splitLine: { show: false },
       axisLabel: { show: false },
-      detail: { valueAnimation: true, fontSize: 36, fontWeight: 'bold', offsetCenter: [0, '50%'], formatter: '{value}', color: score >= 70 ? '#52c41a' : score >= 40 ? '#faad14' : '#ff4d4f' },
-      title: { offsetCenter: [0, '80%'], fontSize: 13, color: '#999' },
-      data: [{ value: score, name: '健康分' }],
+      detail: { valueAnimation: true, fontSize: 24, fontWeight: 'bold', offsetCenter: [0, '55%'], formatter: '{value}', color: '#333' },
+      title: { offsetCenter: [0, '80%'], fontSize: 12, color: '#999' },
+      data: [{ value, name }],
     }],
   });
 
-  const sslStatusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
-    valid: { color: '#52c41a', text: '有效', icon: <CheckCircleOutlined /> },
-    expiring: { color: '#faad14', text: '即将过期', icon: <WarningOutlined /> },
-    expired: { color: '#ff4d4f', text: '已过期', icon: <CloseCircleOutlined /> },
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return '#52c41a';
+    if (score >= 60) return '#faad14';
+    return '#ff4d4f';
   };
 
-  const issueSeverityConfig: Record<string, { color: string; icon: React.ReactNode }> = {
-    critical: { color: '#ff4d4f', icon: <CloseCircleOutlined /> },
-    warning: { color: '#faad14', icon: <WarningOutlined /> },
-    info: { color: '#1677ff', icon: <ThunderboltOutlined /> },
+  const getStatusBadge = (status: string) => {
+    const statusMap: Record<string, { color: string; text: string }> = {
+      'good': { color: '#52c41a', text: '良好' },
+      'warning': { color: '#faad14', text: '警告' },
+      'error': { color: '#ff4d4f', text: '错误' },
+      'unknown': { color: '#999', text: '未知' },
+    };
+    const info = statusMap[status.toLowerCase()] || statusMap['unknown'];
+    return <Badge color={info.color} text={info.text} />;
   };
 
   return (
     <div className="page-container">
       <PageHeader
-        title="域名健康"
-        subtitle="综合域名健康检查与性能分析"
-        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: () => setResult(null), loading: false }]}
+        title="域名健康检查"
+        subtitle="检测域名的 SEO 健康状态与技术指标"
+        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading: false }]}
       />
 
-      <Card style={{ marginBottom: 24 }}>
+      <Card style={{ margin: 24 }}>
         <Space.Compact style={{ width: '100%' }}>
           <Input
             size="large"
-            placeholder="输入域名，例如 example.com"
-            prefix={<GlobalOutlined />}
+            placeholder="要检测的域名，例如 example.com"
+            prefix={<SearchOutlined />}
             value={domain}
             onChange={(e) => setDomain(e.target.value)}
             onPressEnter={handleCheck}
           />
-          <Button type="primary" size="large" loading={loading} icon={<SearchOutlined />} onClick={handleCheck}>
+          <Button type="primary" size="large" loading={loading} icon={<ThunderboltOutlined />} onClick={handleCheck}>
             检测
           </Button>
         </Space.Compact>
       </Card>
 
-      {!result ? (
+      {error && <Alert type="error" message="检测失败" description={error} showIcon style={{ margin: 24 }} />}
+      {loading && <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />}
+      {!result && !loading && !error ? (
         <Empty description="请输入域名并点击检测按钮" style={{ padding: 60 }} />
-      ) : (
+      ) : result ? (
         <>
+          <Row gutter={[16, 16]} style={{ margin: 24 }}>
+            <Col xs={12} sm={6}>
+              <Card><Statistic title="健康评分" value={result.healthScore} suffix="/100" valueStyle={{ color: getScoreColor(result.healthScore) }} prefix={<TrophyOutlined />} /></Card>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Card><Statistic title="SEO 得分" value={result.seoScore} suffix="/100" valueStyle={{ color: getScoreColor(result.seoScore) }} prefix={<ReadOutlined />} /></Card>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Card><Statistic title="性能得分" value={result.performanceScore} suffix="/100" valueStyle={{ color: getScoreColor(result.performanceScore) }} prefix={<BuildOutlined />} /></Card>
+            </Col>
+            <Col xs={12} sm={6}>
+              <Card><Statistic title="安全检查" value={result.securityScore} suffix="/100" valueStyle={{ color: getScoreColor(result.securityScore) }} prefix={<PercentageOutlined />} /></Card>
+            </Col>
+          </Row>
+
           <Row gutter={[24, 24]}>
             <Col xs={24} md={8}>
-              <Card title="综合健康评分" className="chart-card">
-                <ReactEChartsCore echarts={echarts} option={healthGaugeOption(result.overallScore)} style={{ height: 300 }} notMerge />
-                <div style={{ textAlign: 'center', marginTop: -20 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>检测时间: {dayjs(result.checkedAt).format('MM-DD HH:mm')}</Text>
-                </div>
+              <Card title="健康评分" className="chart-card">
+                <ReactEChartsCore echarts={echarts} option={gaugeOption(result.healthScore, '健康分', getScoreColor(result.healthScore))} style={{ height: 280 }} notMerge />
               </Card>
             </Col>
-            <Col xs={24} md={16}>
-              <Card title="域名信息" style={{ marginBottom: 24 }}>
-                <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
-                  <Descriptions.Item label="域名">{result.domain}</Descriptions.Item>
-                  <Descriptions.Item label="注册商">{result.domainInfo.registrar}</Descriptions.Item>
-                  <Descriptions.Item label="创建日期">{result.domainInfo.creationDate}</Descriptions.Item>
-                  <Descriptions.Item label="过期日期">
-                    <Text style={{ color: dayjs(result.domainInfo.expirationDate).diff(dayjs(), 'day') < 90 ? '#faad14' : '#52c41a' }}>
-                      {result.domainInfo.expirationDate}
-                    </Text>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="域名年龄">{result.domainInfo.domainAge} 年</Descriptions.Item>
-                  <Descriptions.Item label="域名服务器">
-                    {result.domainInfo.nameservers.join(', ')}
-                  </Descriptions.Item>
-                </Descriptions>
+            <Col xs={24} md={8}>
+              <Card title="SEO 评分" className="chart-card">
+                <ReactEChartsCore echarts={echarts} option={gaugeOption(result.seoScore, 'SEO', getScoreColor(result.seoScore))} style={{ height: 280 }} notMerge />
+              </Card>
+            </Col>
+            <Col xs={24} md={8}>
+              <Card title="安全评分" className="chart-card">
+                <ReactEChartsCore echarts={echarts} option={gaugeOption(result.securityScore, '安全', getScoreColor(result.securityScore))} style={{ height: 280 }} notMerge />
               </Card>
             </Col>
           </Row>
 
           <Row gutter={[24, 24]} style={{ marginTop: 24 }}>
             <Col xs={24} md={12}>
-              <Card title="SSL 证书状态">
-                {result.sslStatus.valid ? (
-                  <Result
-                    icon={<SafetyCertificateOutlined style={{ color: sslStatusConfig[result.sslStatus.status].color }} />}
-                    title={<Text style={{ color: sslStatusConfig[result.sslStatus.status].color }}>{sslStatusConfig[result.sslStatus.status].text}</Text>}
-                    subTitle={`颁发者: ${result.sslStatus.issuer}`}
-                  >
-                    <Descriptions column={2} size="small" bordered>
-                      <Descriptions.Item label="有效期起">{result.sslStatus.validFrom}</Descriptions.Item>
-                      <Descriptions.Item label="有效期止">{result.sslStatus.validTo}</Descriptions.Item>
-                      <Descriptions.Item label="剩余天数" span={2}>
-                        <Badge
-                          count={`${result.sslStatus.daysRemaining} 天`}
-                          style={{
-                            backgroundColor: result.sslStatus.daysRemaining > 30 ? '#52c41a' : result.sslStatus.daysRemaining > 14 ? '#faad14' : '#ff4d4f',
-                          }}
-                        />
-                      </Descriptions.Item>
-                    </Descriptions>
-                  </Result>
-                ) : (
-                  <Result status="error" title="SSL 证书已过期" subTitle="请立即续期 SSL 证书" />
-                )}
+              <Card title="基本信息">
+                <Descriptions column={1} size="small" bordered>
+                  <Descriptions.Item label="域名">{result.domain}</Descriptions.Item>
+                  <Descriptions.Item label="IP 地址">{result.ip}</Descriptions.Item>
+                  <Descriptions.Item label="服务器">{result.server}</Descriptions.Item>
+                  <Descriptions.Item label="响应时间">{result.responseTime}ms</Descriptions.Item>
+                  <Descriptions.Item label="SSL 证书">
+                    {result.sslValid ? <Tag color="green">有效</Tag> : <Tag color="red">无效</Tag>}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="HTTPS 重定向">
+                    {result.httpsRedirect ? <Tag color="green">已启用</Tag> : <Tag color="red">未启用</Tag>}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="Robots.txt">{result.hasRobotsTxt ? <Tag color="green">存在</Tag> : <Tag color="red">不存在</Tag>}</Descriptions.Item>
+                  <Descriptions.Item label="Sitemap">{result.hasSitemap ? <Tag color="green">存在</Tag> : <Tag color="red">不存在</Tag>}</Descriptions.Item>
+                </Descriptions>
               </Card>
             </Col>
             <Col xs={24} md={12}>
-              <Card title="PageSpeed 性能评分">
-                <Row gutter={[16, 16]}>
-                  <Col span={12} style={{ textAlign: 'center' }}>
-                    <DesktopOutlined style={{ fontSize: 24, color: '#1677ff', marginBottom: 8 }} />
-                    <div style={{ fontSize: 28, fontWeight: 700, color: result.pageSpeed.desktop.score >= 90 ? '#52c41a' : '#faad14' }}>
-                      {result.pageSpeed.desktop.score}
+              <Card title="状态检查">
+                {(result.checks || []).map((check: any) => (
+                  <div key={check.name} style={{ margin: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', margin: 4 }}>
+                      <Space>
+                        {getStatusBadge(check.status)}
+                        <Text strong>{check.name}</Text>
+                      </Space>
+                      <Text type="secondary">{check.score}%</Text>
                     </div>
-                    <Text type="secondary">桌面端</Text>
-                    <div style={{ marginTop: 8, textAlign: 'left' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">FCP</Text><Text>{result.pageSpeed.desktop.fcp}s</Text></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">LCP</Text><Text>{result.pageSpeed.desktop.lcp}s</Text></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">CLS</Text><Text>{result.pageSpeed.desktop.cls}</Text></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">TBT</Text><Text>{result.pageSpeed.desktop.tbt}ms</Text></div>
-                    </div>
-                  </Col>
-                  <Col span={12} style={{ textAlign: 'center', borderLeft: '1px solid #f0f0f0' }}>
-                    <MobileOutlined style={{ fontSize: 24, color: '#722ed1', marginBottom: 8 }} />
-                    <div style={{ fontSize: 28, fontWeight: 700, color: result.pageSpeed.mobile.score >= 90 ? '#52c41a' : result.pageSpeed.mobile.score >= 50 ? '#faad14' : '#ff4d4f' }}>
-                      {result.pageSpeed.mobile.score}
-                    </div>
-                    <Text type="secondary">移动端</Text>
-                    <div style={{ marginTop: 8, textAlign: 'left' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">FCP</Text><Text>{result.pageSpeed.mobile.fcp}s</Text></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">LCP</Text><Text>{result.pageSpeed.mobile.lcp}s</Text></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">CLS</Text><Text>{result.pageSpeed.mobile.cls}</Text></div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}><Text type="secondary">TBT</Text><Text>{result.pageSpeed.mobile.tbt}ms</Text></div>
-                    </div>
-                  </Col>
-                </Row>
+                    <Progress
+                      percent={check.score}
+                      strokeColor={check.status === 'good' ? '#52c41a' : check.status === 'warning' ? '#faad14' : '#ff4d4f'}
+                      size="small"
+                    />
+                  </div>
+                ))}
               </Card>
             </Col>
           </Row>
 
-          <Card title="问题清单" style={{ marginTop: 24 }}>
-            <List
-              dataSource={result.issues}
-              renderItem={(item: any) => {
-                const config = issueSeverityConfig[item.severity];
-                return (
-                  <List.Item>
-                    <List.Item.Meta
-                      avatar={
-                        <Tag color={config.color} icon={config.icon}>
-                          {item.severity === 'critical' ? '严重' : item.severity === 'warning' ? '警告' : '信息'}
-                        </Tag>
-                      }
-                      title={<Text strong>{item.title}</Text>}
-                      description={item.description}
-                    />
-                  </List.Item>
-                );
-              }}
-            />
-          </Card>
+          <Row gutter={[24, 24]} style={{ marginTop: 24 }}>
+            <Col xs={24} md={12}>
+              <Card title="SEO 检查详情">
+                <List
+                  dataSource={result.seoDetails || []}
+                  renderItem={(item: any) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        avatar={
+                          <Tag color={item.status === 'good' ? 'green' : item.status === 'warning' ? 'orange' : 'red'}>
+                            {item.status === 'good' ? '通过' : item.status === 'warning' ? '警告' : '失败'}
+                          </Tag>
+                        }
+                        title={<Text strong>{item.name}</Text>}
+                        description={<Text type="secondary">{item.description}</Text>}
+                      />
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title="安全与性能">
+                <List
+                  dataSource={result.securityDetails || []}
+                  renderItem={(item: any) => (
+                    <List.Item>
+                      <List.Item.Meta
+                        avatar={
+                          <Tag color={item.status === 'good' ? 'green' : item.status === 'warning' ? 'orange' : 'red'}>
+                            {item.status === 'good' ? '安全' : item.status === 'warning' ? '注意' : '危险'}
+                          </Tag>
+                        }
+                        title={<Text strong>{item.name}</Text>}
+                        description={<Text type="secondary">{item.description}</Text>}
+                      />
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            </Col>
+          </Row>
         </>
-      )}
+      ) : null}
     </div>
   );
 };

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Button, Tag, Space, Typography, Select, Row, Col, Statistic, message,
+  Card, Table, Button, Tag, Space, Typography, Select, Row, Col, Statistic, message, Spin, Empty, Alert,
 } from 'antd';
 import {
   ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined, MinusOutlined,
@@ -12,56 +12,144 @@ import { LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
+import { rankingAPI } from '@/services/ranking';
 
 echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text } = Typography;
 
-// 模拟排名历史
-const mockRankingHistory = [
-  { date: '01-07', 'SEO优化服务': 12, '网站排名提升': 15, '搜索引擎优化': 8 },
-  { date: '01-14', 'SEO优化服务': 10, '网站排名提升': 14, '搜索引擎优化': 7 },
-  { date: '01-21', 'SEO优化服务': 8, '网站排名提升': 13, '搜索引擎优化': 6 },
-  { date: '01-28', 'SEO优化服务': 7, '网站排名提升': 12, '搜索引擎优化': 5 },
-  { date: '02-04', 'SEO优化服务': 6, '网站排名提升': 10, '搜索引擎优化': 4 },
-  { date: '02-11', 'SEO优化服务': 5, '网站排名提升': 9, '搜索引擎优化': 3 },
-  { date: '02-18', 'SEO优化服务': 4, '网站排名提升': 8, '搜索引擎优化': 3 },
-  { date: '02-25', 'SEO优化服务': 3, '网站排名提升': 7, '搜索引擎优化': 2 },
-];
-
-const mockRankings = [
-  { id: '1', keyword: 'SEO优化服务', position: 3, previousPosition: 5, change: 2, url: '/services/seo', searchEngine: 'google', device: 'desktop' },
-  { id: '2', keyword: '网站排名提升', position: 7, previousPosition: 4, change: -3, url: '/blog/ranking-tips', searchEngine: 'google', device: 'desktop' },
-  { id: '3', keyword: '搜索引擎优化', position: 2, previousPosition: 3, change: 1, url: '/', searchEngine: 'google', device: 'desktop' },
-  { id: '4', keyword: '内容营销策略', position: 5, previousPosition: 6, change: 1, url: '/blog/content-strategy', searchEngine: 'google', device: 'mobile' },
-  { id: '5', keyword: 'SEO审计', position: 4, previousPosition: 4, change: 0, url: '/services/audit', searchEngine: 'google', device: 'desktop' },
-  { id: '6', keyword: '外链建设', position: 8, previousPosition: 15, change: 7, url: '/services/backlinks', searchEngine: 'google', device: 'mobile' },
-  { id: '7', keyword: '本地SEO', position: 15, previousPosition: 10, change: -5, url: '/services/local-seo', searchEngine: 'google', device: 'desktop' },
-  { id: '8', keyword: '关键词研究工具', position: 12, previousPosition: 12, change: 0, url: '/tools/keyword', searchEngine: 'google', device: 'desktop' },
-];
-
 const Rankings: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const projectId = useStore((s) => s.currentProject?.id);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const handleRefresh = () => {
+  const [rankings, setRankings] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>({ top3: 0, top10: 0, improved: 0, declined: 0 });
+  const [rankingHistory, setRankingHistory] = useState<any[]>([]);
+
+  const loadData = async () => {
     setLoading(true);
-    setTimeout(() => setLoading(false), 800);
+    setError(null);
+    try {
+      const results = await Promise.allSettled([
+        rankingAPI.getRankings(projectId!),
+        rankingAPI.getRankingSummary(projectId!),
+      ]);
+
+      const extractArr = (result: PromiseSettledResult<any>): any[] => {
+        if (result.status === 'fulfilled') {
+          const res = result.value;
+          const d = (res as any).data !== undefined ? (res as any).data : res;
+          return Array.isArray(d) ? d : (d?.data || d?.rankings || []);
+        }
+        return [];
+      };
+
+      const extractObj = (result: PromiseSettledResult<any>): any => {
+        if (result.status === 'fulfilled') {
+          const res = result.value;
+          return (res as any).data !== undefined ? (res as any).data : res;
+        }
+        return {};
+      };
+
+      const rankingList = extractArr(results[0]);
+      const summaryData = extractObj(results[1]);
+
+      setRankings(rankingList);
+
+      setSummary({
+        top3: summaryData?.top3 ?? rankingList.filter((r: any) => (r.position || r.currentRank) <= 3).length,
+        top10: summaryData?.top10 ?? rankingList.filter((r: any) => (r.position || r.currentRank) <= 10).length,
+        improved: summaryData?.improved ?? rankingList.filter((r: any) => (r.change ?? 0) > 0).length,
+        declined: summaryData?.declined ?? rankingList.filter((r: any) => (r.change ?? 0) < 0).length,
+      });
+
+      // Derive ranking history from the data or use provided history
+      const history = summaryData?.history ?? summaryData?.rankingHistory ?? rankingList.slice(0, 8).map((r: any) => ({
+        date: r.date || r.lastChecked || '',
+        keyword: r.keyword || '',
+        position: r.position || r.currentRank || 0,
+      }));
+      setRankingHistory(Array.isArray(history) ? history : []);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleRefreshRankings = () => {
+  useEffect(() => {
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [projectId]);
+
+  const handleRefresh = () => {
+    loadData();
+  };
+
+  const handleRefreshRankings = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await rankingAPI.refreshRankings(projectId!);
       message.success('排名数据已刷新');
-    }, 2000);
+      loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '刷新排名失败';
+      message.error(msg);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  // 统计
-  const top3 = mockRankings.filter((r) => r.position <= 3).length;
-  const top10 = mockRankings.filter((r) => r.position <= 10).length;
-  const improved = mockRankings.filter((r) => r.change > 0).length;
-  const declined = mockRankings.filter((r) => r.change < 0).length;
+  // ---- 空状态 / 加载状态 / 错误状态 ----
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader title="排名追踪" subtitle="关键词排名变化监控" />
+        <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader title="排名追踪" subtitle="关键词排名变化监控" />
+        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader title="排名追踪" subtitle="关键词排名变化监控" />
+        <Alert
+          type="error"
+          message="加载失败"
+          description={error}
+          showIcon
+          style={{ marginTop: 24 }}
+          action={<Button size="small" onClick={handleRefresh}>重试</Button>}
+        />
+      </div>
+    );
+  }
+
+  // Build chart data from rankingHistory
+  const chartDates = rankingHistory.length > 0
+    ? [...new Set(rankingHistory.map((d: any) => d.date || d.month || ''))]
+    : [];
+  const chartKeywords = rankingHistory.length > 0
+    ? [...new Set(rankingHistory.map((d: any) => d.keyword || d.name || ''))]
+    : [];
 
   const chartOption = {
     tooltip: {
@@ -71,7 +159,7 @@ const Rankings: React.FC = () => {
       textStyle: { color: '#333' },
     },
     legend: {
-      data: ['SEO优化服务', '网站排名提升', '搜索引擎优化'],
+      data: chartKeywords.slice(0, 3),
       bottom: 0,
     },
     grid: {
@@ -83,7 +171,7 @@ const Rankings: React.FC = () => {
     },
     xAxis: {
       type: 'category',
-      data: mockRankingHistory.map((d) => d.date),
+      data: chartDates,
       axisLabel: { color: '#999' },
     },
     yAxis: {
@@ -94,38 +182,22 @@ const Rankings: React.FC = () => {
       axisLabel: { color: '#999' },
       splitLine: { lineStyle: { color: '#f0f0f0' } },
     },
-    series: [
-      {
-        name: 'SEO优化服务',
+    series: chartKeywords.slice(0, 3).map((kw: string, idx: number) => {
+      const colors = ['#1677ff', '#52c41a', '#fa8c16'];
+      return {
+        name: kw,
         type: 'line',
-        data: mockRankingHistory.map((d) => d['SEO优化服务']),
+        data: chartDates.map((date: string) => {
+          const entry = rankingHistory.find((d: any) => (d.date || d.month) === date && (d.keyword || d.name) === kw);
+          return entry ? (entry.position || entry.rank || 0) : null;
+        }),
         smooth: true,
-        lineStyle: { width: 3, color: '#1677ff' },
-        itemStyle: { color: '#1677ff' },
+        lineStyle: { width: 3, color: colors[idx] },
+        itemStyle: { color: colors[idx] },
         symbol: 'circle',
         symbolSize: 6,
-      },
-      {
-        name: '网站排名提升',
-        type: 'line',
-        data: mockRankingHistory.map((d) => d['网站排名提升']),
-        smooth: true,
-        lineStyle: { width: 3, color: '#52c41a' },
-        itemStyle: { color: '#52c41a' },
-        symbol: 'circle',
-        symbolSize: 6,
-      },
-      {
-        name: '搜索引擎优化',
-        type: 'line',
-        data: mockRankingHistory.map((d) => d['搜索引擎优化']),
-        smooth: true,
-        lineStyle: { width: 3, color: '#fa8c16' },
-        itemStyle: { color: '#fa8c16' },
-        symbol: 'circle',
-        symbolSize: 6,
-      },
-    ],
+      };
+    }),
   };
 
   const columns = [
@@ -140,12 +212,13 @@ const Rankings: React.FC = () => {
       dataIndex: 'position',
       key: 'position',
       width: 100,
-      sorter: (a: any, b: any) => a.position - b.position,
+      sorter: (a: any, b: any) => (a.position || 0) - (b.position || 0),
       render: (pos: number) => {
-        const color = pos <= 3 ? '#52c41a' : pos <= 10 ? '#1677ff' : '#faad14';
+        const p = pos ?? 0;
+        const color = p <= 3 ? '#52c41a' : p <= 10 ? '#1677ff' : '#faad14';
         return (
           <Tag color={color} style={{ fontSize: 14, fontWeight: 600 }}>
-            #{pos}
+            #{p}
           </Tag>
         );
       },
@@ -155,17 +228,18 @@ const Rankings: React.FC = () => {
       key: 'change',
       width: 100,
       render: (_: any, record: any) => {
-        if (record.change > 0) {
+        const change = record.change ?? 0;
+        if (change > 0) {
           return (
             <Tag color="success" icon={<ArrowUpOutlined />}>
-              +{record.change}
+              +{change}
             </Tag>
           );
         }
-        if (record.change < 0) {
+        if (change < 0) {
           return (
             <Tag color="error" icon={<ArrowDownOutlined />}>
-              {record.change}
+              {change}
             </Tag>
           );
         }
@@ -187,14 +261,14 @@ const Rankings: React.FC = () => {
       dataIndex: 'searchEngine',
       key: 'searchEngine',
       width: 110,
-      render: (val: string) => <Tag>{val}</Tag>,
+      render: (val: string) => <Tag>{val || 'google'}</Tag>,
     },
     {
       title: '设备',
       dataIndex: 'device',
       key: 'device',
       width: 90,
-      render: (val: string) => <Tag>{val === 'desktop' ? '桌面端' : '移动端'}</Tag>,
+      render: (val: string) => <Tag>{val === 'desktop' ? '桌面端' : val === 'mobile' ? '移动端' : val || '桌面端'}</Tag>,
     },
   ];
 
@@ -214,7 +288,7 @@ const Rankings: React.FC = () => {
           <Card size="small">
             <Statistic
               title="TOP 3"
-              value={top3}
+              value={summary.top3}
               prefix={<TrophyOutlined style={{ color: '#faad14' }} />}
               valueStyle={{ color: '#52c41a' }}
             />
@@ -224,7 +298,7 @@ const Rankings: React.FC = () => {
           <Card size="small">
             <Statistic
               title="TOP 10"
-              value={top10}
+              value={summary.top10}
               prefix={<RiseOutlined style={{ color: '#1677ff' }} />}
               valueStyle={{ color: '#1677ff' }}
             />
@@ -234,7 +308,7 @@ const Rankings: React.FC = () => {
           <Card size="small">
             <Statistic
               title="上升"
-              value={improved}
+              value={summary.improved}
               prefix={<ArrowUpOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
@@ -244,7 +318,7 @@ const Rankings: React.FC = () => {
           <Card size="small">
             <Statistic
               title="下降"
-              value={declined}
+              value={summary.declined}
               prefix={<ArrowDownOutlined />}
               valueStyle={{ color: '#ff4d4f' }}
             />
@@ -284,7 +358,7 @@ const Rankings: React.FC = () => {
       >
         <Table
           columns={columns}
-          dataSource={mockRankings}
+          dataSource={rankings}
           rowKey="id"
           pagination={{ pageSize: 10, showSizeChanger: true }}
           size="middle"
