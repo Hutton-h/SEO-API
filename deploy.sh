@@ -362,17 +362,21 @@ deploy_nginx_kejilion() {
     sed -i "s|{YOUR_DOMAIN}|${DOMAIN}|g" "$target_conf"
 
     if [ "$SSL_MODE" = "http" ]; then
-        # 注释掉 HTTPS 强制跳转
-        sed -i 's|return 301 https://$host$request_uri;|# return 301 https://$host$request_uri;|' "$target_conf"
+        # HTTP 模式：return 301 保持注释状态，HTTP server 块直接服务内容
         log_info "HTTP 模式（无 SSL 跳转）"
     else
+        # HTTPS 模式：取消注释 return 301，HTTP 请求自动跳转 HTTPS
+        sed -i 's|# return 301 https://$host$request_uri;|return 301 https://$host$request_uri;|' "$target_conf"
+        log_info "HTTPS 模式（HTTP 自动跳转 HTTPS）"
+
         # 检查证书
         local cert_file="$KEJILION_CERTS_DIR/${DOMAIN}_cert.pem"
         local key_file="$KEJILION_CERTS_DIR/${DOMAIN}_key.pem"
         if [ ! -f "$cert_file" ] || [ ! -f "$key_file" ]; then
             log_warn "SSL 证书不存在: ${DOMAIN}_cert.pem"
-            log_info "请先通过 kejilion.sh 申请 SSL 证书，或手动放置证书到 $KEJILION_CERTS_DIR/"
-            log_info "本次将以 HTTP 模式启动"
+            log_info "请先通过 kejilion.sh 申请 SSL 证书"
+            log_info "证书路径: $KEJILION_CERTS_DIR/"
+            log_info "本次以 HTTP 模式启动，证书到位后运行: bash deploy.sh update"
             sed -i 's|return 301 https://$host$request_uri;|# return 301 https://$host$request_uri;|' "$target_conf"
         else
             log_ok "SSL 证书已就绪"
@@ -483,7 +487,8 @@ stop_services() {
 clean_all() {
     echo ""
     echo -e "${RED}╔══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║  ⚠️  一键删除 — 将清除所有 Crane SEO Platform 数据和容器    ║${NC}"
+    echo -e "${RED}║  ⚠️  一键删除 — 仅清除 Crane SEO Platform 项目数据           ║${NC}"
+    echo -e "${RED}║     不会影响服务器上其他项目或 Docker 服务                    ║${NC}"
     echo -e "${RED}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "  将删除以下内容："
@@ -519,8 +524,16 @@ clean_all() {
     done
     # 删除网络
     docker network rm crane-seo-network 2>/dev/null || true
-    # 删除匿名卷
-    docker volume prune -f 2>/dev/null || true
+    # 删除本项目数据卷（仅 crane-seo 前缀的卷）
+    log_info "清理本项目数据卷..."
+    docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E 'crane-seo|crane_seo' | while read vol; do
+        docker volume rm "$vol" 2>/dev/null || true
+    done
+    # 删除本项目镜像
+    log_info "清理本项目镜像..."
+    docker images --format '{{.Repository}}' 2>/dev/null | grep -E 'crane-seo' | sort -u | while read img; do
+        docker rmi "$img" 2>/dev/null || true
+    done
 
     # 2. 删除 .env
     if [ -f "$ENV_FILE" ]; then
@@ -557,9 +570,6 @@ clean_all() {
     if [ -f "$NGINX_STANDALONE_CONF" ]; then
         sed -i "s|server_name .*|server_name localhost;|" "$NGINX_STANDALONE_CONF" 2>/dev/null || true
     fi
-
-    # 6. 清理 Docker 系统缓存
-    docker system prune -f 2>/dev/null || true
 
     echo ""
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
