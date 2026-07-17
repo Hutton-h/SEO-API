@@ -907,10 +907,25 @@ main_deploy() {
         DOMAIN="${DOMAIN:-localhost}"
         SSL_MODE="${SSL_MODE:-http}"
         # 自动检测证书，有证书就启用 HTTPS
-        if [ "$DOMAIN" != "localhost" ] && [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ]; then
-            log_ok "检测到已有 SSL 证书，自动启用 HTTPS"
-            SSL_MODE="https"
-            sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+        if [ "$DOMAIN" != "localhost" ]; then
+            if [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ]; then
+                log_ok "检测到已有 SSL 证书: ${DOMAIN}"
+                if [ "$SSL_MODE" != "https" ]; then
+                    log_info "自动启用 HTTPS"
+                    SSL_MODE="https"
+                    sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+                fi
+            fi
+        else
+            # DOMAIN=localhost 但可能有证书，尝试从证书文件名推断域名
+            local detected_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | head -1 | sed 's|.*/||; s|_cert\.pem||')
+            if [ -n "$detected_domain" ] && [ "$detected_domain" != "localhost" ]; then
+                log_ok "从证书文件检测到域名: ${detected_domain}"
+                DOMAIN="$detected_domain"
+                SSL_MODE="https"
+                sed -i "s/^DOMAIN=.*/DOMAIN=${detected_domain}/" "$ENV_FILE"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+            fi
         fi
     else
         interactive_config
@@ -969,13 +984,26 @@ case "$CMD" in
             DOMAIN="${DOMAIN:-localhost}"
             SSL_MODE="${SSL_MODE:-http}"
         fi
+        # 如果 DOMAIN=localhost，尝试从证书推断
+        if [ "$DOMAIN" = "localhost" ]; then
+            local detected_domain=$(ls /home/web/certs/*_cert.pem 2>/dev/null | head -1 | sed 's|.*/||; s|_cert\.pem||')
+            if [ -n "$detected_domain" ] && [ "$detected_domain" != "localhost" ]; then
+                log_ok "从证书文件检测到域名: ${detected_domain}"
+                DOMAIN="$detected_domain"
+                SSL_MODE="https"
+                sed -i "s/^DOMAIN=.*/DOMAIN=${detected_domain}/" "$ENV_FILE"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+            fi
+        fi
         build_frontend
         if [ "$DETECTED_KEJILION" = true ]; then
             # 自动检测证书，有证书就启用 HTTPS
             if [ "$DOMAIN" != "localhost" ] && [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ]; then
-                log_ok "检测到已有 SSL 证书，自动启用 HTTPS"
-                SSL_MODE="https"
-                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
+                if [ "$SSL_MODE" != "https" ]; then
+                    log_ok "检测到已有 SSL 证书，自动启用 HTTPS"
+                    SSL_MODE="https"
+                    sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
+                fi
             fi
             # 重新生成 Nginx 配置（处理证书到位后的 HTTPS 启用）
             deploy_nginx_kejilion
