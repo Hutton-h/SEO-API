@@ -8,7 +8,7 @@ import { closeAllQueues } from './shared/queue.js';
 // Graceful shutdown
 // ---------------------------------------------------------------------------
 
-let server: ReturnType<typeof app.listen> | null = null;
+let server: any = null;
 
 async function gracefulShutdown(signal: string): Promise<void> {
   console.log(`[Server] Received ${signal}. Shutting down gracefully...`);
