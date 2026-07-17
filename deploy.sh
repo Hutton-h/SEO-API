@@ -347,6 +347,96 @@ build_frontend() {
 # ═══════════════════════════════════════════════════════════════════════════════
 #  5. 部署 Nginx 配置
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# 自动申请 SSL 证书（仿 kejilion.sh 模式）
+auto_ssl_kejilion() {
+    local domain="$1"
+    log_step "自动申请 SSL 证书 → ${domain}"
+
+    # 检查域名是否解析到本机
+    local server_ip=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || curl -s --max-time 5 ip.sb 2>/dev/null)
+    local dns_ip=$(dig +short "$domain" @8.8.8.8 2>/dev/null | head -1 || nslookup "$domain" 2>/dev/null | grep -A1 'Name:' | grep 'Address:' | awk '{print $2}' | head -1)
+    if [ -n "$server_ip" ] && [ -n "$dns_ip" ] && [ "$server_ip" != "$dns_ip" ]; then
+        log_warn "域名 $domain 解析到 $dns_ip，但服务器 IP 是 $server_ip"
+        log_warn "DNS 可能未正确解析，证书申请可能失败"
+    fi
+
+    # 1. 暂停 nginx（certbot 需要 80 端口）
+    log_info "暂停 Nginx 释放 80 端口..."
+    docker stop nginx > /dev/null 2>&1 || true
+    sleep 1
+
+    # 2. 使用 certbot standalone 模式申请证书
+    local EMAIL="${ADMIN_EMAIL:-admin@${domain}}"
+    log_info "运行 certbot 申请证书（域名: ${domain}）..."
+    docker run --rm \
+        -p 80:80 \
+        -v /etc/letsencrypt/:/etc/letsencrypt \
+        certbot/certbot certonly \
+        --standalone \
+        -d "$domain" \
+        --email "$EMAIL" \
+        --agree-tos \
+        --no-eff-email \
+        --force-renewal \
+        --key-type ecdsa \
+        2>&1 | tail -5
+
+    local cert_status=$?
+
+    # 3. 恢复 nginx
+    log_info "恢复 Nginx..."
+    docker start nginx > /dev/null 2>&1 || true
+
+    # 4. 检查结果
+    local fullchain="/etc/letsencrypt/live/${domain}/fullchain.pem"
+    local privkey="/etc/letsencrypt/live/${domain}/privkey.pem"
+    if [ -f "$fullchain" ] && [ -f "$privkey" ]; then
+        # 复制证书到 kejilion 标准路径
+        mkdir -p "$KEJILION_CERTS_DIR"
+        cp "$fullchain" "$KEJILION_CERTS_DIR/${domain}_cert.pem"
+        cp "$privkey" "$KEJILION_CERTS_DIR/${domain}_key.pem"
+        chmod 644 "$KEJILION_CERTS_DIR/${domain}_cert.pem"
+        chmod 600 "$KEJILION_CERTS_DIR/${domain}_key.pem"
+        log_ok "SSL 证书申请成功！"
+        log_info "证书路径: $KEJILION_CERTS_DIR/${domain}_cert.pem"
+        log_info "私钥路径: $KEJILION_CERTS_DIR/${domain}_key.pem"
+
+        # 5. 设置自动续签（仿 kejilion.sh install_certbot）
+        setup_auto_renewal "$domain"
+        return 0
+    else
+        log_error "SSL 证书申请失败（exit=${cert_status}）"
+        log_info "可能原因: DNS 未解析 / 80 端口被占用 / Let's Encrypt 频率限制"
+        log_info "可稍后手动运行: bash deploy.sh ssl"
+        return 1
+    fi
+}
+
+# 设置 Let's Encrypt 自动续签
+setup_auto_renewal() {
+    local domain="$1"
+    log_info "设置证书自动续签（每天 00:00 检查）..."
+
+    # 下载 kejilion 的 auto_cert_renewal.sh 续签脚本
+    cd ~
+    local renew_script="$HOME/auto_cert_renewal.sh"
+    if [ ! -f "$renew_script" ]; then
+        curl -sS -o "$renew_script" \
+            https://raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh 2>/dev/null || true
+        chmod +x "$renew_script" 2>/dev/null || true
+    fi
+
+    # 添加 cron 任务（去重）
+    local cron_job="0 0 * * * ~/auto_cert_renewal.sh"
+    if ! crontab -l 2>/dev/null | grep -qF "$cron_job"; then
+        (crontab -l 2>/dev/null; echo "$cron_job") | crontab -
+        log_ok "自动续签已配置"
+    else
+        log_info "自动续签任务已存在，跳过"
+    fi
+}
+
 deploy_nginx_kejilion() {
     log_step "部署 Nginx 配置 → kejilion 模式"
 
@@ -380,14 +470,17 @@ deploy_nginx_kejilion() {
         local cert_file="$KEJILION_CERTS_DIR/${DOMAIN}_cert.pem"
         local key_file="$KEJILION_CERTS_DIR/${DOMAIN}_key.pem"
         if [ ! -f "$cert_file" ] || [ ! -f "$key_file" ]; then
-            log_warn "SSL 证书不存在: ${DOMAIN}_cert.pem"
-            log_info "请先通过 kejilion.sh 申请 SSL 证书"
-            log_info "证书路径: $KEJILION_CERTS_DIR/"
-            log_info "本次以 HTTP 模式启动，证书到位后运行: bash deploy.sh update"
-            sed -i 's|return 301 https://$host$request_uri;|# return 301 https://$host$request_uri;|' "$target_conf"
-            # 证书缺失时，注释掉整个 HTTPS (443) server block，避免 Nginx 启动失败
-            sed -i '/^# ---------- HTTPS (443) ----------$/,/^}$/s/^/#/' "$target_conf"
-            sed -i 's|^## ---------- HTTPS (443) ----------$|# ---------- HTTPS (443) 主站点（已注释，证书到位后恢复）|' "$target_conf"
+            log_warn "SSL 证书不存在，尝试自动申请..."
+            if auto_ssl_kejilion "$DOMAIN"; then
+                log_ok "SSL 证书已就绪，启用 HTTPS"
+            else
+                log_warn "证书申请失败，本次以 HTTP 模式启动"
+                log_info "证书到位后运行: bash deploy.sh update"
+                sed -i 's|return 301 https://$host$request_uri;|# return 301 https://$host$request_uri;|' "$target_conf"
+                # 证书缺失时，注释掉整个 HTTPS (443) server block，避免 Nginx 启动失败
+                sed -i '/^# ---------- HTTPS (443) ----------$/,/^}$/s/^/#/' "$target_conf"
+                sed -i 's|^## ---------- HTTPS (443) ----------$|# ---------- HTTPS (443) 主站点（已注释，证书到位后恢复）|' "$target_conf"
+            fi
         else
             log_ok "SSL 证书已就绪"
         fi
@@ -716,6 +809,20 @@ case "$CMD" in
         detect_environment
         clean_all
         ;;
+    ssl)
+        detect_environment
+        if [ -f "$ENV_FILE" ]; then
+            set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
+            DOMAIN="${DOMAIN:-localhost}"
+            SSL_MODE="${SSL_MODE:-http}"
+        fi
+        if [ "$DETECTED_KEJILION" = true ]; then
+            auto_ssl_kejilion "$DOMAIN"
+        else
+            log_error "SSL 自动申请仅支持 kejilion 环境"
+            log_info "请手动申请证书后更新 Nginx 配置"
+        fi
+        ;;
     help|--help|-h)
         echo ""
         echo "Crane SEO Platform — 部署脚本"
@@ -730,6 +837,7 @@ case "$CMD" in
         echo "  clean      一键删除所有容器/数据/配置（输入 DELETE 确认）"
         echo "  logs       查看日志"
         echo "  restart    重启服务"
+        echo "  ssl        手动申请 SSL 证书（kejilion 环境）"
         echo ""
         echo "示例: bash deploy.sh          # 首次部署"
         echo "      bash deploy.sh update   # 更新代码"
@@ -737,7 +845,7 @@ case "$CMD" in
         ;;
     *)
         echo "未知命令: $CMD"
-        echo "用法: bash deploy.sh [deploy|update|status|stop|logs|restart|clean]"
+        echo "用法: bash deploy.sh [deploy|update|status|stop|logs|restart|clean|ssl]"
         exit 1
         ;;
 esac
