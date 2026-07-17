@@ -380,10 +380,9 @@ auto_ssl_kejilion() {
             certbot/certbot certonly \
             --standalone \
             -d "$domain" \
-            --email your@email.com \
+            --email admin@${domain} \
             --agree-tos \
             --no-eff-email \
-            --force-renewal \
             --key-type ecdsa 2>&1 | tail -5
     fi
 
@@ -460,47 +459,54 @@ ensure_cert_exists() {
 }
 
 deploy_nginx_kejilion() {
-    log_step "部署 N 配置 → kejilion 模式"
+    log_step "部署 Nginx 配置 → kejilion 模式"
 
-    # 1. 复制前端静态文件
+    # 1. 复制前端静态文件到 kejilion 标准路径
     rm -rf "$KEJILION_HTML_DIR/seo-platform"
     mkdir -p "$KEJILION_HTML_DIR/seo-platform"
     cp -r "$FRONTEND_DIST/"* "$KEJILION_HTML_DIR/seo-platform/"
     chmod -R 755 "$KEJILION_HTML_DIR/seo-platform"
     log_ok "前端文件 → $KEJILION_HTML_DIR/seo-platform"
 
-    # 2. SSL 证书（和 kejilion ldnmp_Proxy 一样：install_ssltls + certs_status）
-    if [ "$SSLODE" = "https" ]; then
+    # 2. SSL 证书
+    if [ "$SSL_MODE" = "https" ]; then
         auto_ssl_kejilion "$DOMAIN" || true
     fi
 
-    # 3. 下载反代模板（照抄 kejilion ldnmp_Proxy 的 wget 命令）
-    local gh_proxy=""
-    [ -n "${GITHUB_PROXY:-}" ] gh_proxy="$GITHUB_PROXY"
-    wget - - "$KEJILION_CONF_DIR/map.conf" ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/map.conf 2>/dev/null || true
-    wget - - "$KEJILION_CONF_DIR/${DOMAIN}.conf" ${gh_proxy}raw.githubusercontent.com/kejilion/nginx/main/reverse-proxy-backend.conf 2>/dev/null
+    # 3. 选择本地模板（HTTP 或 HTTPS），替换占位符后写入 kejilion conf.d
+    local template=""
+    local backend="backend_$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)"
+    local target_conf="$KEJILION_CONF_DIR/${DOMAIN}.conf"
 
-    # 4. 替换占位符（照抄 kejilion ldnmp_Proxy 的 sed 命令）
-    local backend=$(tr -dc 'A-Za-z' < /dev/urandom | head -c 8)
-    sed -i "s/backend_yuming_com/backend_$backend/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
-    sed -i "s/yuming.com/${DOMAIN}/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
+    if [ "$SSL_MODE" = "https" ]; then
+        template="$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy-https.conf"
+    else
+        template="$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy.conf"
+    fi
 
-    # 5. 设置 upstream（和 kejilion 一样：替换 # 动态添加）
-    local upstream_servers="    server 127.0.0.1:48080;\n"
-    sed -i "s/# 动态添加/${upstream_servers}/g" "$KEJILION_CONF_DIR/${DOMAIN}.conf"
-    sed -i '/remote_addr/d' "$KEJILION_CONF_DIR/${DOMAIN}.conf"
+    if [ ! -f "$template" ]; then
+        log_error "Nginx 模板不存在: $template"
+        exit 1
+    fi
 
-    log_ok "N 配置已生成 → ${DOMAIN}.conf"
+    cp "$template" "$target_conf"
+    sed -i "s/__DOMAIN__/${DOMAIN}/g" "$target_conf"
+    sed -i "s/__BACKEND__/${backend}/g" "$target_conf"
+    sed -i "s/__DATE__/$(date '+%Y-%m-%d %H:%M:%S')/g" "$target_conf"
+    log_ok "Nginx 配置已生成 → ${DOMAIN}.conf"
 
-    # 6. 清理旧配置
+    # 4. 清理旧配置
     rm -f "$KEJILION_CONF_DIR/seo-platform.conf"
 
-    # 7. 重载 N（照抄 kejilion：docker exec n n -s reload）
-    docker exec n n -s reload 2>/dev/null || true
-    log_ok "N 配置已生效"
+    # 5. 验证 & 重载 Nginx
+    if docker exec nginx nginx -t 2>&1 | tail -3; then
+        docker exec nginx nginx -s reload 2>/dev/null || true
+        log_ok "Nginx 配置已生效"
+    else
+        log_error "Nginx 配置验证失败，请检查 ${target_conf}"
+        exit 1
+    fi
 }
-# 删除本地模板文件，以后只用 kejilion GitHub 上的模板
-rm -f "$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy-backend.conf" "$SCRIPT_DIR/nginx/conf.d/kejilion-reverse-proxy-https.conf"
 
 
 
@@ -562,7 +568,72 @@ main_deploy() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  一键清理
+#  6. 数据库初始化 & 服务管理
+# ═══════════════════════════════════════════════════════════════════════════════
+run_init_sql() {
+    log_step "初始化数据库"
+    if [ ! -f "$INIT_SQL" ]; then
+        log_warn "init.sql 不存在，跳过数据库初始化"
+        return 0
+    fi
+    # 等待 PostgreSQL 就绪
+    local max=30; local i=1
+    while [ $i -le $max ]; do
+        if docker exec crane-seo-postgres pg_isready -U crane_user -d crane_seo &>/dev/null; then
+            break
+        fi
+        sleep 2; i=$((i+1))
+    done
+    if [ $i -gt $max ]; then
+        log_warn "PostgreSQL 启动超时，跳过初始化"
+        return 0
+    fi
+    docker exec -i crane-seo-postgres psql -U crane_user -d crane_seo < "$INIT_SQL" 2>&1 | tail -5
+    log_ok "数据库初始化完成"
+}
+
+show_status() {
+    echo ""
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║           Crane SEO Platform — 部署状态                      ║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  部署模式:   ${GREEN}$( [ "$DETECTED_KEJILION" = true ] && echo 'kejilion 环境' || echo '独立环境' )${NC}"
+    echo -e "  域名:       ${WHITE}${DOMAIN:-未设置}${NC}"
+    echo -e "  SSL:        ${WHITE}${SSL_MODE:-http}${NC}"
+    echo ""
+    docker compose -f "$COMPOSE_FILE" ps 2>/dev/null || echo "  服务未运行"
+    echo ""
+    echo -e "  API 健康检查:"
+    curl -s http://localhost:48080/health 2>/dev/null | python3 -m json.tool 2>/dev/null \
+        || echo "    API 不可达"
+    echo ""
+    local proto="http"
+    [ "$SSL_MODE" = "https" ] && proto="https"
+    echo -e "  ${GREEN}访问地址:${NC}"
+    if [ "$DETECTED_KEJILION" = true ]; then
+        echo -e "    前端:      ${CYAN}${proto}://${DOMAIN}${NC}"
+        echo -e "    API 文档:  ${CYAN}${proto}://${DOMAIN}/api-docs${NC}"
+    else
+        echo -e "    前端:      ${CYAN}http://localhost${NC}"
+        echo -e "    API 文档:  ${CYAN}http://localhost:8080/api-docs${NC}"
+    fi
+    echo -e "    登录:      ${YELLOW}admin / ${ADMIN_PASSWORD:-admin123}${NC}"
+    echo ""
+}
+
+stop_services() {
+    log_step "停止服务"
+    docker compose -f "$COMPOSE_FILE" down
+    log_ok "已停止"
+}
+
+show_logs() {
+    docker compose -f "$COMPOSE_FILE" logs -f --tail=100
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  7. 一键清理
 # ═══════════════════════════════════════════════════════════════════════════════
 clean_all() {
     echo ""
@@ -612,8 +683,17 @@ clean_all() {
     # 6. 删除 Docker 镜像
     docker rmi seo-api-api seo-api-crawler 2>/dev/null || true
 
+    # 7. 删除项目目录（先切到安全位置再删）
+    log_info "删除项目目录..."
+    local project_dir="$SCRIPT_DIR"
+    cd /tmp
+    rm -rf "$project_dir"
+    log_ok "项目目录已删除"
+
     echo ""
-    log_ok "清理完成！运行 bash deploy.sh 重新部署"
+    log_ok "清理完成！所有 Crane SEO Platform 数据已彻底删除"
+    echo ""
+    echo "  如需要，请重新克隆: git clone git@github.com:Hutton-h/SEO-API.git"
     echo ""
 }
 

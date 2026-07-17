@@ -9,6 +9,7 @@ import {
   CloseCircleOutlined, SyncOutlined, ScheduleOutlined,
 } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
+import type { ScheduledTask } from '@/services/schedule';
 import dayjs from 'dayjs';
 
 const { Text, Title } = Typography;
@@ -33,7 +34,7 @@ const cronPresets = [
   { label: '每30分钟', value: '*/30 * * * *' },
 ];
 
-const mockTasks = [
+const mockTasks: ScheduledTask[] = [
   { id: '1', name: '主站爬虫', type: 'crawler', typeLabel: '爬虫任务', cronExpression: '0 2 * * *', status: 'active', lastRunAt: '2024-07-15T02:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T02:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-01' },
   { id: '2', name: '关键词排名检测', type: 'ranking', typeLabel: '排名检测', cronExpression: '0 8 * * *', status: 'active', lastRunAt: '2024-07-15T08:00:00', lastRunStatus: 'success', nextRunAt: '2024-07-16T08:00:00', projectId: 'p1', projectName: '主站优化', createdAt: '2024-06-15' },
   { id: '3', name: '外链监控', type: 'backlink', typeLabel: '外链检查', cronExpression: '0 */6 * * *', status: 'active', lastRunAt: '2024-07-15T12:00:00', lastRunStatus: 'failed', nextRunAt: '2024-07-15T18:00:00', projectId: 'p2', projectName: '电商平台', createdAt: '2024-07-01' },
