@@ -727,8 +727,21 @@ main_deploy() {
     # 1
     detect_environment
 
-    # 2
-    interactive_config
+    # 2 — 如果已有 .env，跳过交互式配置
+    if [ -f "$ENV_FILE" ]; then
+        log_info "检测到已有 .env，跳过交互式配置"
+        set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
+        DOMAIN="${DOMAIN:-localhost}"
+        SSL_MODE="${SSL_MODE:-http}"
+        # 自动检测证书，有证书就启用 HTTPS
+        if [ "$DOMAIN" != "localhost" ] && [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ]; then
+            log_ok "检测到已有 SSL 证书，自动启用 HTTPS"
+            SSL_MODE="https"
+            sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE"
+        fi
+    else
+        interactive_config
+    fi
 
     # 3
     generate_env_file
@@ -785,6 +798,12 @@ case "$CMD" in
         fi
         build_frontend
         if [ "$DETECTED_KEJILION" = true ]; then
+            # 自动检测证书，有证书就启用 HTTPS
+            if [ "$DOMAIN" != "localhost" ] && [ -f "/home/web/certs/${DOMAIN}_cert.pem" ] && [ -f "/home/web/certs/${DOMAIN}_key.pem" ]; then
+                log_ok "检测到已有 SSL 证书，自动启用 HTTPS"
+                SSL_MODE="https"
+                sed -i 's/^SSL_MODE=.*/SSL_MODE=https/' "$ENV_FILE" 2>/dev/null || true
+            fi
             # 重新生成 Nginx 配置（处理证书到位后的 HTTPS 启用）
             deploy_nginx_kejilion
         fi
