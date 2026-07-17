@@ -162,8 +162,8 @@ export interface Config {
 
 function loadConfig(): Config {
   return {
-    port: envInt('PORT', 3000),
-    host: env('HOST', '0.0.0.0'),
+    port: envInt('API_PORT', 8080),
+    host: env('API_HOST', '0.0.0.0'),
     nodeEnv: env('NODE_ENV', 'development'),
 
     database: {

@@ -50,9 +50,9 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
-# Health check
+# Health check (uses shell form to expand API_PORT env var)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:${API_PORT:-8080}/health || exit 1
 
 # Use tini as init
 ENTRYPOINT ["/sbin/tini", "--"]
