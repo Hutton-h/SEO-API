@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Modal, Form, Select, Switch, Popconfirm, Tabs } from 'antd';
 import { ReloadOutlined, PlusOutlined, SendOutlined, MailOutlined, BellOutlined, SlackOutlined, WechatOutlined, DeleteOutlined, EditOutlined, CheckCircleOutlined, CloseCircleOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useStore } from '@/store';
@@ -19,7 +19,7 @@ const Notifications: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const [chRes, recRes] = await Promise.allSettled([
@@ -30,7 +30,7 @@ const Notifications: React.FC = () => {
       setChannels(extractArr(chRes));
       setRecords(extractArr(recRes));
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 
@@ -53,7 +53,7 @@ const Notifications: React.FC = () => {
   const chColumns = [
     { title: '渠道', dataIndex: 'type', key: 'type', width: 100, render: (t: string) => <Space>{channelIcons[t] || <BellOutlined />}<Text>{t}</Text></Space> },
     { title: '标签', dataIndex: 'typeLabel', key: 'typeLabel', width: 100, render: (l: string) => l || '-' },
-    { title: '状态', dataIndex: 'enabled', key: 'enabled', width: 80, render: (e: boolean) => <Switch checked={e} onChange={() => handleToggle(channels.find((c: any) => c.enabled === e))} /> },
+    { title: '状态', dataIndex: 'enabled', key: 'enabled', width: 80, render: (e: boolean, r: any) => <Switch checked={e} onChange={() => handleToggle(r)} /> },
     { title: '最后测试', dataIndex: 'lastTestAt', key: 'lastTestAt', width: 150, render: (d: string) => d ? new Date(d).toLocaleString('zh-CN') : '-' },
     { title: '测试状态', dataIndex: 'lastTestStatus', key: 'lastTestStatus', width: 90, render: (s: string) => s === 'success' ? <Tag color="green">成功</Tag> : s === 'failed' ? <Tag color="red">失败</Tag> : '-' },
     { title: '操作', key: 'action', width: 180, render: (_: any, r: any) => (

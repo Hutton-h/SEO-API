@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Progress } from 'antd';
 import { ReloadOutlined, PlusOutlined, SearchOutlined, AimOutlined, StarOutlined, PictureOutlined, VideoCameraOutlined, EnvironmentOutlined, ReadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -34,7 +34,7 @@ const SerpFeatures: React.FC = () => {
   const [stats, setStats] = useState<any>({ totalKeywords: 0, features: [] });
   const [newKeyword, setNewKeyword] = useState('');
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const res = await serpFeaturesAPI.getFeatureStats(projectId);
@@ -49,7 +49,7 @@ const SerpFeatures: React.FC = () => {
         if (data?.totalKeywords) setStats({ totalKeywords: data.totalKeywords, features: data.features || [] });
       }
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 

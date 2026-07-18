@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Tabs } from 'antd';
 import { ReloadOutlined, ThunderboltOutlined, PlusOutlined, YoutubeOutlined, AimOutlined, EyeOutlined, LikeOutlined, PlaySquareOutlined } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
@@ -17,14 +17,14 @@ const YouTube: React.FC = () => {
   const [newKeyword, setNewKeyword] = useState('');
   const [newVideoUrl, setNewVideoUrl] = useState('');
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const [kwRes, vidRes] = await Promise.allSettled([youtubeAPI.getYouTubeKeywords(projectId), youtubeAPI.getYouTubeVideos(projectId)]);
       const extractArr = (r: PromiseSettledResult<any>) => { if (r.status === 'fulfilled') { const d = (r.value as any).data !== undefined ? (r.value as any).data : r.value; return Array.isArray(d) ? d : (d?.data || []); } return []; };
       setKeywords(extractArr(kwRes)); setVideos(extractArr(vidRes));
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 

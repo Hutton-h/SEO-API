@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Select, Progress } from 'antd';
 import { ReloadOutlined, ThunderboltOutlined, PlusOutlined, AimOutlined, AppleOutlined, AndroidOutlined, RiseOutlined, FallOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -24,7 +24,7 @@ const ASO: React.FC = () => {
   const [newKeyword, setNewKeyword] = useState('');
   const [storeFilter, setStoreFilter] = useState<string | undefined>();
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return;
     setLoading(true); setError(null);
     try {
@@ -40,7 +40,7 @@ const ASO: React.FC = () => {
       setTrend(extractArr(trendRes));
     } catch (e: any) { setError(e?.message || '加载失败'); }
     finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 

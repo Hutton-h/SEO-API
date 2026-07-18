@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Table, Tag, Typography, Row, Col, Statistic, Button, Modal, Form, Input, Space, Progress, message, Popconfirm, Empty, Spin, Alert, Tabs, Tooltip, Select,
 } from 'antd';
@@ -44,7 +44,7 @@ const Competitors: React.FC = () => {
   const [changeTypeFilter, setChangeTypeFilter] = useState<string | undefined>();
   const [changeDaysFilter, setChangeDaysFilter] = useState<number>(30);
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
@@ -83,12 +83,12 @@ const Competitors: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [projectId, changesPage, changeTypeFilter, changeDaysFilter]);
+  };
 
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }
     loadData();
-  }, [projectId]);
+  }, [projectId, changesPage, changeTypeFilter, changeDaysFilter]);
 
   // 添加竞品
   const handleAddCompetitor = async () => {
@@ -345,7 +345,7 @@ const Competitors: React.FC = () => {
                     <Space>
                       <Select placeholder="变更类型" allowClear style={{ width: 120 }}
                         value={changeTypeFilter}
-                        onChange={(v) => { setChangeTypeFilter(v); loadData(); }}
+                        onChange={(v) => { setChangeTypeFilter(v); }}
                         options={[
                           { value: 'title', label: 'Title' },
                           { value: 'meta', label: 'Meta' },
@@ -357,7 +357,7 @@ const Competitors: React.FC = () => {
                         ]}
                       />
                       <Select value={changeDaysFilter} style={{ width: 100 }}
-                        onChange={(v) => { setChangeDaysFilter(v); loadData(); }}
+                        onChange={(v) => { setChangeDaysFilter(v); }}
                         options={[
                           { value: 7, label: '最近7天' },
                           { value: 30, label: '最近30天' },
@@ -372,7 +372,7 @@ const Competitors: React.FC = () => {
                 >
                   <Table columns={changeColumns} dataSource={changes} rowKey="id"
                     pagination={{ current: changesPage, pageSize: 10, total: changesTotal,
-                      onChange: (p) => { setChangesPage(p); loadData(); },
+                      onChange: (p) => { setChangesPage(p); },
                     }}
                     scroll={{ x: 900 }} size="middle"
                   />

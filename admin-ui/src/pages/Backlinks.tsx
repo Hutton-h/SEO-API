@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert,
   Input, Select, Progress, Tabs, Tooltip, Badge,
@@ -40,7 +40,7 @@ const Backlinks: React.FC = () => {
   const [searchFilter, setSearchFilter] = useState('');
   const [dofollowFilter, setDofollowFilter] = useState<string | undefined>();
 
-  const loadData = useCallback(async (p?: number, ps?: number, search?: string, dofollow?: string) => {
+  const loadData = async (p?: number, ps?: number, search?: string, dofollow?: string) => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
@@ -68,7 +68,7 @@ const Backlinks: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [projectId, page, pageSize]);
+  };
 
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }

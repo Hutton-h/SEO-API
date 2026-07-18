@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Select, Modal, Form, Switch, InputNumber, Popconfirm, Tabs } from 'antd';
 import { ReloadOutlined, PlusOutlined, BellOutlined, WarningOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined, DeleteOutlined, EditOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useStore } from '@/store';
@@ -20,7 +20,7 @@ const Alerting: React.FC = () => {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const [rulesRes, historyRes, summaryRes] = await Promise.allSettled([
@@ -33,7 +33,7 @@ const Alerting: React.FC = () => {
       setHistory(extractArr(historyRes));
       if (summaryRes.status === 'fulfilled') { const d = (summaryRes.value as any).data !== undefined ? (summaryRes.value as any).data : summaryRes.value; if (d) setSummary(d); }
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 
@@ -60,7 +60,7 @@ const Alerting: React.FC = () => {
     { title: '规则名称', dataIndex: 'name', key: 'name', render: (n: string) => <Text strong>{n}</Text> },
     { title: '类型', dataIndex: 'type', key: 'type', width: 100, render: (t: string) => { const labels: Record<string, string> = { ranking_drop: '排名下降', traffic_drop: '流量下降', backlink_loss: '外链丢失', crawl_error: '爬虫错误', downtime: '宕机' }; return <Tag>{labels[t] || t}</Tag>; } },
     { title: '阈值', dataIndex: 'threshold', key: 'threshold', width: 120, render: (v: any, r: any) => <Text>{r.condition?.operator} {r.condition?.threshold}</Text> },
-    { title: '状态', dataIndex: 'enabled', key: 'enabled', width: 80, render: (e: boolean) => <Switch checked={e} onChange={() => handleToggleRule(rules.find((rr: any) => rr.enabled === e))} /> },
+    { title: '状态', dataIndex: 'enabled', key: 'enabled', width: 80, render: (e: boolean, r: any) => <Switch checked={e} onChange={() => handleToggleRule(r)} /> },
     { title: '操作', key: 'action', width: 160, render: (_: any, r: any) => (
       <Space>
         <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>

@@ -204,19 +204,19 @@ const Rankings: React.FC = () => {
     return <Tag icon={<MinusOutlined />}>0</Tag>;
   };
 
-  // 排名趋势图
+  // 排名趋势图 - 只显示当前选中关键词的历史数据
   const trendChartOption = {
     tooltip: { trigger: 'axis' },
-    legend: { data: rankings.slice(0, 5).map((r: any) => r.keyword), top: 0 },
+    legend: { data: [selectedKeyword?.keyword || ''], top: 0 },
     grid: { left: 50, right: 20, top: 40, bottom: 30 },
     xAxis: { type: 'category', data: historyData.map((h: any) => h.date || h.checkedAt) },
     yAxis: { type: 'value', inverse: true, name: '排名', min: 1 },
-    series: rankings.slice(0, 5).map((r: any, i: number) => ({
-      name: r.keyword,
+    series: [{
+      name: selectedKeyword?.keyword || '',
       type: 'line',
       data: historyData.map((h: any) => h.position),
       smooth: true,
-    })),
+    }],
   };
 
   const columns = [

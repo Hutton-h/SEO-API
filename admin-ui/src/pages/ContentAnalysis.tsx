@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert,
   Input, Form, Progress, Table, List, Divider, Descriptions, Tabs, Collapse,
@@ -42,7 +42,7 @@ const ContentAnalysis: React.FC = () => {
   // 质量评分
   const [qualityScore, setQualityScore] = useState<any>(null);
 
-  const loadHistory = useCallback(async (p = 1) => {
+  const loadHistory = async (p = 1) => {
     if (!projectId) return;
     setHistoryLoading(true);
     try {
@@ -56,9 +56,9 @@ const ContentAnalysis: React.FC = () => {
     } finally {
       setHistoryLoading(false);
     }
-  }, [projectId]);
+  };
 
-  const loadQualityScore = useCallback(async () => {
+  const loadQualityScore = async () => {
     if (!projectId) return;
     try {
       const res = await (contentAPI as any).getQualityScore?.(projectId);
@@ -67,7 +67,7 @@ const ContentAnalysis: React.FC = () => {
     } catch {
       // silent
     }
-  }, [projectId]);
+  };
 
   useEffect(() => {
     if (!projectId) return;

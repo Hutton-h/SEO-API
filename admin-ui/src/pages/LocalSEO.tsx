@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Select, Descriptions, Tabs } from 'antd';
 import { ReloadOutlined, PlusOutlined, ThunderboltOutlined, AimOutlined, EnvironmentOutlined, StarOutlined, PhoneOutlined, SwapOutlined, ShopOutlined, GlobalOutlined } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
@@ -20,7 +20,7 @@ const LocalSEO: React.FC = () => {
   const [location1, setLocation1] = useState('');
   const [location2, setLocation2] = useState('');
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const [rankRes, gmbRes] = await Promise.allSettled([
@@ -31,7 +31,7 @@ const LocalSEO: React.FC = () => {
       setRankings(extractArr(rankRes));
       if (gmbRes.status === 'fulfilled') { const d = (gmbRes.value as any).data !== undefined ? (gmbRes.value as any).data : gmbRes.value; setGmbProfile(d || null); }
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId, locationFilter]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId, locationFilter]);
 

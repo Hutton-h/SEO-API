@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Select, Tabs, Progress, Tooltip,
 } from 'antd';
@@ -30,7 +30,7 @@ const SEMAnalysis: React.FC = () => {
   const [keywordTotal, setKeywordTotal] = useState(0);
   const [page, setPage] = useState(1);
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
@@ -59,7 +59,7 @@ const SEMAnalysis: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [projectId, page]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 

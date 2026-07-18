@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Progress, Tabs } from 'antd';
 import { ReloadOutlined, ThunderboltOutlined, PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CloudServerOutlined, DashboardOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -26,7 +26,7 @@ const Monitor: React.FC = () => {
   const [checking, setChecking] = useState(false);
   const [newTargetUrl, setNewTargetUrl] = useState('');
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const results = await Promise.allSettled([
@@ -43,7 +43,7 @@ const Monitor: React.FC = () => {
       setDowntime(extractArr(results[3]));
       setTargets(extractArr(results[4]));
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Card, Table, Button, Tag, Progress, Space, Drawer, Select, Typography, Badge, Row, Col, Statistic, message, Spin, Empty, Alert,
   Input, Form, Switch, Slider, InputNumber, Tabs, Divider, Tooltip, Collapse, Descriptions, Segmented,
@@ -78,7 +78,7 @@ const CrawlAudit: React.FC = () => {
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 加载数据
-  const loadPages = useCallback(async (p?: number, ps?: number, sc?: number, search?: string) => {
+  const loadPages = async (p?: number, ps?: number, sc?: number, search?: string) => {
     if (!projectId) return;
     try {
       const res = await crawlAPI.getPages(projectId, {
@@ -93,9 +93,9 @@ const CrawlAudit: React.FC = () => {
     } catch (err: any) {
       // silent
     }
-  }, [projectId, pagePage, pageSize]);
+  };
 
-  const loadIssues = useCallback(async (sev?: string, src?: string) => {
+  const loadIssues = async (sev?: string, src?: string) => {
     if (!projectId) return;
     try {
       const res = await crawlAPI.getAllIssues(projectId, {
@@ -107,9 +107,9 @@ const CrawlAudit: React.FC = () => {
     } catch (err: any) {
       // silent
     }
-  }, [projectId]);
+  };
 
-  const loadAll = useCallback(async () => {
+  const loadAll = async () => {
     setLoading(true);
     setError(null);
     try {
@@ -120,7 +120,7 @@ const CrawlAudit: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [loadPages, loadIssues]);
+  };
 
   useEffect(() => {
     if (!projectId) {
@@ -143,11 +143,9 @@ const CrawlAudit: React.FC = () => {
     setCrawlProgress(0);
     try {
       const res = await crawlAPI.startCrawl(projectId!, {
+        url: crawlUrl.trim(),
         maxPages,
-        crawlDepth: 3,
-        respectRobots,
-        followRedirects,
-        userAgent: 'CraneSEO-Bot/1.0',
+        concurrency,
       } as any);
       const taskId = (res as any)?.data?.id || (res as any)?.id;
       setCrawlTaskId(taskId);

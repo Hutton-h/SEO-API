@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, InputNumber, Modal, Form, Select, DatePicker, Tabs } from 'antd';
 import { ReloadOutlined, PlusOutlined, DollarOutlined, RiseOutlined, FallOutlined, TrophyOutlined, ApiOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -25,7 +25,7 @@ const ROIAnalysis: React.FC = () => {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const [dataRes, summaryRes, apiRes] = await Promise.allSettled([
@@ -38,7 +38,7 @@ const ROIAnalysis: React.FC = () => {
       if (summaryRes.status === 'fulfilled') { const d = (summaryRes.value as any).data !== undefined ? (summaryRes.value as any).data : summaryRes.value; if (d) setSummary(d); }
       setApiCosts(extractArr(apiRes));
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 

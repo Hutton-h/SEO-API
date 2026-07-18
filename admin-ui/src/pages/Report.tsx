@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Tabs, Progress, List } from 'antd';
 import { ReloadOutlined, ThunderboltOutlined, FilePdfOutlined, TrophyOutlined, RiseOutlined, WarningOutlined, BulbOutlined, FileTextOutlined, CheckCircleOutlined, AimOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
@@ -21,14 +21,14 @@ const Report: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [report, setReport] = useState<any>(null);
 
-  const loadData = useCallback(async () => {
+  const loadData = async () => {
     if (!projectId) return; setLoading(true); setError(null);
     try {
       const res = await reportAPI.getReport(projectId);
       const data = (res as any).data !== undefined ? (res as any).data : res;
       setReport(data || null);
     } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
-  }, [projectId]);
+  };
 
   useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 

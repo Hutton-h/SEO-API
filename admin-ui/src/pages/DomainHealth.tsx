@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert,
   Input, Form, Table, List, Descriptions, Progress, Tabs, Divider, Badge, Collapse,
@@ -38,7 +38,7 @@ const DomainHealth: React.FC = () => {
   const [history, setHistory] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  const loadHistory = useCallback(async () => {
+  const loadHistory = async () => {
     if (!projectId) return;
     setHistoryLoading(true);
     try {
@@ -50,7 +50,7 @@ const DomainHealth: React.FC = () => {
     } finally {
       setHistoryLoading(false);
     }
-  }, [projectId, domain]);
+  };
 
   useEffect(() => {
     if (!projectId) return;
