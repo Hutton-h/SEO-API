@@ -14,6 +14,26 @@ export interface Keyword {
   createdAt: string;
 }
 
+export interface KeywordSuggestion {
+  keyword: string;
+  searchVolume: number;
+  competition: string;
+  cpc: string;
+  difficulty: number;
+  intent: string;
+  trend: string;
+}
+
+export interface KeywordResearch {
+  keyword: string;
+  overview: { searchVolume: number; competition: string; cpc: string; difficulty: number; trend: string };
+  relatedKeywords: Array<{ keyword: string; volume: number; competition: number; cpc: number }>;
+  questions: Array<{ question: string; volume: number }>;
+  searchIntent: Record<string, number>;
+  seasonalTrend: Array<{ month: number; volume: number }>;
+  serpFeatures: Record<string, boolean>;
+}
+
 export interface SearchVolumeTrend {
   month: string;
   volume: number;
@@ -26,31 +46,40 @@ export interface KeywordImportResult {
 }
 
 export const keywordAPI = {
-  // 获取关键词列表
-  getKeywords: (projectId: string, params?: { page?: number; pageSize?: number }) =>
+  getKeywords: (projectId: string, params?: { page?: number; pageSize?: number; search?: string }) =>
     apiGet<{ data: Keyword[]; total: number }>(`/v1/projects/${projectId}/keywords`, params),
 
-  // 添加关键词
   addKeyword: (projectId: string, keyword: string) =>
     apiPost<Keyword>(`/v1/projects/${projectId}/keywords`, { keyword }),
 
-  // 批量添加关键词
   batchAddKeywords: (projectId: string, keywords: string[]) =>
     apiPost<KeywordImportResult>(`/v1/projects/${projectId}/keywords/batch`, { keywords }),
 
-  // 更新关键词
   updateKeyword: (projectId: string, id: string, data: Partial<Keyword>) =>
     apiPut<Keyword>(`/v1/projects/${projectId}/keywords/${id}`, data),
 
-  // 删除关键词
   deleteKeyword: (projectId: string, id: string) =>
     apiDelete<void>(`/v1/projects/${projectId}/keywords/${id}`),
 
-  // 获取搜索量趋势
   getSearchVolumeTrend: (projectId: string, keywordId: string) =>
     apiGet<SearchVolumeTrend[]>(`/v1/projects/${projectId}/keywords/${keywordId}/trend`),
 
-  // 导入默认关键词
   importDefaultKeywords: (projectId: string) =>
     apiPost<KeywordImportResult>(`/v1/projects/${projectId}/keywords/import-default`),
+
+  // 关键词推荐
+  recommendKeywords: (projectId: string, topic: string, count?: number) =>
+    apiPost<{ suggestions: KeywordSuggestion[]; total: number }>(`/v1/projects/${projectId}/keywords/recommend`, { topic, count }),
+
+  // 关键词深度研究
+  researchKeyword: (projectId: string, keyword: string) =>
+    apiPost<KeywordResearch>(`/v1/projects/${projectId}/keywords/research`, { keyword }),
+
+  // 批量导入
+  batchImport: (projectId: string, keywords: string[]) =>
+    apiPost<KeywordImportResult>(`/v1/projects/${projectId}/keywords/batch-import`, { keywords }),
+
+  // 批量设置标签
+  batchTag: (projectId: string, keywordIds: string[], tags: string[]) =>
+    apiPut<{ updated: number; tags: string[] }>(`/v1/projects/${projectId}/keywords/batch-tag`, { keywordIds, tags }),
 };
