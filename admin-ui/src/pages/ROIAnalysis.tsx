@@ -57,7 +57,7 @@ const ROIAnalysis: React.FC = () => {
     setError(null);
     try {
       const [roiRes, summaryRes, apiCostRes] = await Promise.all([
-        roiAPI.getROIData(),
+        roiAPI.getROIData({ projectId }),
         roiAPI.getROISummary(),
         roiAPI.getApiCostSummary(),
       ]);

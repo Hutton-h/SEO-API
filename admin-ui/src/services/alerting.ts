@@ -25,7 +25,7 @@ export interface AlertHistory {
 }
 
 export const alertingAPI = {
-  getAlertRules: (params?: { page?: number; pageSize?: number }) =>
+  getAlertRules: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
     apiGet<{ data: AlertRule[]; total: number }>('/v1/alerting/rules', params),
 
   createAlertRule: (data: Omit<AlertRule, 'id' | 'createdAt' | 'updatedAt'>) =>
@@ -40,7 +40,7 @@ export const alertingAPI = {
   toggleAlertRule: (id: string, enabled: boolean) =>
     apiPut<AlertRule>(`/v1/alerting/rules/${id}/toggle`, { enabled }),
 
-  getAlertHistory: (params?: { page?: number; pageSize?: number }) =>
+  getAlertHistory: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
     apiGet<{ data: AlertHistory[]; total: number }>('/v1/alerting/history', params),
 
   acknowledgeAlert: (id: string) =>

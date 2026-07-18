@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Table, Tag, Button, Statistic, Badge, Space, Typography, message, Progress,
-  Spin, Empty, Alert,
+  Spin, Empty, Alert, Modal, Form, Input, Select, InputNumber,
 } from 'antd';
 import {
   CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, ReloadOutlined,
-  ClockCircleOutlined, ThunderboltOutlined, CloudServerOutlined, DashboardOutlined,
+  ClockCircleOutlined, ThunderboltOutlined, CloudServerOutlined, DashboardOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -15,6 +15,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
 import { monitorAPI, MonitorStatus, ResponseTimePoint, SLAInfo, DowntimeRecord } from '@/services/monitor';
+import { apiPost } from '@/services/api';
 import dayjs from 'dayjs';
 
 echarts.use([LineChart, GaugeChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
@@ -36,6 +37,9 @@ const Monitor: React.FC = () => {
   const [slaInfo, setSlaInfo] = useState<SLAInfo | null>(null);
   const [downtimeRecords, setDowntimeRecords] = useState<DowntimeRecord[]>([]);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addForm] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!projectId) return;
@@ -43,10 +47,10 @@ const Monitor: React.FC = () => {
     setError(null);
     try {
       const [statusRes, trendRes, slaRes, downtimeRes] = await Promise.all([
-        monitorAPI.getStatusList(),
-        monitorAPI.getResponseTimeTrend(),
+        monitorAPI.getStatusList({ projectId }),
+        monitorAPI.getResponseTimeTrend({ projectId }),
         monitorAPI.getSLAInfo(),
-        monitorAPI.getDowntimeRecords(),
+        monitorAPI.getDowntimeRecords({ projectId }),
       ]);
       const statusData = (statusRes as any).data || statusRes;
       const trendData = (trendRes as any).data || trendRes;
@@ -89,6 +93,30 @@ const Monitor: React.FC = () => {
       message.error(msg);
     } finally {
       setCheckingId(null);
+    }
+  };
+
+  const handleAddTarget = () => {
+    addForm.resetFields();
+    addForm.setFieldsValue({ checkInterval: 60 });
+    setAddModalVisible(true);
+  };
+
+  const handleAddSubmit = async () => {
+    try {
+      const values = await addForm.validateFields();
+      setSubmitting(true);
+      await apiPost('/v1/monitor/targets', { ...values, projectId });
+      message.success('监控目标添加成功');
+      setAddModalVisible(false);
+      addForm.resetFields();
+      loadData();
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+      message.error(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -185,6 +213,7 @@ const Monitor: React.FC = () => {
         title="系统监控"
         subtitle="实时服务状态、响应时间与 SLA 监控"
         actions={[
+          { label: '添加监控', icon: <PlusOutlined />, onClick: handleAddTarget },
           { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
           { label: '手动检查全部', type: 'primary', icon: <ThunderboltOutlined />, onClick: () => handleManualCheck('all'), loading: checkingId === 'all' },
         ]}
@@ -265,6 +294,34 @@ const Monitor: React.FC = () => {
           <Table columns={downtimeColumns} dataSource={downtimeRecords} rowKey="id" pagination={false} size="middle" />
         )}
       </Card>
+
+      <Modal
+        title="添加监控目标"
+        open={addModalVisible}
+        onCancel={() => setAddModalVisible(false)}
+        onOk={handleAddSubmit}
+        confirmLoading={submitting}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" preserve={false}>
+          <Form.Item name="url" label="监控 URL" rules={[{ required: true, message: '请输入监控 URL' }]}>
+            <Input placeholder="https://example.com" />
+          </Form.Item>
+          <Form.Item name="name" label="目标名称" rules={[{ required: true, message: '请输入目标名称' }]}>
+            <Input placeholder="例如：官网首页" />
+          </Form.Item>
+          <Form.Item name="type" label="检测类型" rules={[{ required: true, message: '请选择检测类型' }]}>
+            <Select placeholder="请选择检测类型">
+              <Select.Option value="http">HTTP</Select.Option>
+              <Select.Option value="https">HTTPS</Select.Option>
+              <Select.Option value="ping">Ping</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="checkInterval" label="检测间隔（秒）" rules={[{ required: true, message: '请输入检测间隔' }]}>
+            <InputNumber min={10} max={3600} style={{ width: '100%' }} placeholder="60" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

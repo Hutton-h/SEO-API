@@ -37,6 +37,10 @@ export async function getChanges(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      paginated(res, [], { page: 1, pageSize: 20, total: 0 });
+      return;
+    }
     const { page, pageSize, competitorId, changeType, days } = req.query as unknown as z.infer<typeof changesQuerySchema>;
 
     const result = await competitorChangeService.getChanges(projectId, {

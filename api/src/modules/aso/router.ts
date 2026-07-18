@@ -8,6 +8,9 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/projects/:id/aso/keywords', validate({ query: asoQuerySchema }), getASORankings);
+router.post('/projects/:id/aso/keywords', (req, res) => {
+  res.json({ success: true, data: { id: Date.now().toString(), ...req.body }, message: 'Keyword added' });
+});
 router.get('/projects/:id/aso/trend', (req, res) => {
   res.json({ success: true, data: { trend: [] } });
 });

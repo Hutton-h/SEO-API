@@ -32,16 +32,16 @@ export interface DowntimeRecord {
 }
 
 export const monitorAPI = {
-  getStatusList: () =>
-    apiGet<MonitorStatus[]>('/v1/monitor/status'),
+  getStatusList: (params?: { projectId?: string }) =>
+    apiGet<MonitorStatus[]>('/v1/monitor/status', params),
 
-  getResponseTimeTrend: (params?: { period?: string; serviceId?: string }) =>
+  getResponseTimeTrend: (params?: { period?: string; serviceId?: string; projectId?: string }) =>
     apiGet<ResponseTimePoint[]>('/v1/monitor/response-time', params),
 
   getSLAInfo: () =>
     apiGet<SLAInfo>('/v1/monitor/sla'),
 
-  getDowntimeRecords: (params?: { page?: number; pageSize?: number }) =>
+  getDowntimeRecords: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
     apiGet<{ data: DowntimeRecord[]; total: number }>('/v1/monitor/downtime', params),
 
   runManualCheck: (serviceId?: string) =>

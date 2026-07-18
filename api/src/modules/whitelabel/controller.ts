@@ -33,7 +33,7 @@ export async function getBranding(
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
-    const branding = await whitelabelService.getBranding(projectId);
+    const branding = await whitelabelService.getBranding(projectId || 'default');
     success(res, branding ?? { brand_name: 'Crane SEO', logo_url: '/logo.png', primary_color: '#2563eb' });
   } catch (err) {
     badRequest(res, 'Failed to get branding', { error: (err as Error).message });

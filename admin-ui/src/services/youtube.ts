@@ -25,9 +25,17 @@ export const youtubeAPI = {
   getYouTubeKeywords: (projectId: string) =>
     apiGet<YouTubeKeyword[]>(`/v1/projects/${projectId}/youtube/keywords`),
 
+  // 添加 YouTube 关键词
+  addYouTubeKeyword: (projectId: string, keyword: string) =>
+    apiPost<YouTubeKeyword>(`/v1/projects/${projectId}/youtube/keywords`, { keyword }),
+
   // 获取 YouTube 视频统计数据
   getYouTubeVideos: (projectId: string) =>
     apiGet<YouTubeVideo[]>(`/v1/projects/${projectId}/youtube/videos`),
+
+  // 添加 YouTube 视频
+  addYouTubeVideo: (projectId: string, videoUrl: string) =>
+    apiPost<YouTubeVideo>(`/v1/projects/${projectId}/youtube/videos`, { url: videoUrl }),
 
   // 刷新 YouTube 数据
   refreshYouTubeData: (projectId: string) =>

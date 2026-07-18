@@ -93,6 +93,10 @@ export async function getRules(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      paginated(res, [], { page: 1, pageSize: 20, total: 0 });
+      return;
+    }
     const { page, pageSize, type, enabled } = req.query as unknown as z.infer<typeof rulesQuerySchema>;
 
     const result = await alertingService.getRules(projectId, { page, pageSize, type, enabled });
@@ -148,6 +152,10 @@ export async function getAlertHistory(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      paginated(res, [], { page: 1, pageSize: 20, total: 0 });
+      return;
+    }
     const { page, pageSize, type, severity, acknowledged } = req.query as unknown as z.infer<typeof historyQuerySchema>;
 
     const result = await alertingService.getAlertHistory(projectId, {

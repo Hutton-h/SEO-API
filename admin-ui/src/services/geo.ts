@@ -28,6 +28,10 @@ export const geoAPI = {
   getLocalRankings: (projectId: string, params?: { location?: string }) =>
     apiGet<LocalRanking[]>(`/v1/projects/${projectId}/local-seo/rankings`, params),
 
+  // 添加本地关键词
+  addLocalKeyword: (projectId: string, keyword: string) =>
+    apiPost<LocalRanking>(`/v1/projects/${projectId}/local-seo/rankings`, { keyword }),
+
   // 刷新本地 SEO 数据
   refreshLocalSEO: (projectId: string) =>
     apiPost<{ message: string }>(`/v1/projects/${projectId}/local-seo/refresh`),

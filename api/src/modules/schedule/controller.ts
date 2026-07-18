@@ -65,6 +65,10 @@ export async function listSchedules(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      paginated(res, [], { page: 1, pageSize: 20, total: 0 });
+      return;
+    }
     const { page, pageSize, type, enabled } = req.query as unknown as z.infer<typeof schedulesQuerySchema>;
 
     const result = await scheduleService.listSchedules(projectId, { page, pageSize, type, enabled });

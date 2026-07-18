@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Card, Row, Col, Switch, Form, Input, Button, Tag, Table, Typography,
-  Space, message, Divider, Badge, Spin, Empty, Alert,
+  Space, message, Divider, Badge, Spin, Empty, Alert, Modal, Select,
 } from 'antd';
 import {
   MailOutlined, SendOutlined, SettingOutlined, ReloadOutlined,
@@ -10,6 +10,7 @@ import {
 } from '@ant-design/icons';
 import PageHeader from '@/components/PageHeader';
 import { notificationsAPI } from '@/services/notifications';
+import { apiPost } from '@/services/api';
 import dayjs from 'dayjs';
 
 const { Text, Title, Paragraph } = Typography;
@@ -81,6 +82,9 @@ const Notifications: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [configForm] = Form.useForm();
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addForm] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -107,6 +111,29 @@ const Notifications: React.FC = () => {
   };
 
   const handleRefresh = () => { loadData(); };
+
+  const handleAddChannel = () => {
+    addForm.resetFields();
+    setAddModalVisible(true);
+  };
+
+  const handleAddSubmit = async () => {
+    try {
+      const values = await addForm.validateFields();
+      setSubmitting(true);
+      await apiPost('/v1/notifications/channels', values);
+      message.success('渠道添加成功');
+      setAddModalVisible(false);
+      addForm.resetFields();
+      loadData();
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+      message.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleToggle = async (id: string, enabled: boolean) => {
     try {
@@ -192,7 +219,10 @@ const Notifications: React.FC = () => {
       <PageHeader
         title="通知管理"
         subtitle="配置通知渠道与查看发送记录"
-        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading }]}
+        actions={[
+          { label: '添加渠道', icon: <PlusOutlined />, onClick: handleAddChannel },
+          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+        ]}
       />
 
       <Row gutter={[24, 24]}>
@@ -294,6 +324,32 @@ const Notifications: React.FC = () => {
       <Card title="发送记录" style={{ marginTop: 24 }}>
         <Table columns={recordColumns} dataSource={sendRecords} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
       </Card>
+
+      <Modal
+        title="添加通知渠道"
+        open={addModalVisible}
+        onCancel={() => setAddModalVisible(false)}
+        onOk={handleAddSubmit}
+        confirmLoading={submitting}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" preserve={false}>
+          <Form.Item name="name" label="渠道名称" rules={[{ required: true, message: '请输入渠道名称' }]}>
+            <Input placeholder="例如：运营告警邮箱" />
+          </Form.Item>
+          <Form.Item name="type" label="渠道类型" rules={[{ required: true, message: '请选择渠道类型' }]}>
+            <Select placeholder="请选择渠道类型">
+              <Select.Option value="email">Email</Select.Option>
+              <Select.Option value="webhook">Webhook</Select.Option>
+              <Select.Option value="discord">Discord</Select.Option>
+              <Select.Option value="slack">Slack</Select.Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="config" label="配置" rules={[{ required: true, message: '请输入邮箱地址或 Webhook URL' }]}>
+            <Input placeholder="邮箱地址或 Webhook URL" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

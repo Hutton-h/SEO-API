@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Progress, Empty, Spin, Alert, message,
+  Modal, Input, Form,
 } from 'antd';
 import {
   YoutubeOutlined, ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined,
-  MinusOutlined, EyeOutlined, LikeOutlined, CommentOutlined,
+  MinusOutlined, EyeOutlined, LikeOutlined, CommentOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -26,6 +27,10 @@ const YouTube: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [keywords, setKeywords] = useState<YouTubeKeyword[]>([]);
   const [videos, setVideos] = useState<YouTubeVideo[]>([]);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addType, setAddType] = useState<'keyword' | 'video'>('keyword');
+  const [addForm] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
 
   const loadData = async () => {
     if (!projectId) return;
@@ -70,6 +75,38 @@ const YouTube: React.FC = () => {
       const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
       setError(msg);
       setLoading(false);
+    }
+  };
+
+  const handleAddKeyword = () => {
+    setAddType('keyword');
+    addForm.resetFields();
+    setAddModalVisible(true);
+  };
+
+  const handleAddVideo = () => {
+    setAddType('video');
+    addForm.resetFields();
+    setAddModalVisible(true);
+  };
+
+  const handleAddSubmit = async () => {
+    const values = await addForm.validateFields();
+    setSubmitting(true);
+    try {
+      if (addType === 'keyword') {
+        await youtubeAPI.addYouTubeKeyword(projectId!, values.keyword);
+      } else {
+        await youtubeAPI.addYouTubeVideo(projectId!, values.url);
+      }
+      message.success(addType === 'keyword' ? '关键词已添加' : '视频已添加');
+      setAddModalVisible(false);
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+      message.error(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -145,6 +182,8 @@ const YouTube: React.FC = () => {
         subtitle="YouTube 视频 SEO 排名追踪"
         actions={[
           { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
+          { label: '添加视频', icon: <PlusOutlined />, onClick: handleAddVideo },
         ]}
       />
 
@@ -174,7 +213,36 @@ const YouTube: React.FC = () => {
       <Card title="关键词排名">
         <Table columns={keywordColumns} dataSource={keywords} rowKey="id" pagination={false} size="middle" loading={loading} />
       </Card>
-    </div>
+
+    <Modal
+      title={addType === 'keyword' ? '添加 YouTube 关键词' : '添加 YouTube 视频'}
+      open={addModalVisible}
+      onOk={handleAddSubmit}
+      onCancel={() => setAddModalVisible(false)}
+      confirmLoading={submitting}
+      destroyOnClose
+    >
+      <Form form={addForm} layout="vertical">
+        {addType === 'keyword' ? (
+          <Form.Item
+            name="keyword"
+            label="关键词"
+            rules={[{ required: true, message: '请输入关键词' }]}
+          >
+            <Input placeholder="例如：起重机操作教程" />
+          </Form.Item>
+        ) : (
+          <Form.Item
+            name="url"
+            label="视频 URL"
+            rules={[{ required: true, message: '请输入视频链接' }, { type: 'url', message: '请输入有效的 URL' }]}
+          >
+            <Input placeholder="https://www.youtube.com/watch?v=..." />
+          </Form.Item>
+        )}
+      </Form>
+    </Modal>
+  </div>
   );
 };
 

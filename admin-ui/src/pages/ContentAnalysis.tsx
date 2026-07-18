@@ -13,6 +13,7 @@ import * as echarts from "echarts/core";
 import { GaugeChart } from "echarts/charts";
 import { CanvasRenderer } from "echarts/renderers";
 import PageHeader from "@/components/PageHeader";
+import { useStore } from "@/store";
 import { contentAPI } from "@/services/content";
 
 echarts.use([GaugeChart, CanvasRenderer]);
@@ -20,6 +21,7 @@ echarts.use([GaugeChart, CanvasRenderer]);
 const { Text, Title, Paragraph } = Typography;
 
 const ContentAnalysis: React.FC = () => {
+  const projectId = useStore((s) => s.currentProject?.id);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -34,7 +36,7 @@ const ContentAnalysis: React.FC = () => {
   const loadHistory = async () => {
     setHistoryLoading(true);
     try {
-      const res = await contentAPI.getAnalysisHistory();
+      const res = await contentAPI.getAnalysisHistory({ projectId });
       const data = (res as any).data || res;
       setHistory(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
@@ -50,7 +52,7 @@ const ContentAnalysis: React.FC = () => {
     setError(null);
     setResult(null);
     try {
-      const res = await contentAPI.analyzeUrl(url);
+      const res = await contentAPI.analyzeUrl(url, projectId);
       const data = (res as any).data || res;
       setResult(data.data || data);
       message.success("分析完成");

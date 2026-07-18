@@ -31,5 +31,13 @@ router.get('/monitor/downtime', (_req, res, _next) => {
 router.post('/monitor/check', checkNow);
 // GET /v1/monitor/logs
 router.get('/monitor/logs', validate({ query: logsQuerySchema }), getUptimeLogs);
+// GET /v1/monitor/targets
+router.get('/monitor/targets', (_req, res, _next) => {
+  success(res, []);
+});
+// POST /v1/monitor/targets
+router.post('/monitor/targets', (_req, res, _next) => {
+  success(res, { id: Date.now().toString(), ..._req.body }, 'Target added');
+});
 
 export default router;

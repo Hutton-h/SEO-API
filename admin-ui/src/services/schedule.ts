@@ -16,7 +16,7 @@ export interface ScheduledTask {
 }
 
 export const scheduleAPI = {
-  getTasks: (params?: { page?: number; pageSize?: number }) =>
+  getTasks: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
     apiGet<{ data: ScheduledTask[]; total: number }>('/v1/schedule/tasks', params),
 
   createTask: (data: Omit<ScheduledTask, 'id' | 'createdAt' | 'lastRunAt' | 'lastRunStatus' | 'nextRunAt'>) =>

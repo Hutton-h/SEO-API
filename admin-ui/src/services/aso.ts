@@ -20,6 +20,10 @@ export const asoAPI = {
   getASOKeywords: (projectId: string) =>
     apiGet<ASOKeyword[]>(`/v1/projects/${projectId}/aso/keywords`),
 
+  // 添加 ASO 关键词
+  addASOKeyword: (projectId: string, keyword: string) =>
+    apiPost<ASOKeyword>(`/v1/projects/${projectId}/aso/keywords`, { keyword }),
+
   // 获取排名趋势
   getASOTrend: (projectId: string) =>
     apiGet<ASOTrend[]>(`/v1/projects/${projectId}/aso/trend`),

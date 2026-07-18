@@ -14,9 +14,9 @@ export interface ContentAnalysisResult {
 }
 
 export const contentAPI = {
-  analyzeUrl: (url: string) =>
-    apiPost<ContentAnalysisResult>('/v1/content/analyze', { url }),
+  analyzeUrl: (url: string, projectId?: string) =>
+    apiPost<ContentAnalysisResult>('/v1/content/analyze', { url, projectId }),
 
-  getAnalysisHistory: (params?: { page?: number; pageSize?: number }) =>
+  getAnalysisHistory: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
     apiGet<{ data: ContentAnalysisResult[]; total: number }>('/v1/content/history', params),
 };

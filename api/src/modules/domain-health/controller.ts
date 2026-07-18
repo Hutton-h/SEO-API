@@ -13,6 +13,10 @@ export async function getDomainHealth(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      success(res, { healthScore: 0, checks: [] });
+      return;
+    }
 
     const result = await domainHealthService.getDomainHealth(projectId);
     success(res, result);

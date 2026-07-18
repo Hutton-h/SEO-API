@@ -28,9 +28,9 @@ export interface DomainHealthData {
 }
 
 export const domainHealthAPI = {
-  checkDomain: (domain: string) =>
-    apiPost<DomainHealthData>('/v1/domain-health/check', { domain }),
+  checkDomain: (domain: string, projectId?: string) =>
+    apiPost<DomainHealthData>('/v1/domain-health/check', { domain, projectId }),
 
-  getHealthHistory: (domain: string) =>
-    apiGet<DomainHealthData[]>('/v1/domain-health/history', { domain }),
+  getHealthHistory: (domain: string, projectId?: string) =>
+    apiGet<DomainHealthData[]>('/v1/domain-health/history', { domain, projectId }),
 };

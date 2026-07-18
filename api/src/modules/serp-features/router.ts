@@ -11,6 +11,9 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/projects/:id/serp-features', validate({ query: serpFeaturesQuerySchema }), getSerpFeatures);
+router.post('/projects/:id/serp-features', (req, res) => {
+  res.json({ success: true, data: { id: Date.now().toString(), ...req.body }, message: 'Keyword added' });
+});
 router.get('/projects/:id/serp-features/:featureKey', (req, res) => {
   res.json({ success: true, data: { featureKey: req.params.featureKey, details: {} } });
 });

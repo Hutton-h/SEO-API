@@ -13,6 +13,9 @@ const router = Router();
 router.use(authMiddleware);
 
 router.get('/projects/:id/sem/keywords', validate({ query: semQuerySchema }), getKeywordMetrics);
+router.post('/projects/:id/sem/keywords', (req, res) => {
+  res.json({ success: true, data: { id: Date.now().toString(), ...req.body }, message: 'Keyword added' });
+});
 router.get('/projects/:id/sem/competitor-ads', validate({ query: semQuerySchema }), getCompetitorAds);
 router.get('/projects/:id/sem/opportunities', getOpportunities);
 router.post('/projects/:id/sem/refresh', (req, res) => {

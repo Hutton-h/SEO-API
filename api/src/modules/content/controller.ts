@@ -35,6 +35,10 @@ export async function getContentAnalysis(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      success(res, { items: [], total: 0 });
+      return;
+    }
     const { page, pageSize } = req.query as unknown as z.infer<typeof contentAnalysisQuerySchema>;
 
     const result = await contentService.getContentAnalysis(projectId, { page, pageSize });

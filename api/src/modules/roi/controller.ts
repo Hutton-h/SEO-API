@@ -48,6 +48,10 @@ export async function getROI(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      paginated(res, [], { page: 1, pageSize: 20, total: 0 });
+      return;
+    }
     const { page, pageSize } = req.query as unknown as z.infer<typeof roiQuerySchema>;
 
     const result = await roiService.getROI(projectId, { page, pageSize });
@@ -80,6 +84,10 @@ export async function getROITrend(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      success(res, []);
+      return;
+    }
     const { period } = req.query as unknown as z.infer<typeof trendQuerySchema>;
 
     const trend = await roiService.getROITrend(projectId, period);

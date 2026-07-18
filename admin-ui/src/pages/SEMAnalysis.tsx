@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Tabs, Tag, Typography, Row, Col, Statistic, Button, Space, Progress, Empty, Spin, Alert, message,
+  Card, Table, Tabs, Tag, Typography, Row, Col, Statistic, Button, Space, Progress, Empty, Spin, Alert, message, Modal, Input, Form,
 } from 'antd';
 import {
   DollarOutlined, RiseOutlined, TeamOutlined, BulbOutlined,
-  ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined,
+  ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -39,6 +39,9 @@ const SEMAnalysis: React.FC = () => {
   const [keywords, setKeywords] = useState<SEMKeyword[]>([]);
   const [competitorAds, setCompetitorAds] = useState<CompetitorAd[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addForm] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
 
   const loadData = async () => {
     if (!projectId) return;
@@ -86,6 +89,28 @@ const SEMAnalysis: React.FC = () => {
       const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
       setError(msg);
       setLoading(false);
+    }
+  };
+
+  const handleAddKeyword = () => {
+    addForm.resetFields();
+    setAddModalVisible(true);
+  };
+
+  const handleAddSubmit = async (values: { keyword: string }) => {
+    if (!projectId) return;
+    setSubmitting(true);
+    try {
+      await semAPI.addSEMKeyword(projectId, values.keyword);
+      message.success('关键词添加成功');
+      setAddModalVisible(false);
+      addForm.resetFields();
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+      message.error(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -245,6 +270,7 @@ const SEMAnalysis: React.FC = () => {
         title="SEM 分析"
         subtitle="搜索引擎营销数据分析"
         actions={[
+          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
           { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
         ]}
       />
@@ -265,6 +291,32 @@ const SEMAnalysis: React.FC = () => {
       </Row>
 
       <Tabs defaultActiveKey="keywords" items={tabItems} size="large" />
+
+      <Modal
+        title="添加 SEM 关键词"
+        open={addModalVisible}
+        onCancel={() => setAddModalVisible(false)}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" onFinish={handleAddSubmit}>
+          <Form.Item
+            name="keyword"
+            label="关键词"
+            rules={[{ required: true, message: '请输入关键词' }]}
+          >
+            <Input placeholder="请输入关键词" />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={submitting}>
+                提交
+              </Button>
+              <Button onClick={() => setAddModalVisible(false)}>取消</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

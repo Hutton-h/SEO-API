@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Progress, Empty, Spin, Alert, message,
+  Modal, Input, Form,
 } from 'antd';
 import {
   AppleOutlined, AndroidOutlined, ReloadOutlined, ArrowUpOutlined,
-  ArrowDownOutlined, MinusOutlined, StarOutlined, DownloadOutlined,
+  ArrowDownOutlined, MinusOutlined, StarOutlined, DownloadOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -26,6 +27,9 @@ const ASO: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [asoKeywords, setAsoKeywords] = useState<ASOKeyword[]>([]);
   const [trend, setTrend] = useState<ASOTrend[]>([]);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addForm] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
   const [platform, setPlatform] = useState('all');
 
   const loadData = async () => {
@@ -71,6 +75,27 @@ const ASO: React.FC = () => {
       const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
       setError(msg);
       setLoading(false);
+    }
+  };
+
+  const handleAddKeyword = () => {
+    addForm.resetFields();
+    setAddModalVisible(true);
+  };
+
+  const handleAddSubmit = async () => {
+    const values = await addForm.validateFields();
+    setSubmitting(true);
+    try {
+      await asoAPI.addASOKeyword(projectId!, values.keyword);
+      message.success('关键词已添加');
+      setAddModalVisible(false);
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+      message.error(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -138,6 +163,7 @@ const ASO: React.FC = () => {
         subtitle="App Store & Google Play 关键词排名监控"
         actions={[
           { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
         ]}
       />
 

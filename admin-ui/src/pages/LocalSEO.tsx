@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Descriptions, Progress, Empty, Spin, Alert, message,
+  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Descriptions, Progress, Empty, Spin, Alert, message, Modal, Input, Form,
 } from 'antd';
 import {
   EnvironmentOutlined, PhoneOutlined, StarOutlined, ReloadOutlined,
-  ArrowUpOutlined, ArrowDownOutlined, MinusOutlined,
+  ArrowUpOutlined, ArrowDownOutlined, MinusOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import { useStore } from '@/store';
 import { geoAPI } from '@/services/geo';
@@ -27,6 +27,9 @@ const LocalSEO: React.FC = () => {
   const [gmbProfile, setGmbProfile] = useState<GMBProfile | null>(null);
   const [localRankings, setLocalRankings] = useState<LocalRanking[]>([]);
   const [compareLocation, setCompareLocation] = useState<string>('beijing');
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addForm] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
 
   const loadData = async () => {
     if (!projectId) return;
@@ -71,6 +74,28 @@ const LocalSEO: React.FC = () => {
       const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
       setError(msg);
       setLoading(false);
+    }
+  };
+
+  const handleAddKeyword = () => {
+    addForm.resetFields();
+    setAddModalVisible(true);
+  };
+
+  const handleAddSubmit = async (values: { keyword: string }) => {
+    if (!projectId) return;
+    setSubmitting(true);
+    try {
+      await geoAPI.addLocalKeyword(projectId, values.keyword);
+      message.success('关键词添加成功');
+      setAddModalVisible(false);
+      addForm.resetFields();
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+      message.error(msg);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -128,6 +153,7 @@ const LocalSEO: React.FC = () => {
         title="本地 SEO"
         subtitle="Google My Business 与本地排名管理"
         actions={[
+          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
           { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
         ]}
       />
@@ -221,6 +247,32 @@ const LocalSEO: React.FC = () => {
           loading={loading}
         />
       </Card>
+
+      <Modal
+        title="添加本地 SEO 关键词"
+        open={addModalVisible}
+        onCancel={() => setAddModalVisible(false)}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" onFinish={handleAddSubmit}>
+          <Form.Item
+            name="keyword"
+            label="关键词"
+            rules={[{ required: true, message: '请输入关键词' }]}
+          >
+            <Input placeholder="请输入关键词" />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={submitting}>
+                提交
+              </Button>
+              <Button onClick={() => setAddModalVisible(false)}>取消</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

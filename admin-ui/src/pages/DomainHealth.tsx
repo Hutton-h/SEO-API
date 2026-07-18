@@ -13,6 +13,7 @@ import * as echarts from 'echarts/core';
 import { GaugeChart } from 'echarts/charts';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
+import { useStore } from '@/store';
 import { domainHealthAPI } from '@/services/domainHealth';
 
 echarts.use([GaugeChart, CanvasRenderer]);
@@ -20,6 +21,7 @@ echarts.use([GaugeChart, CanvasRenderer]);
 const { Text, Title, Paragraph } = Typography;
 
 const DomainHealth: React.FC = () => {
+  const projectId = useStore((s) => s.currentProject?.id);
   const [domain, setDomain] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -32,7 +34,7 @@ const DomainHealth: React.FC = () => {
 
   const loadHistory = async () => {
     try {
-      const res = await domainHealthAPI.getHealthHistory(domain);
+      const res = await domainHealthAPI.getHealthHistory(domain, projectId);
       const data = (res as any).data || res;
       setHistory(Array.isArray(data) ? data : data.data || []);
     } catch (err: any) {
@@ -46,7 +48,7 @@ const DomainHealth: React.FC = () => {
     setError(null);
     setResult(null);
     try {
-      const res = await domainHealthAPI.checkDomain(domain);
+      const res = await domainHealthAPI.checkDomain(domain, projectId);
       const data = (res as any).data || res;
       setResult(data.data || data);
       message.success('检测完成');

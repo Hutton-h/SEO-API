@@ -51,7 +51,7 @@ const Schedule: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await scheduleAPI.getTasks();
+      const res = await scheduleAPI.getTasks({ projectId });
       const result = (res as any).data || res;
       setTasks(Array.isArray(result) ? result : result.data || []);
     } catch (err: any) {

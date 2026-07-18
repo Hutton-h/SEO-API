@@ -30,7 +30,7 @@ export interface ROISummary {
 }
 
 export const roiAPI = {
-  getROIData: (params?: { year?: number }) =>
+  getROIData: (params?: { year?: number; projectId?: string }) =>
     apiGet<ROIData[]>('/v1/roi/data', params),
 
   getROISummary: () =>

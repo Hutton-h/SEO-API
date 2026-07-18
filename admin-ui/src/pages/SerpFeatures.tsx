@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Card, Row, Col, Table, Progress, Typography, Space, Statistic, Button, Input, Spin, Empty, Alert,
+  Card, Row, Col, Table, Progress, Typography, Space, Statistic, Button, Input, Spin, Empty, Alert, Modal, Form, message,
 } from 'antd';
 import {
   SearchOutlined, RiseOutlined, ReloadOutlined, CheckCircleOutlined,
   GlobalOutlined, VideoCameraOutlined, PictureOutlined, StarOutlined,
-  ReadOutlined, EnvironmentOutlined, ThunderboltOutlined,
+  ReadOutlined, EnvironmentOutlined, ThunderboltOutlined, PlusOutlined,
 } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
@@ -55,6 +55,9 @@ const SerpFeatures: React.FC = () => {
   const [keywords, setKeywords] = useState<KeywordItem[]>([]);
   const [totalKeywords, setTotalKeywords] = useState(0);
   const [searchText, setSearchText] = useState('');
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [addForm] = Form.useForm();
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }
@@ -93,6 +96,28 @@ const SerpFeatures: React.FC = () => {
   };
 
   const handleRefresh = () => { loadData(); };
+
+  const handleAddKeyword = () => {
+    addForm.resetFields();
+    setAddModalVisible(true);
+  };
+
+  const handleAddSubmit = async (values: { keyword: string }) => {
+    if (!projectId) return;
+    setSubmitting(true);
+    try {
+      await serpFeaturesAPI.addKeyword(projectId, values.keyword);
+      message.success('关键词添加成功');
+      setAddModalVisible(false);
+      addForm.resetFields();
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
+      message.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (!projectId) return <Empty description="请先选择一个项目" />;
   if (loading) return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
@@ -166,7 +191,10 @@ const SerpFeatures: React.FC = () => {
       <PageHeader
         title="SERP 特性分析"
         subtitle="分析关键词在搜索结果中的特性展示分布"
-        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading }]}
+        actions={[
+          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
+          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
+        ]}
       />
 
       <Row gutter={[16, 16]} style={{ margin: 24 }}>
@@ -225,6 +253,32 @@ const SerpFeatures: React.FC = () => {
           scroll={{ x: 1200 }}
         />
       </Card>
+
+      <Modal
+        title="添加 SERP 关键词"
+        open={addModalVisible}
+        onCancel={() => setAddModalVisible(false)}
+        footer={null}
+        destroyOnClose
+      >
+        <Form form={addForm} layout="vertical" onFinish={handleAddSubmit}>
+          <Form.Item
+            name="keyword"
+            label="关键词"
+            rules={[{ required: true, message: '请输入关键词' }]}
+          >
+            <Input placeholder="请输入关键词" />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit" loading={submitting}>
+                提交
+              </Button>
+              <Button onClick={() => setAddModalVisible(false)}>取消</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

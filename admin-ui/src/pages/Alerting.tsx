@@ -57,8 +57,8 @@ const Alerting: React.FC = () => {
     setError(null);
     try {
       const [rulesRes, historyRes, summaryRes] = await Promise.all([
-        alertingAPI.getAlertRules(),
-        alertingAPI.getAlertHistory(),
+        alertingAPI.getAlertRules({ projectId }),
+        alertingAPI.getAlertHistory({ projectId }),
         alertingAPI.getAlertSummary(),
       ]);
       const rulesData = (rulesRes as any).data || rulesRes;

@@ -45,6 +45,10 @@ export const semAPI = {
       params
     ),
 
+  // 添加 SEM 关键词
+  addSEMKeyword: (projectId: string, keyword: string) =>
+    apiPost<SEMKeyword>(`/v1/projects/${projectId}/sem/keywords`, { keyword }),
+
   // 获取竞品广告
   getCompetitorAds: (projectId: string) =>
     apiGet<CompetitorAd[]>(`/v1/projects/${projectId}/sem/competitor-ads`),

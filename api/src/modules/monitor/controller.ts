@@ -34,6 +34,10 @@ export async function getUptimeStatus(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      success(res, { isUp: true, lastCheck: null, sla: { uptimePercent: 100 } });
+      return;
+    }
 
     const status = await monitorService.getUptimeStatus(projectId);
     success(res, status);
@@ -64,6 +68,10 @@ export async function getUptimeLogs(
 ): Promise<void> {
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
+    if (!projectId) {
+      paginated(res, [], { page: 1, pageSize: 20, total: 0 });
+      return;
+    }
     const { page, pageSize, isUp } = req.query as unknown as z.infer<typeof logsQuerySchema>;
 
     const result = await monitorService.getUptimeLogs(projectId, { page, pageSize, isUp });

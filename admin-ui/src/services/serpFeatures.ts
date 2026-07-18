@@ -1,4 +1,4 @@
-import { apiGet } from './api';
+import { apiGet, apiPost } from './api';
 
 export interface SerpFeature {
   keyword: string;
@@ -26,6 +26,9 @@ export interface SerpFeatureStats {
 export const serpFeaturesAPI = {
   getFeatureStats: (projectId: string) =>
     apiGet<SerpFeatureStats>(`/v1/projects/${projectId}/serp-features`),
+
+  addKeyword: (projectId: string, keyword: string) =>
+    apiPost<{ id: string; keyword: string }>(`/v1/projects/${projectId}/serp-features`, { keyword }),
 
   getFeatureDetails: (projectId: string, featureKey: string) =>
     apiGet<{ keywords: string[]; total: number }>(`/v1/projects/${projectId}/serp-features/${featureKey}`),
