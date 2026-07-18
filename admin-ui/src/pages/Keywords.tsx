@@ -93,7 +93,7 @@ const Keywords: React.FC = () => {
         await keywordAPI.updateKeyword(projectId!, editingKeyword.id, values);
         message.success('关键词已更新');
       } else {
-        await keywordAPI.addKeyword(projectId!, values);
+        await keywordAPI.addKeyword(projectId!, values.keyword);
         message.success(`成功添加关键词: ${values.keyword}`);
       }
       setModalOpen(false);
@@ -129,7 +129,7 @@ const Keywords: React.FC = () => {
     try {
       for (const kw of defaultKeywords) {
         try {
-          await keywordAPI.addKeyword(projectId!, { keyword: kw });
+          await keywordAPI.addKeyword(projectId!, kw);
         } catch {
           // 跳过重复或失败的
         }
