@@ -19,7 +19,7 @@ const router = Router();
 router.use(authMiddleware);
 
 router.post('/projects/:id/crawl', validate({ body: triggerCrawlSchema }), triggerCrawl);
-router.get('/projects/:id/crawl/status/:taskId', getCrawlStatus);
+router.get('/projects/:id/crawl/:taskId', getCrawlStatus);
 router.get('/projects/:id/pages', validate({ query: pagesQuerySchema }), getPages);
 router.get('/projects/:id/issues', validate({ query: issuesQuerySchema }), getIssues);
 router.post('/projects/:id/audit', validate({ body: triggerAuditSchema }), triggerAudit);

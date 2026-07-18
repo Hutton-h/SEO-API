@@ -20,6 +20,6 @@ router.post('/projects/:id/keywords', validate({ body: addKeywordSchema }), addK
 router.post('/projects/:id/keywords/batch', validate({ body: addKeywordsBatchSchema }), addKeywordsBatch);
 router.get('/projects/:id/keywords', validate({ query: keywordsQuerySchema }), getKeywords);
 router.delete('/projects/:id/keywords/:keywordId', deleteKeyword);
-router.post('/projects/:id/keywords/import-defaults', importDefaultKeywords);
+router.post('/projects/:id/keywords/import-default', importDefaultKeywords);
 
 export default router;

@@ -117,7 +117,7 @@ export function createApp(): Application {
   app.use('/api/v1', authRouter);
 
   // Existing routes
-  app.use('/api/v1', projectRouter);
+  app.use('/api/v1/projects', projectRouter);
   app.use('/api/v1', crawlRouter);
   app.use('/api/v1', keywordsRouter);
   app.use('/api/v1', rankingsRouter);
