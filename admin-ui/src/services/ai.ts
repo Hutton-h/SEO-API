@@ -31,5 +31,5 @@ export interface AIOptimizationResponse {
 
 export const aiAPI = {
   optimize: (projectId: string, data: AIOptimizationRequest) =>
-    apiPost<AIOptimizationResponse>(`/projects/${projectId}/ai/optimize`, data),
+    apiPost<AIOptimizationResponse>(`/v1/projects/${projectId}/ai/optimize`, data),
 };

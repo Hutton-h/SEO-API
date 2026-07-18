@@ -33,15 +33,15 @@ export const backlinkAPI = {
     type?: string;
     status?: string;
   }) => apiGet<{ data: Backlink[]; total: number }>(
-    `/projects/${projectId}/backlinks`,
+    `/v1/projects/${projectId}/backlinks`,
     params
   ),
 
   // 获取外链统计
   getBacklinkStats: (projectId: string) =>
-    apiGet<BacklinkStats>(`/projects/${projectId}/backlinks/stats`),
+    apiGet<BacklinkStats>(`/v1/projects/${projectId}/backlinks/stats`),
 
   // 刷新外链数据
   refreshBacklinks: (projectId: string) =>
-    apiPost<{ message: string }>(`/projects/${projectId}/backlinks/refresh`),
+    apiPost<{ message: string }>(`/v1/projects/${projectId}/backlinks/refresh`),
 };

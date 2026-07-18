@@ -24,17 +24,17 @@ export interface KeywordOverlap {
 export const competitorAPI = {
   // 获取竞品概览
   getOverview: (projectId: string) =>
-    apiGet<Competitor[]>(`/projects/${projectId}/competitors/overview`),
+    apiGet<Competitor[]>(`/v1/projects/${projectId}/competitors/overview`),
 
   // 获取关键词重叠矩阵
   getKeywordOverlap: (projectId: string) =>
-    apiGet<KeywordOverlap[]>(`/projects/${projectId}/competitors/keyword-overlap`),
+    apiGet<KeywordOverlap[]>(`/v1/projects/${projectId}/competitors/keyword-overlap`),
 
   // 添加竞品
   addCompetitor: (projectId: string, data: { name: string; domain: string }) =>
-    apiPost<Competitor>(`/projects/${projectId}/competitors`, data),
+    apiPost<Competitor>(`/v1/projects/${projectId}/competitors`, data),
 
   // 移除竞品
   removeCompetitor: (projectId: string, competitorId: string) =>
-    apiPost<{ message: string }>(`/projects/${projectId}/competitors/${competitorId}/remove`),
+    apiPost<{ message: string }>(`/v1/projects/${projectId}/competitors/${competitorId}/remove`),
 };

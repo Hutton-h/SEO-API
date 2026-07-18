@@ -45,21 +45,21 @@ export interface CrawlConfig {
 export const crawlAPI = {
   // 触发爬虫
   startCrawl: (projectId: string, config?: Partial<CrawlConfig>) =>
-    apiPost<CrawlTask>(`/projects/${projectId}/crawl`, config),
+    apiPost<CrawlTask>(`/v1/projects/${projectId}/crawl`, config),
 
   // 获取爬虫任务状态
   getTaskStatus: (projectId: string, taskId: string) =>
-    apiGet<CrawlTask>(`/projects/${projectId}/crawl/${taskId}`),
+    apiGet<CrawlTask>(`/v1/projects/${projectId}/crawl/${taskId}`),
 
   // 获取页面列表
   getPages: (projectId: string, params?: { page?: number; pageSize?: number; statusCode?: number }) =>
-    apiGet<{ data: PageResult[]; total: number }>(`/projects/${projectId}/pages`, params),
+    apiGet<{ data: PageResult[]; total: number }>(`/v1/projects/${projectId}/pages`, params),
 
   // 获取页面问题
   getPageIssues: (projectId: string, pageId: string) =>
-    apiGet<Issue[]>(`/projects/${projectId}/pages/${pageId}/issues`),
+    apiGet<Issue[]>(`/v1/projects/${projectId}/pages/${pageId}/issues`),
 
   // 获取所有问题
   getAllIssues: (projectId: string, params?: { severity?: string; type?: string }) =>
-    apiGet<Issue[]>(`/projects/${projectId}/issues`, params),
+    apiGet<Issue[]>(`/v1/projects/${projectId}/issues`, params),
 };

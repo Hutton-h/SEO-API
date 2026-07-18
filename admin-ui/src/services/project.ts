@@ -25,19 +25,19 @@ export interface CreateProjectParams {
 
 export const projectAPI = {
   // 获取项目列表
-  getProjects: () => apiGet<Project[]>('/projects'),
+  getProjects: () => apiGet<Project[]>('/v1/projects'),
 
   // 获取单个项目
-  getProject: (id: string) => apiGet<Project>(`/projects/${id}`),
+  getProject: (id: string) => apiGet<Project>(`/v1/projects/${id}`),
 
   // 创建项目
   createProject: (data: CreateProjectParams) =>
-    apiPost<Project>('/projects', data),
+    apiPost<Project>('/v1/projects', data),
 
   // 更新项目
   updateProject: (id: string, data: Partial<CreateProjectParams>) =>
-    apiPut<Project>(`/projects/${id}`, data),
+    apiPut<Project>(`/v1/projects/${id}`, data),
 
   // 删除项目
-  deleteProject: (id: string) => apiDelete<void>(`/projects/${id}`),
+  deleteProject: (id: string) => apiDelete<void>(`/v1/projects/${id}`),
 };

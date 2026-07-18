@@ -23,13 +23,13 @@ export interface YouTubeVideo {
 export const youtubeAPI = {
   // 获取 YouTube 关键词排名
   getYouTubeKeywords: (projectId: string) =>
-    apiGet<YouTubeKeyword[]>(`/projects/${projectId}/youtube/keywords`),
+    apiGet<YouTubeKeyword[]>(`/v1/projects/${projectId}/youtube/keywords`),
 
   // 获取 YouTube 视频统计数据
   getYouTubeVideos: (projectId: string) =>
-    apiGet<YouTubeVideo[]>(`/projects/${projectId}/youtube/videos`),
+    apiGet<YouTubeVideo[]>(`/v1/projects/${projectId}/youtube/videos`),
 
   // 刷新 YouTube 数据
   refreshYouTubeData: (projectId: string) =>
-    apiPost<{ message: string }>(`/projects/${projectId}/youtube/refresh`),
+    apiPost<{ message: string }>(`/v1/projects/${projectId}/youtube/refresh`),
 };

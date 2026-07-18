@@ -41,19 +41,19 @@ export const semAPI = {
   // 获取 SEM 关键词指标
   getSEMKeywords: (projectId: string, params?: { page?: number; pageSize?: number }) =>
     apiGet<{ data: SEMKeyword[]; total: number }>(
-      `/projects/${projectId}/sem/keywords`,
+      `/v1/projects/${projectId}/sem/keywords`,
       params
     ),
 
   // 获取竞品广告
   getCompetitorAds: (projectId: string) =>
-    apiGet<CompetitorAd[]>(`/projects/${projectId}/sem/competitor-ads`),
+    apiGet<CompetitorAd[]>(`/v1/projects/${projectId}/sem/competitor-ads`),
 
   // 获取机会分析
   getOpportunities: (projectId: string) =>
-    apiGet<Opportunity[]>(`/projects/${projectId}/sem/opportunities`),
+    apiGet<Opportunity[]>(`/v1/projects/${projectId}/sem/opportunities`),
 
   // 刷新 SEM 数据
   refreshSEMData: (projectId: string) =>
-    apiPost<{ message: string }>(`/projects/${projectId}/sem/refresh`),
+    apiPost<{ message: string }>(`/v1/projects/${projectId}/sem/refresh`),
 };

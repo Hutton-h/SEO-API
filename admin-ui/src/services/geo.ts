@@ -22,13 +22,13 @@ export interface LocalRanking {
 export const geoAPI = {
   // 获取 GMB 档案
   getGMBProfile: (projectId: string) =>
-    apiGet<GMBProfile>(`/projects/${projectId}/local-seo/gmb-profile`),
+    apiGet<GMBProfile>(`/v1/projects/${projectId}/local-seo/gmb-profile`),
 
   // 获取本地排名
   getLocalRankings: (projectId: string, params?: { location?: string }) =>
-    apiGet<LocalRanking[]>(`/projects/${projectId}/local-seo/rankings`, params),
+    apiGet<LocalRanking[]>(`/v1/projects/${projectId}/local-seo/rankings`, params),
 
   // 刷新本地 SEO 数据
   refreshLocalSEO: (projectId: string) =>
-    apiPost<{ message: string }>(`/projects/${projectId}/local-seo/refresh`),
+    apiPost<{ message: string }>(`/v1/projects/${projectId}/local-seo/refresh`),
 };

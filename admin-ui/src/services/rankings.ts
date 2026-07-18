@@ -38,19 +38,19 @@ export const rankingAPI = {
     searchEngine?: string;
     device?: string;
   }) => apiGet<{ data: RankingRecord[]; total: number }>(
-    `/projects/${projectId}/rankings`,
+    `/v1/projects/${projectId}/rankings`,
     params
   ),
 
   // 获取排名历史
   getRankingHistory: (projectId: string, keywordId: string, days?: number) =>
-    apiGet<RankingHistory[]>(`/projects/${projectId}/rankings/${keywordId}/history`, { days }),
+    apiGet<RankingHistory[]>(`/v1/projects/${projectId}/rankings/${keywordId}/history`, { days }),
 
   // 获取排名概览
   getRankingSummary: (projectId: string) =>
-    apiGet<RankingSummary>(`/projects/${projectId}/rankings/summary`),
+    apiGet<RankingSummary>(`/v1/projects/${projectId}/rankings/summary`),
 
   // 刷新排名
   refreshRankings: (projectId: string) =>
-    apiPost<{ message: string }>(`/projects/${projectId}/rankings/refresh`),
+    apiPost<{ message: string }>(`/v1/projects/${projectId}/rankings/refresh`),
 };

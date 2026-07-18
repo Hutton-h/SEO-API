@@ -37,13 +37,13 @@ export interface ReportData {
 export const reportAPI = {
   // 获取报告
   getReport: (projectId: string) =>
-    apiGet<ReportData>(`/projects/${projectId}/report`),
+    apiGet<ReportData>(`/v1/projects/${projectId}/report`),
 
   // 生成报告
   generateReport: (projectId: string) =>
-    apiPost<ReportData>(`/projects/${projectId}/report/generate`),
+    apiPost<ReportData>(`/v1/projects/${projectId}/report/generate`),
 
   // 导出 PDF
   exportPDF: (projectId: string) =>
-    api.get(`/projects/${projectId}/report/export/pdf`, { responseType: 'blob' }),
+    api.get(`/v1/projects/${projectId}/report/export/pdf`, { responseType: 'blob' }),
 };
