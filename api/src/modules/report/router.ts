@@ -9,7 +9,7 @@ router.use(authMiddleware);
 router.get('/projects/:id/report', getReport);
 router.get('/projects/:id/report/export/pdf', getReportPDF);
 router.post('/projects/:id/report/generate', (req, res) => {
-  res.json({ success: true, data: { message: 'Report generation initiated' } });
+  res.json({ success: true, data: { taskId: 'report-' + Date.now(), status: 'processing', estimatedTime: 30 }, message: 'Report generation started' });
 });
 
 export default router;

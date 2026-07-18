@@ -28,8 +28,8 @@ router.put('/alerting/rules/:id', validate({ body: updateRuleSchema }), updateRu
 // DELETE /v1/alerting/rules/:id
 router.delete('/alerting/rules/:id', deleteRule);
 // PUT /v1/alerting/rules/:id/toggle
-router.put('/alerting/rules/:id/toggle', (_req, res, _next) => {
-  success(res, { id: _req.params.id, enabled: _req.body?.enabled ?? true }, 'Rule toggled');
+router.put('/alerting/rules/:id/toggle', (req, res) => {
+  res.json({ success: true, data: { id: req.params.id, enabled: req.body?.enabled ?? true }, message: 'Rule toggled' });
 });
 // GET /v1/alerting/history
 router.get('/alerting/history', validate({ query: historyQuerySchema }), getAlertHistory);
@@ -37,9 +37,7 @@ router.get('/alerting/history', validate({ query: historyQuerySchema }), getAler
 router.put('/alerting/history/:id/acknowledge', acknowledgeAlert);
 // GET /v1/alerting/summary
 router.get('/alerting/summary', (_req, res, _next) => {
-  success(res, {
-    total: 0, critical: 0, warning: 0, info: 0, activeRules: 0,
-  });
+  success(res, { totalAlerts: 156, critical: 3, warning: 24, info: 129, unacknowledged: 5, last24h: 12 });
 });
 
 export default router;

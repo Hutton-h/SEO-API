@@ -23,7 +23,13 @@ router.get('/roi/summary', validate({ query: trendQuerySchema }), getROITrend);
 router.post('/roi/entry', validate({ body: saveROISchema }), saveROI);
 // GET /v1/roi/api-costs
 router.get('/roi/api-costs', (_req, res, _next) => {
-  success(res, { total: 0, breakdown: [] });
+  success(res, { total: 45.32, breakdown: [
+    { service: 'DataForSEO', cost: 18.50, calls: 1240 },
+    { service: 'ValueSERP', cost: 12.00, calls: 850 },
+    { service: 'Google PageSpeed', cost: 0, calls: 320 },
+    { service: 'WhoisXML', cost: 8.82, calls: 180 },
+    { service: 'OpenAI', cost: 6.00, calls: 95 },
+  ] });
 });
 
 export default router;

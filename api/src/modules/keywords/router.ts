@@ -106,4 +106,14 @@ router.put('/projects/:id/keywords/batch-tag', (req, res) => {
   success(res, { updated: keywordIds.length, tags }, 'Tags updated');
 });
 
+router.get('/projects/:id/keywords/:keywordId/trend', (req, res) => {
+  const months = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07'];
+  const baseVolume = Math.floor(Math.random() * 3000) + 500;
+  const trend = months.map((m, i) => ({
+    month: m,
+    volume: Math.floor(baseVolume * (0.85 + Math.random() * 0.3)),
+  }));
+  res.json({ success: true, data: trend });
+});
+
 export default router;

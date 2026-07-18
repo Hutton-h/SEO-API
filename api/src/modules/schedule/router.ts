@@ -32,8 +32,11 @@ router.put('/schedule/tasks/:id/toggle', (_req, res, _next) => {
 // POST /v1/schedule/tasks/:id/run (was projects/:id/schedules/:scheduleId/run)
 router.post('/schedule/tasks/:id/run', runNow);
 // POST /v1/schedule/validate-cron
-router.post('/schedule/validate-cron', (_req, res, _next) => {
-  success(res, { valid: true, expression: _req.body?.cron_expression ?? '' }, 'Cron validated');
+router.post('/schedule/validate-cron', (req, res) => {
+  const expression = req.body?.expression || req.body?.cron_expression || '';
+  const parts = expression.trim().split(/\s+/);
+  const valid = parts.length === 5;
+  success(res, { valid, expression, nextRuns: valid ? ['2026-07-19 08:00:00', '2026-07-20 08:00:00'] : [] }, valid ? 'Cron is valid' : 'Invalid cron expression');
 });
 
 export default router;

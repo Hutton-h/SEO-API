@@ -22,9 +22,14 @@ router.get('/auth/profile', authMiddleware, getMe);
 router.post('/auth/logout', authMiddleware, (_req, res, _next) => {
   success(res, null, 'Logged out');
 });
-// POST /v1/auth/refresh
-router.post('/auth/refresh', authMiddleware, (_req, res, _next) => {
-  success(res, { token: 'refreshed-token-stub', expiresIn: 86400 }, 'Token refreshed');
+// POST /v1/auth/refresh — 不需要 authMiddleware，用 refreshToken 本身验证
+router.post('/auth/refresh', (_req, res, _next) => {
+  // 实际应该验证 refreshToken，这里返回新 token
+  const { refreshToken } = _req.body || {};
+  if (!refreshToken) {
+    return res.status(400).json({ success: false, error: { code: 'MISSING_TOKEN', message: 'Refresh token is required' } });
+  }
+  success(res, { accessToken: 'refreshed-access-token', expiresIn: 86400 }, 'Token refreshed');
 });
 // POST /v1/auth/profile
 router.post('/auth/profile', authMiddleware, (_req, res, _next) => {

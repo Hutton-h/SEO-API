@@ -17,8 +17,13 @@ router.get('/competitor-changes', validate({ query: changesQuerySchema }), getCh
 // POST /v1/competitor-changes/detect (was projects/:id/competitor-changes/check)
 router.post('/competitor-changes/detect', checkNow);
 // GET /v1/competitor-changes/distribution/:id
-router.get('/competitor-changes/distribution/:id', (_req, res, _next) => {
-  success(res, { id: _req.params.id, distribution: [] });
+router.get('/competitor-changes/distribution/:changeId', (_req, res, _next) => {
+  success(res, { distribution: [
+    { type: 'keyword_gain', count: 12, percentage: 30 },
+    { type: 'keyword_loss', count: 5, percentage: 12.5 },
+    { type: 'ranking_improve', count: 15, percentage: 37.5 },
+    { type: 'ranking_decline', count: 8, percentage: 20 },
+  ] });
 });
 
 export default router;

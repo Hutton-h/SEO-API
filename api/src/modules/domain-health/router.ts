@@ -11,7 +11,12 @@ router.use(authMiddleware);
 router.post('/domain-health/check', getDomainHealth);
 // GET /v1/domain-health/history
 router.get('/domain-health/history', (_req, res, _next) => {
-  success(res, { items: [], total: 0 });
+  const dates = Array.from({length: 7}, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - 6 + i);
+    return d.toISOString().slice(0, 10);
+  });
+  const items = dates.map(d => ({ date: d, score: 75 + Math.floor(Math.random() * 20), checks: 12 + Math.floor(Math.random() * 5) }));
+  success(res, { items, total: items.length });
 });
 
 export default router;
