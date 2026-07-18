@@ -43,7 +43,7 @@ const DomainHealth: React.FC = () => {
   };
 
   const handleCheck = async () => {
-    if (!domain) { message.warning('请输入域名');; }
+    if (!domain) { message.warning('请输入域名'); return; }
     setLoading(true);
     setError(null);
     setResult(null);
@@ -88,7 +88,7 @@ const DomainHealth: React.FC = () => {
       'error': { color: '#ff4d4f', text: '错误' },
       'unknown': { color: '#999', text: '未知' },
     };
-    const info = statusMap[status.toLowerCase()] || statusMap['unknown'];
+    const info = statusMap[status?.toLowerCase()] || statusMap['unknown'];
     return <Badge color={info.color} text={info.text} />;
   };
 

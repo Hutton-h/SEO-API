@@ -262,12 +262,11 @@ const WhiteLabel: React.FC = () => {
               </Form.Item>
 
               <Form.Item
+                name="customDomain"
                 label="自定义域名"
               >
                 <Space.Compact style={{ width: '100%' }}>
-                  <Form.Item name="customDomain" noStyle>
-                    <Input placeholder="app.yourcompany.com" prefix={<GlobalOutlined />} />
-                  </Form.Item>
+                  <Input placeholder="app.yourcompany.com" prefix={<GlobalOutlined />} />
                   <Button
                     icon={<CheckCircleOutlined />}
                     onClick={handleVerifyDomain}
