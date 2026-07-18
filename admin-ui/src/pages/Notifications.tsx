@@ -110,7 +110,7 @@ const Notifications: React.FC = () => {
 
   const handleToggle = async (id: string, enabled: boolean) => {
     try {
-      await notificationsAPI.toggleChannel(id, { enabled });
+      await notificationsAPI.toggleChannel(id, enabled);
       setChannels((prev) => prev.map((c) => (c.id === id ? { ...c, enabled } : c)));
       message.success(enabled ? '渠道已启用' : '渠道已禁用');
     } catch (err: any) {

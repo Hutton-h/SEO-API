@@ -14,7 +14,7 @@ import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
-import { keywordAPI } from '@/services/keyword';
+import { keywordAPI } from '@/services/keywords';
 
 echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 

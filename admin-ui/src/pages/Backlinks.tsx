@@ -13,7 +13,7 @@ import { TooltipComponent, TitleComponent, LegendComponent } from 'echarts/compo
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
-import { backlinkAPI } from '@/services/backlink';
+import { backlinkAPI } from '@/services/backlinks';
 
 echarts.use([PieChart, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 

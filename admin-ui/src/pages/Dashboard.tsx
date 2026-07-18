@@ -29,13 +29,13 @@ import PageHeader from '@/components/PageHeader';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store';
 import { projectAPI } from '@/services/project';
-import { keywordAPI } from '@/services/keyword';
+import { keywordAPI } from '@/services/keywords';
 import { crawlAPI } from '@/services/crawl';
 import { apiUsageAPI } from '@/services/apiUsage';
 import { monitorAPI } from '@/services/monitor';
 import { alertingAPI } from '@/services/alerting';
 import { contentAPI } from '@/services/content';
-import { rankingAPI } from '@/services/ranking';
+import { rankingAPI } from '@/services/rankings';
 import { scheduleAPI } from '@/services/schedule';
 import dayjs from 'dayjs';
 

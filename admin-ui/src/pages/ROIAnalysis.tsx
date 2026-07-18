@@ -168,11 +168,11 @@ const ROIAnalysis: React.FC = () => {
           <Card>
             <Statistic
               title="整体 ROI"
-              value={overROI}
+              value={overallROI}
               suffix="%"
               precision={1}
               valueStyle={{ color: overallROI >= 0 ? '#52c41a' : '#ff4d4f' }}
-              prefix={overROI >= 0 ? <RiseOutlined /> : <FallOutlined />}
+              prefix={overallROI >= 0 ? <RiseOutlined /> : <FallOutlined />}
             />
           </Card>
         </Col>

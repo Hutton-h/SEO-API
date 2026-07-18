@@ -13,7 +13,7 @@ import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
-import { rankingAPI } from '@/services/ranking';
+import { rankingAPI } from '@/services/rankings';
 
 echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 

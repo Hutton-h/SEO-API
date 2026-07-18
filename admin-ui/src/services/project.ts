@@ -18,6 +18,7 @@ export interface Project {
 export interface CreateProjectParams {
   name: string;
   domain: string;
+  status?: Project['status'];
   description?: string;
   settings?: Project['settings'];
 }
