@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import {
   Card, Row, Col, Input, Button, Typography, Space, Progress, Tag, Statistic,
-  , Collapse, Divider, Empty, Badge, message, Descriptions, Spin, Alert,
+  Collapse, Divider, Empty, Badge, message, Descriptions, Spin, Alert,
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, TrophyOutlined, ReadOutlined,
@@ -86,7 +86,7 @@ const ContentAnalysis: React.FC = () => {
       <PageHeader
         title="内容分析"
         subtitle="AI 驱动的网页内容评估与优化"
-        actions={[{ label: "刷新",: <ReloadOutlined />, onClick: handleRefresh, loading: false }]}
+        actions={[{ label: "刷新", icon: <ReloadOutlined />, onClick: handleRefresh, loading: false }]}
       />
 
       <Card style={{ margin: 24 }}>
