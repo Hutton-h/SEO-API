@@ -47,7 +47,7 @@ export async function getROI(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize } = req.query as unknown as z.infer<typeof roiQuerySchema>;
 
     const result = await roiService.getROI(projectId, { page, pageSize });
@@ -63,7 +63,7 @@ export async function saveROI(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const data = req.body as z.infer<typeof saveROISchema>;
 
     const roi = await roiService.saveROI(projectId, data as any);
@@ -79,7 +79,7 @@ export async function getROITrend(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { period } = req.query as unknown as z.infer<typeof trendQuerySchema>;
 
     const trend = await roiService.getROITrend(projectId, period);

@@ -33,7 +33,7 @@ export async function getUptimeStatus(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
     const status = await monitorService.getUptimeStatus(projectId);
     success(res, status);
@@ -48,7 +48,7 @@ export async function checkNow(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
     const result = await monitorService.checkNow(projectId);
     success(res, result, 'Uptime check completed');
@@ -63,7 +63,7 @@ export async function getUptimeLogs(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize, isUp } = req.query as unknown as z.infer<typeof logsQuerySchema>;
 
     const result = await monitorService.getUptimeLogs(projectId, { page, pageSize, isUp });

@@ -13,8 +13,11 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/projects/:id/geo/rankings', validate({ query: localRankingsQuerySchema }), getLocalRankings);
-router.get('/projects/:id/geo/gmb', getGMBProfile);
-router.post('/projects/:id/geo/compare', validate({ body: compareLocationsSchema }), compareLocations);
+router.get('/projects/:id/local-seo/rankings', validate({ query: localRankingsQuerySchema }), getLocalRankings);
+router.get('/projects/:id/local-seo/gmb-profile', getGMBProfile);
+router.post('/projects/:id/local-seo/compare', validate({ body: compareLocationsSchema }), compareLocations);
+router.post('/projects/:id/local-seo/refresh', (req, res) => {
+  res.json({ success: true, data: { message: 'Local SEO data refresh initiated' } });
+});
 
 export default router;

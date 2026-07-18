@@ -48,7 +48,7 @@ export async function createSchedule(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const data = req.body as z.infer<typeof createScheduleSchema>;
 
     const schedule = await scheduleService.createSchedule(projectId, data as any);
@@ -64,7 +64,7 @@ export async function listSchedules(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize, type, enabled } = req.query as unknown as z.infer<typeof schedulesQuerySchema>;
 
     const result = await scheduleService.listSchedules(projectId, { page, pageSize, type, enabled });

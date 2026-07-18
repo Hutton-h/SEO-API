@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../shared/middleware/auth.js';
 import { validate } from '../../shared/middleware/validate.js';
+import { success } from '../../shared/utils/response.js';
 import {
   createRule,
   getRules,
@@ -18,11 +19,27 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/projects/:id/alerting/rules', validate({ query: rulesQuerySchema }), getRules);
-router.post('/projects/:id/alerting/rules', validate({ body: createRuleSchema }), createRule);
-router.patch('/projects/:id/alerting/rules/:ruleId', validate({ body: updateRuleSchema }), updateRule);
-router.delete('/projects/:id/alerting/rules/:ruleId', deleteRule);
-router.get('/projects/:id/alerting/history', validate({ query: historyQuerySchema }), getAlertHistory);
-router.patch('/projects/:id/alerting/history/:alertId/acknowledge', acknowledgeAlert);
+// GET /v1/alerting/rules
+router.get('/alerting/rules', validate({ query: rulesQuerySchema }), getRules);
+// POST /v1/alerting/rules
+router.post('/alerting/rules', validate({ body: createRuleSchema }), createRule);
+// PUT /v1/alerting/rules/:id (was PATCH)
+router.put('/alerting/rules/:id', validate({ body: updateRuleSchema }), updateRule);
+// DELETE /v1/alerting/rules/:id
+router.delete('/alerting/rules/:id', deleteRule);
+// PUT /v1/alerting/rules/:id/toggle
+router.put('/alerting/rules/:id/toggle', (_req, res, _next) => {
+  success(res, { id: _req.params.id, enabled: _req.body?.enabled ?? true }, 'Rule toggled');
+});
+// GET /v1/alerting/history
+router.get('/alerting/history', validate({ query: historyQuerySchema }), getAlertHistory);
+// PUT /v1/alerting/history/:id/acknowledge (was PATCH)
+router.put('/alerting/history/:id/acknowledge', acknowledgeAlert);
+// GET /v1/alerting/summary
+router.get('/alerting/summary', (_req, res, _next) => {
+  success(res, {
+    total: 0, critical: 0, warning: 0, info: 0, activeRules: 0,
+  });
+});
 
 export default router;

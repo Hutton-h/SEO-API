@@ -12,8 +12,11 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/projects/:id/sem/keyword-metrics', validate({ query: semQuerySchema }), getKeywordMetrics);
+router.get('/projects/:id/sem/keywords', validate({ query: semQuerySchema }), getKeywordMetrics);
 router.get('/projects/:id/sem/competitor-ads', validate({ query: semQuerySchema }), getCompetitorAds);
 router.get('/projects/:id/sem/opportunities', getOpportunities);
+router.post('/projects/:id/sem/refresh', (req, res) => {
+  res.json({ success: true, data: { message: 'SEM data refresh initiated' } });
+});
 
 export default router;

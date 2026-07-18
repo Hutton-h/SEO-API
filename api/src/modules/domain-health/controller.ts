@@ -12,7 +12,7 @@ export async function getDomainHealth(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
     const result = await domainHealthService.getDomainHealth(projectId);
     success(res, result);

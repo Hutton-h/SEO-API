@@ -76,7 +76,7 @@ export async function createRule(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const data = req.body as z.infer<typeof createRuleSchema>;
 
     const rule = await alertingService.createRule(projectId, data as any);
@@ -92,7 +92,7 @@ export async function getRules(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize, type, enabled } = req.query as unknown as z.infer<typeof rulesQuerySchema>;
 
     const result = await alertingService.getRules(projectId, { page, pageSize, type, enabled });
@@ -147,7 +147,7 @@ export async function getAlertHistory(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize, type, severity, acknowledged } = req.query as unknown as z.infer<typeof historyQuerySchema>;
 
     const result = await alertingService.getAlertHistory(projectId, {

@@ -31,7 +31,7 @@ export async function getBranding(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
     const branding = await whitelabelService.getBranding(projectId);
     success(res, branding ?? { brand_name: 'Crane SEO', logo_url: '/logo.png', primary_color: '#2563eb' });
@@ -46,7 +46,7 @@ export async function updateBranding(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const data = req.body as z.infer<typeof updateBrandingSchema>;
 
     const branding = await whitelabelService.updateBranding(projectId, data);

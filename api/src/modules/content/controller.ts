@@ -34,7 +34,7 @@ export async function getContentAnalysis(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize } = req.query as unknown as z.infer<typeof contentAnalysisQuerySchema>;
 
     const result = await contentService.getContentAnalysis(projectId, { page, pageSize });
@@ -50,7 +50,7 @@ export async function analyzeUrl(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { url } = req.body as z.infer<typeof analyzeUrlSchema>;
 
     const result = await contentService.analyzeUrl(projectId, url);
@@ -66,7 +66,7 @@ export async function getQualityScore(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
     const result = await contentService.getQualityScore(projectId);
     success(res, result);

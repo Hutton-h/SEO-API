@@ -129,21 +129,19 @@ export function createApp(): Application {
   app.use('/api/v1', aiRouter);
   app.use('/api/v1', competitorRouter);
   app.use('/api/v1', reportRouter);
-  app.use('/api/v1', tasksRouter);
-
-  // New routes
-  app.use('/api/v1', alertingRouter);
-  app.use('/api/v1', monitorRouter);
-  app.use('/api/v1', scheduleRouter);
-  app.use('/api/v1', whitelabelRouter);
-  app.use('/api/v1', roiRouter);
-  app.use('/api/v1', notificationsRouter);
+  app.use('/api/v1', scheduleRouter);        // frontend: /v1/schedule/*
+  app.use('/api/v1', alertingRouter);        // frontend: /v1/alerting/*
+  app.use('/api/v1', monitorRouter);         // frontend: /v1/monitor/*
+  app.use('/api/v1', whitelabelRouter);      // frontend: /v1/whitelabel/*
+  app.use('/api/v1', roiRouter);             // frontend: /v1/roi/*
+  app.use('/api/v1', notificationsRouter);   // frontend: /v1/notifications/*
   app.use('/api/v1', serpFeaturesRouter);
   app.use('/api/v1', sitemapRouter);
-  app.use('/api/v1', contentRouter);
-  app.use('/api/v1', domainHealthRouter);
-  app.use('/api/v1', competitorChangeRouter);
-  app.use('/api/v1', apiUsageRouter);
+  app.use('/api/v1', contentRouter);         // frontend: /v1/content/*
+  app.use('/api/v1', domainHealthRouter);    // frontend: /v1/domain-health/*
+  app.use('/api/v1', competitorChangeRouter); // frontend: /v1/competitor-changes/*
+  app.use('/api/v1', apiUsageRouter);        // frontend: /v1/api-usage/*
+  app.use('/api/v1', tasksRouter);
 
   // --- 404 handler ---
   app.use((_req: Request, res: Response) => {

@@ -36,7 +36,7 @@ export async function getChanges(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize, competitorId, changeType, days } = req.query as unknown as z.infer<typeof changesQuerySchema>;
 
     const result = await competitorChangeService.getChanges(projectId, {
@@ -58,7 +58,7 @@ export async function checkNow(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
     const result = await competitorChangeService.checkNow(projectId);
     success(res, result, 'Competitor change detection completed');

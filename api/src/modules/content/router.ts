@@ -13,8 +13,11 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/projects/:id/content/analysis', validate({ query: contentAnalysisQuerySchema }), getContentAnalysis);
-router.post('/projects/:id/content/analyze-url', validate({ body: analyzeUrlSchema }), analyzeUrl);
-router.get('/projects/:id/content/quality-score', getQualityScore);
+// POST /v1/content/analyze (was projects/:id/content/analyze-url)
+router.post('/content/analyze', validate({ body: analyzeUrlSchema }), analyzeUrl);
+// GET /v1/content/history (was projects/:id/content/analysis)
+router.get('/content/history', validate({ query: contentAnalysisQuerySchema }), getContentAnalysis);
+// GET /v1/content/quality-score (was projects/:id/content/quality-score)
+router.get('/content/quality-score', getQualityScore);
 
 export default router;

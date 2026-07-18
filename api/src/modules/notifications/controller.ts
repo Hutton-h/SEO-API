@@ -71,7 +71,7 @@ export async function getHistory(
   _next: NextFunction,
 ): Promise<void> {
   try {
-    const { id: projectId } = req.params;
+    const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
     const { page, pageSize, channel, status } = req.query as unknown as z.infer<typeof historyQuerySchema>;
 
     const result = await notificationsService.getHistory(projectId, { page, pageSize, channel, status });

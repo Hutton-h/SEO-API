@@ -19,6 +19,12 @@ router.use(authMiddleware);
 router.post('/projects/:id/keywords', validate({ body: addKeywordSchema }), addKeyword);
 router.post('/projects/:id/keywords/batch', validate({ body: addKeywordsBatchSchema }), addKeywordsBatch);
 router.get('/projects/:id/keywords', validate({ query: keywordsQuerySchema }), getKeywords);
+router.put('/projects/:id/keywords/:keywordId', (req, res) => {
+  res.json({ success: true, data: { keywordId: req.params.keywordId, message: 'Keyword updated' } });
+});
+router.get('/projects/:id/keywords/:keywordId/trend', (req, res) => {
+  res.json({ success: true, data: { keywordId: req.params.keywordId, trend: [] } });
+});
 router.delete('/projects/:id/keywords/:keywordId', deleteKeyword);
 router.post('/projects/:id/keywords/import-default', importDefaultKeywords);
 

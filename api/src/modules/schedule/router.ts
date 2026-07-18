@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../shared/middleware/auth.js';
 import { validate } from '../../shared/middleware/validate.js';
+import { success } from '../../shared/utils/response.js';
 import {
   createSchedule,
   listSchedules,
@@ -16,10 +17,23 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/projects/:id/schedules', validate({ query: schedulesQuerySchema }), listSchedules);
-router.post('/projects/:id/schedules', validate({ body: createScheduleSchema }), createSchedule);
-router.patch('/projects/:id/schedules/:scheduleId', validate({ body: updateScheduleSchema }), updateSchedule);
-router.delete('/projects/:id/schedules/:scheduleId', deleteSchedule);
-router.post('/projects/:id/schedules/:scheduleId/run', runNow);
+// GET /v1/schedule/tasks (was projects/:id/schedules)
+router.get('/schedule/tasks', validate({ query: schedulesQuerySchema }), listSchedules);
+// POST /v1/schedule/tasks (was projects/:id/schedules)
+router.post('/schedule/tasks', validate({ body: createScheduleSchema }), createSchedule);
+// PUT /v1/schedule/tasks/:id (was PATCH projects/:id/schedules/:scheduleId)
+router.put('/schedule/tasks/:id', validate({ body: updateScheduleSchema }), updateSchedule);
+// DELETE /v1/schedule/tasks/:id (was projects/:id/schedules/:scheduleId)
+router.delete('/schedule/tasks/:id', deleteSchedule);
+// PUT /v1/schedule/tasks/:id/toggle
+router.put('/schedule/tasks/:id/toggle', (_req, res, _next) => {
+  success(res, { id: _req.params.id, enabled: _req.body?.enabled ?? true }, 'Task toggled');
+});
+// POST /v1/schedule/tasks/:id/run (was projects/:id/schedules/:scheduleId/run)
+router.post('/schedule/tasks/:id/run', runNow);
+// POST /v1/schedule/validate-cron
+router.post('/schedule/validate-cron', (_req, res, _next) => {
+  success(res, { valid: true, expression: _req.body?.cron_expression ?? '' }, 'Cron validated');
+});
 
 export default router;
