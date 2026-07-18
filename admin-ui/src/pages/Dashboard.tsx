@@ -78,12 +78,12 @@ const Dashboard: React.FC = () => {
         keywordAPI.getKeywords ? keywordAPI.getKeywords(projectId!) : Promise.resolve({ data: [] }),
         crawlAPI.getPages(projectId!),
         crawlAPI.getAllIssues ? crawlAPI.getAllIssues(projectId!) : Promise.resolve({ data: [] }),
-        apiUsageAPI.getStats ? apiUsageAPI.getStats(projectId!) : Promise.resolve({ data: {} }),
-        monitorAPI.getSLAInfo ? monitorAPI.getSLAInfo(projectId!) : Promise.resolve({ data: {} }),
-        alertingAPI.getAlertSummary ? alertingAPI.getAlertSummary(projectId!) : Promise.resolve({ data: {} }),
-        contentAPI.getAnalysisHistory ? contentAPI.getAnalysisHistory(projectId!) : Promise.resolve({ data: [] }),
+        apiUsageAPI.getStats ? apiUsageAPI.getStats() : Promise.resolve({ data: {} }),
+        monitorAPI.getSLAInfo ? monitorAPI.getSLAInfo() : Promise.resolve({ data: {} }),
+        alertingAPI.getAlertSummary ? alertingAPI.getAlertSummary() : Promise.resolve({ data: {} }),
+        contentAPI.getAnalysisHistory ? contentAPI.getAnalysisHistory() : Promise.resolve({ data: [] }),
         rankingAPI.getRankings ? rankingAPI.getRankings(projectId!) : Promise.resolve({ data: { trend: [] } }),
-        scheduleAPI.getTasks ? scheduleAPI.getTasks(projectId!) : Promise.resolve({ data: [] }),
+        scheduleAPI.getTasks ? scheduleAPI.getTasks() : Promise.resolve({ data: [] }),
       ]);
 
       const extractData = (result: PromiseSettledResult<any>, defaultValue: any = null) => {
