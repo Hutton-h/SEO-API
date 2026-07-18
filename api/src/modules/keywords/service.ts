@@ -79,9 +79,7 @@ export async function getKeywords(
   const { projectId, page, pageSize, search } = params;
 
   let query = db(TABLE)
-    .where('project_id', projectId)
-    .orderBy('search_volume', 'desc')
-    .orderBy('keyword', 'asc');
+    .where('project_id', projectId);
 
   if (search) {
     query = query.where('keyword', 'ilike', `%${search}%`);
@@ -91,6 +89,8 @@ export async function getKeywords(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('search_volume', 'desc')
+    .orderBy('keyword', 'asc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 

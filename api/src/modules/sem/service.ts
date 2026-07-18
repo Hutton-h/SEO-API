@@ -47,13 +47,13 @@ export async function getKeywordMetrics(
   const pageSize = options.pageSize ?? 20;
 
   const query = db('sem_keyword_metrics')
-    .where('project_id', projectId)
-    .orderBy('search_volume', 'desc');
+    .where('project_id', projectId);
 
   const [{ count }] = await query.clone().count<{ count: string }[]>();
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('search_volume', 'desc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 
@@ -68,8 +68,7 @@ export async function getCompetitorAds(
   const pageSize = options.pageSize ?? 20;
 
   let query = db('sem_ads')
-    .where('project_id', projectId)
-    .orderBy('last_seen', 'desc');
+    .where('project_id', projectId);
 
   if (options.competitorDomain) {
     query = query.where('competitor_domain', options.competitorDomain);
@@ -79,6 +78,7 @@ export async function getCompetitorAds(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('last_seen', 'desc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 

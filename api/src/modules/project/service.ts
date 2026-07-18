@@ -69,8 +69,7 @@ export async function getProjectsByUser(
   const { page, pageSize, userId, search } = params;
 
   let query = db(TABLE)
-    .where('user_id', userId)
-    .orderBy('created_at', 'desc');
+    .where('user_id', userId);
 
   if (search) {
     query = query.where(function () {
@@ -83,6 +82,7 @@ export async function getProjectsByUser(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('created_at', 'desc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 

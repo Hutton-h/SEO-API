@@ -57,9 +57,7 @@ export async function getBacklinks(
   const { projectId, page, pageSize, isDofollow, search } = params;
 
   let query = db('backlinks')
-    .where('project_id', projectId)
-    .orderBy('domain_authority', 'desc')
-    .orderBy('created_at', 'desc');
+    .where('project_id', projectId);
 
   if (isDofollow !== undefined) {
     query = query.where('is_dofollow', isDofollow);
@@ -77,6 +75,8 @@ export async function getBacklinks(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('domain_authority', 'desc')
+    .orderBy('created_at', 'desc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 

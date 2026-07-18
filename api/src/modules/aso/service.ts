@@ -35,9 +35,7 @@ export async function getASORankings(
   const pageSize = options.pageSize ?? 20;
 
   let query = db('aso_rankings')
-    .where('project_id', projectId)
-    .orderBy('check_date', 'desc')
-    .orderBy('position', 'asc');
+    .where('project_id', projectId);
 
   if (options.store) {
     query = query.where('store', options.store);
@@ -50,6 +48,8 @@ export async function getASORankings(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('check_date', 'desc')
+    .orderBy('position', 'asc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 

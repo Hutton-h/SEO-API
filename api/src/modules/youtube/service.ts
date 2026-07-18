@@ -36,9 +36,7 @@ export async function getYouTubeRankings(
   const pageSize = options.pageSize ?? 20;
 
   let query = db('youtube_rankings')
-    .where('project_id', projectId)
-    .orderBy('check_date', 'desc')
-    .orderBy('position', 'asc');
+    .where('project_id', projectId);
 
   if (options.keyword) {
     query = query.where('keyword', 'ilike', `%${options.keyword}%`);
@@ -48,6 +46,8 @@ export async function getYouTubeRankings(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('check_date', 'desc')
+    .orderBy('position', 'asc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 

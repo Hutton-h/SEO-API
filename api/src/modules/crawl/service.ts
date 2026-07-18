@@ -172,8 +172,7 @@ export async function getPages(
   const { projectId, page, pageSize, statusCode, search } = params;
 
   let query = db('crawl_pages')
-    .where('project_id', projectId)
-    .orderBy('crawled_at', 'desc');
+    .where('project_id', projectId);
 
   if (statusCode) {
     query = query.where('status_code', statusCode);
@@ -189,6 +188,7 @@ export async function getPages(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('crawled_at', 'desc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 
@@ -205,8 +205,7 @@ export async function getIssues(
   const { projectId, page, pageSize, severity, status } = params;
 
   let query = db('crawl_issues')
-    .where('project_id', projectId)
-    .orderBy('created_at', 'desc');
+    .where('project_id', projectId);
 
   if (severity) {
     query = query.where('severity', severity);
@@ -219,6 +218,7 @@ export async function getIssues(
   const total = parseInt(count, 10);
 
   const items = await query
+    .orderBy('created_at', 'desc')
     .offset((page - 1) * pageSize)
     .limit(pageSize);
 
