@@ -49,7 +49,7 @@ const CompetitorChanges: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await competitorChangeAPI.getChanges(projectId);
+      const res = await competitorChangeAPI.getChanges({ projectId });
       const result = (res as any).data || res;
       const data = Array.isArray(result) ? result : result.data || [];
       setChanges(data);

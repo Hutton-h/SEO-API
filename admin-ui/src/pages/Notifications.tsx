@@ -127,7 +127,7 @@ const Notifications: React.FC = () => {
   const handleSaveConfig = async (channelId: string) => {
     try {
       const values = await configForm.validateFields();
-      await notificationsAPI.updateChannel(channelId, values);
+      await notificationsAPI.updateChannel(channelId, { config: values });
       setChannels((prev) =>
         prev.map((c) => (c.id === channelId ? { ...c, config: { ...c.config, ...values } } : c))
       );

@@ -48,7 +48,7 @@ interface DailyUsageItem {
 interface UsageAlert {
   enabled: boolean;
   threshold: number;
-  channels: string[];
+  notifyChannels: string[];
 }
 
 const ApiUsage: React.FC = () => {
@@ -91,7 +91,7 @@ const ApiUsage: React.FC = () => {
       setAlertConfig(alertInfo);
       setAlertEnabled(alertInfo.enabled ?? true);
       setAlertThreshold(alertInfo.threshold ?? 80);
-      setAlertChannels(alertInfo.channels || ['email', 'feishu']);
+      setAlertChannels(alertInfo.notifyChannels || ['email', 'feishu']);
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
       setError(msg);
@@ -114,7 +114,7 @@ const ApiUsage: React.FC = () => {
       await apiUsageAPI.updateUsageAlert({
         enabled: alertEnabled,
         threshold: alertThreshold,
-        channels: alertChannels,
+        notifyChannels: alertChannels,
       });
       message.success('用量预警配置已保存');
     } catch (err: any) {
