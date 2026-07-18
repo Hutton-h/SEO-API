@@ -60,7 +60,7 @@ const ApiUsage: React.FC = () => {
   const [alertConfig, setAlertConfig] = useState<UsageAlert>({
     enabled: true,
     threshold: 80,
-    channels: ['email', 'feishu'],
+    notifyChannels: ['email', 'feishu'],
   });
   const [alertEnabled, setAlertEnabled] = useState(true);
   const [alertThreshold, setAlertThreshold] = useState(80);
