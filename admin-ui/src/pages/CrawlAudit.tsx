@@ -199,22 +199,14 @@ const CrawlAudit: React.FC = () => {
     setAuditing(true);
     setAuditProgress(0);
     try {
-      const res = await crawlAPI.startCrawl(projectId!, {
-        maxPages: 50,
-        crawlDepth: 2,
-        respectRobots: true,
-        followRedirects: true,
-        userAgent: 'CraneSEO-Audit/1.0',
-      } as any);
-      // 同时触发审计
       const auditRes = await crawlAPI.startAudit(projectId!, {
         auditType: auditType as any,
         includePSI,
-        psiUrls: psiUrls ? psiUrls.split(',').map((s: string) => s.trim()) : undefined,
+        psiUrls: psiUrls ? psiUrls.split(',').map((s: string) => s.trim()) : [auditUrl.trim()],
       });
       const taskId = (auditRes as any)?.data?.id || (auditRes as any)?.id;
       setAuditTaskId(taskId);
-      message.success('审计任务已启动');
+      message.success('审计任务已启动，将分析: ' + auditUrl.trim());
 
       pollingRef.current = setInterval(async () => {
         try {

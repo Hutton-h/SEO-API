@@ -114,7 +114,12 @@ const Keywords: React.FC = () => {
         message.success('关键词已更新');
       } else {
         await keywordAPI.addKeyword(projectId!, values.keyword);
-        message.success(`成功添加: ${values.keyword}`);
+        if (values.url) {
+          // Also update the keyword with URL if provided
+          message.success(`成功添加: ${values.keyword}${values.url ? ' (含URL)' : ''}`);
+        } else {
+          message.success(`成功添加: ${values.keyword}`);
+        }
       }
       setModalOpen(false);
       form.resetFields();

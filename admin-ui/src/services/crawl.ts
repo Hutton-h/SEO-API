@@ -35,7 +35,9 @@ export interface Issue {
 }
 
 export interface CrawlConfig {
+  url?: string;
   maxPages: number;
+  concurrency: number;
   crawlDepth: number;
   respectRobots: boolean;
   followRedirects: boolean;

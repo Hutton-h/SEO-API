@@ -14,7 +14,7 @@ const Alerting: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [rules, setRules] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>({ total: 0, critical: 0, warning: 0, info: 0 });
+  const [summary, setSummary] = useState<any>({ total: 0, critical: 0, warning: 0, unacknowledged: 0 });
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<any>(null);
   const [form] = Form.useForm();
@@ -39,8 +39,17 @@ const Alerting: React.FC = () => {
 
   const handleSaveRule = async () => {
     try { const values = await form.validateFields(); setSaving(true);
-      if (editingRule) { await alertingAPI.updateAlertRule(editingRule.id, { ...values, projectId }); message.success('规则已更新'); }
-      else { await alertingAPI.createAlertRule({ ...values, projectId }); message.success('规则已创建'); }
+      const payload = {
+        name: values.name,
+        type: values.type,
+        typeLabel: values.typeLabel || values.type,
+        threshold: values.threshold,
+        channel: values.channel || ['email'],
+        enabled: values.enabled !== false,
+        projectId,
+      };
+      if (editingRule) { await alertingAPI.updateAlertRule(editingRule.id, payload as any); message.success('规则已更新'); }
+      else { await alertingAPI.createAlertRule(payload as any); message.success('规则已创建'); }
       form.resetFields(); setModalOpen(false); setEditingRule(null); loadData();
     } catch (e: any) { if (e?.errorFields) return; message.error(e?.message || '保存失败'); } finally { setSaving(false); }
   };
@@ -86,7 +95,7 @@ const Alerting: React.FC = () => {
         <Col xs={12} sm={4}><Card size="small"><Statistic title="告警规则" value={rules.length} prefix={<BellOutlined />} /></Card></Col>
         <Col xs={12} sm={4}><Card size="small"><Statistic title="严重" value={summary?.critical || 0} valueStyle={{ color: '#ff4d4f' }} prefix={<ExclamationCircleOutlined />} /></Card></Col>
         <Col xs={12} sm={4}><Card size="small"><Statistic title="警告" value={summary?.warning || 0} valueStyle={{ color: '#fa8c16' }} prefix={<WarningOutlined />} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="通知" value={summary?.info || 0} valueStyle={{ color: '#1677ff' }} /></Card></Col>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="未确认" value={summary?.unacknowledged || 0} valueStyle={{ color: '#1677ff' }} /></Card></Col>
       </Row>
       <Tabs size="large" items={[
         { key: 'rules', label: <span><BellOutlined /> 告警规则</span>, children: <Card><Table columns={ruleColumns} dataSource={rules} rowKey="id" pagination={{ pageSize: 10 }} size="middle" /></Card> },
@@ -101,11 +110,15 @@ const Alerting: React.FC = () => {
               { value: 'backlink_loss', label: '外链丢失' }, { value: 'crawl_error', label: '爬虫错误' }, { value: 'downtime', label: '宕机' },
             ]} />
           </Form.Item>
-          <Form.Item name="condition" label="触发条件" rules={[{ required: true }]}>
-            <Input.Group compact>
-              <Form.Item name={['condition', 'operator']} noStyle><Select style={{ width: 70 }} options={[{ value: '>', label: '>' }, { value: '<', label: '<' }, { value: '>=', label: '>=' }, { value: '<=', label: '<=' }, { value: '=', label: '=' }]} /></Form.Item>
-              <Form.Item name={['condition', 'threshold']} noStyle><InputNumber style={{ width: 100 }} placeholder="阈值" /></Form.Item>
-            </Input.Group>
+          <Form.Item name="typeLabel" label="类型标签"><Input placeholder="自定义类型标签，如：排名下降10位" /></Form.Item>
+          <Form.Item name="threshold" label="触发阈值" rules={[{ required: true, message: '请输入阈值' }]}>
+            <InputNumber style={{ width: '100%' }} placeholder="例如：10" />
+          </Form.Item>
+          <Form.Item name="channel" label="通知渠道">
+            <Select mode="multiple" placeholder="选择通知渠道" options={[
+              { value: 'email', label: '邮件' }, { value: 'sms', label: '短信' },
+              { value: 'webhook', label: 'Webhook' }, { value: 'app', label: 'App推送' },
+            ]} />
           </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}><Switch /></Form.Item>
         </Form>

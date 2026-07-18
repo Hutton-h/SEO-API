@@ -61,7 +61,7 @@ const ContentAnalysis: React.FC = () => {
   const loadQualityScore = async () => {
     if (!projectId) return;
     try {
-      const res = await (contentAPI as any).getQualityScore?.(projectId);
+      const res = await contentAPI.getQualityScore(projectId);
       const data = (res as any).data !== undefined ? (res as any).data : res;
       setQualityScore(data || {});
     } catch {

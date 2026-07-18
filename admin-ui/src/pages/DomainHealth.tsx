@@ -217,15 +217,15 @@ const DomainHealth: React.FC = () => {
                           </Col>
                           <Col xs={12} sm={6}>
                             <Card size="small">
-                              <Statistic title="PageSpeed 移动" value={result?.pageSpeed?.mobile || '-'} suffix="/100"
-                                valueStyle={{ color: getScoreColor(result?.pageSpeed?.mobile || 0) }}
+                              <Statistic title="PageSpeed 移动" value={result?.pageSpeed?.mobile?.score ?? result?.pageSpeed?.mobile ?? '-'} suffix="/100"
+                                valueStyle={{ color: getScoreColor(result?.pageSpeed?.mobile?.score ?? result?.pageSpeed?.mobile ?? 0) }}
                                 prefix={<MobileOutlined />} />
                             </Card>
                           </Col>
                           <Col xs={12} sm={6}>
                             <Card size="small">
-                              <Statistic title="PageSpeed 桌面" value={result?.pageSpeed?.desktop || '-'} suffix="/100"
-                                valueStyle={{ color: getScoreColor(result?.pageSpeed?.desktop || 0) }}
+                              <Statistic title="PageSpeed 桌面" value={result?.pageSpeed?.desktop?.score ?? result?.pageSpeed?.desktop ?? '-'} suffix="/100"
+                                valueStyle={{ color: getScoreColor(result?.pageSpeed?.desktop?.score ?? result?.pageSpeed?.desktop ?? 0) }}
                                 prefix={<DesktopOutlined />} />
                             </Card>
                           </Col>
@@ -290,17 +290,17 @@ const DomainHealth: React.FC = () => {
                             <Card size="small" title={<><MobileOutlined /> 移动端</>}>
                               <Row gutter={16}>
                                 <Col span={12}>
-                                  <Statistic title="性能评分" value={result.pageSpeed?.mobile || '-'}
-                                    valueStyle={{ color: getScoreColor(result.pageSpeed?.mobile || 0) }} />
+                                  <Statistic title="性能评分" value={result.pageSpeed?.mobile?.score ?? result.pageSpeed?.mobile ?? '-'}
+                                    valueStyle={{ color: getScoreColor(result.pageSpeed?.mobile?.score ?? result.pageSpeed?.mobile ?? 0) }} />
                                 </Col>
                                 <Col span={12}>
-                                  <Statistic title="FCP" value={result.pageSpeed?.mobileFcp || '-'} suffix="s" />
+                                  <Statistic title="FCP" value={result.pageSpeed?.mobile?.fcp ?? '-'} suffix="s" />
                                 </Col>
                                 <Col span={12}>
-                                  <Statistic title="LCP" value={result.pageSpeed?.mobileLcp || '-'} suffix="s" />
+                                  <Statistic title="LCP" value={result.pageSpeed?.mobile?.lcp ?? '-'} suffix="s" />
                                 </Col>
                                 <Col span={12}>
-                                  <Statistic title="CLS" value={result.pageSpeed?.mobileCls || '-'} />
+                                  <Statistic title="CLS" value={result.pageSpeed?.mobile?.cls ?? '-'} />
                                 </Col>
                               </Row>
                             </Card>
@@ -309,17 +309,17 @@ const DomainHealth: React.FC = () => {
                             <Card size="small" title={<><DesktopOutlined /> 桌面端</>}>
                               <Row gutter={16}>
                                 <Col span={12}>
-                                  <Statistic title="性能评分" value={result.pageSpeed?.desktop || '-'}
-                                    valueStyle={{ color: getScoreColor(result.pageSpeed?.desktop || 0) }} />
+                                  <Statistic title="性能评分" value={result.pageSpeed?.desktop?.score ?? result.pageSpeed?.desktop ?? '-'}
+                                    valueStyle={{ color: getScoreColor(result.pageSpeed?.desktop?.score ?? result.pageSpeed?.desktop ?? 0) }} />
                                 </Col>
                                 <Col span={12}>
-                                  <Statistic title="FCP" value={result.pageSpeed?.desktopFcp || '-'} suffix="s" />
+                                  <Statistic title="FCP" value={result.pageSpeed?.desktop?.fcp ?? '-'} suffix="s" />
                                 </Col>
                                 <Col span={12}>
-                                  <Statistic title="LCP" value={result.pageSpeed?.desktopLcp || '-'} suffix="s" />
+                                  <Statistic title="LCP" value={result.pageSpeed?.desktop?.lcp ?? '-'} suffix="s" />
                                 </Col>
                                 <Col span={12}>
-                                  <Statistic title="CLS" value={result.pageSpeed?.desktopCls || '-'} />
+                                  <Statistic title="CLS" value={result.pageSpeed?.desktop?.cls ?? '-'} />
                                 </Col>
                               </Row>
                             </Card>

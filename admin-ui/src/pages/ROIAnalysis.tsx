@@ -94,11 +94,10 @@ const ROIAnalysis: React.FC = () => {
       ]} />
       <Modal title="添加ROI条目" open={modalOpen} onOk={handleSave} onCancel={() => { setModalOpen(false); form.resetFields(); }} confirmLoading={saving} destroyOnClose>
         <Form form={form} layout="vertical">
-          <Form.Item name="period" label="周期" rules={[{ required: true }]}><Input placeholder="例如 2026-07" /></Form.Item>
-          <Form.Item name="seo_investment" label="SEO投入"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
-          <Form.Item name="organic_traffic_value" label="自然流量价值"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
-          <Form.Item name="tool_costs" label="工具成本"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
-          <Form.Item name="total_revenue" label="总收入"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
+          <Form.Item name="month" label="月份" rules={[{ required: true }]}><Input placeholder="例如 2026-07" /></Form.Item>
+          <Form.Item name="seoCost" label="SEO投入"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
+          <Form.Item name="estimatedTrafficValue" label="自然流量价值"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
+          <Form.Item name="conversionValue" label="转化价值"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
         </Form>
       </Modal>
     </div>

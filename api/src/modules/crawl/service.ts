@@ -85,7 +85,7 @@ export interface PaginatedResult<T> {
 
 export async function triggerCrawl(
   projectId: string,
-  options: { maxPages?: number; concurrency?: number } = {},
+  options: { url?: string; maxPages?: number; concurrency?: number } = {},
 ): Promise<TaskRecord> {
   const taskId = uuidv4();
 
@@ -105,6 +105,7 @@ export async function triggerCrawl(
     {
       taskId,
       projectId,
+      url: options.url,
       maxPages: options.maxPages ?? 500,
       concurrency: options.concurrency ?? 5,
     },
@@ -127,7 +128,7 @@ export async function getCrawlStatus(taskId: string): Promise<TaskRecord | null>
 
 export async function triggerAudit(
   projectId: string,
-  options: { auditType?: string } = {},
+  options: { url?: string; auditType?: string } = {},
 ): Promise<TaskRecord> {
   const taskId = uuidv4();
 
@@ -147,6 +148,7 @@ export async function triggerAudit(
     {
       taskId,
       projectId,
+      url: options.url,
       auditType: options.auditType ?? 'full',
     },
     {

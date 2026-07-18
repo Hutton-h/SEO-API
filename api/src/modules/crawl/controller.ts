@@ -12,11 +12,13 @@ import {
 // ---------------------------------------------------------------------------
 
 export const triggerCrawlSchema = z.object({
+  url: z.string().url().optional(),
   maxPages: z.number().int().positive().max(1000).optional().default(500),
   concurrency: z.number().int().min(1).max(20).optional().default(5),
 });
 
 export const triggerAuditSchema = z.object({
+  url: z.string().url().optional(),
   auditType: z.enum(['full', 'seo', 'performance', 'accessibility']).optional().default('full'),
   includePSI: z.boolean().optional().default(true),
   psiUrls: z.array(z.string().url()).optional(),
@@ -67,9 +69,9 @@ export async function triggerCrawl(
 ): Promise<void> {
   try {
     const { id: projectId } = req.params;
-    const { maxPages, concurrency } = req.body as z.infer<typeof triggerCrawlSchema>;
+    const { url, maxPages, concurrency } = req.body as z.infer<typeof triggerCrawlSchema>;
 
-    const task = await crawlService.triggerCrawl(projectId, { maxPages, concurrency });
+    const task = await crawlService.triggerCrawl(projectId, { url, maxPages, concurrency });
     created(res, task, 'Crawl task created successfully');
   } catch (err) {
     badRequest(res, 'Failed to trigger crawl', { error: (err as Error).message });
@@ -186,9 +188,9 @@ export async function triggerAudit(
 ): Promise<void> {
   try {
     const { id: projectId } = req.params;
-    const { auditType, includePSI, psiUrls } = req.body as z.infer<typeof triggerAuditSchema>;
+    const { url, auditType, includePSI, psiUrls } = req.body as z.infer<typeof triggerAuditSchema>;
 
-    const task = await crawlService.triggerAudit(projectId, { auditType });
+    const task = await crawlService.triggerAudit(projectId, { url, auditType });
     const taskId = task.id;
 
     // If PageSpeed Insights is requested, run batch analysis
@@ -199,8 +201,13 @@ export async function triggerAudit(
           const domain = (project as { domain: string }).domain;
 
           // Determine URLs to analyze
-          let urls: string[] = psiUrls ?? [];
-          if (urls.length === 0) {
+          // Priority: user-provided URL > psiUrls list > crawled pages > domain root
+          let urls: string[] = [];
+          if (url) {
+            urls = [url];
+          } else if (psiUrls && psiUrls.length > 0) {
+            urls = psiUrls;
+          } else {
             // Get top pages from crawl_pages
             const pages = await db('crawl_pages')
               .where('project_id', projectId)

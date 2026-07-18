@@ -40,7 +40,7 @@ const Backlinks: React.FC = () => {
   const [searchFilter, setSearchFilter] = useState('');
   const [dofollowFilter, setDofollowFilter] = useState<string | undefined>();
 
-  const loadData = async (p?: number, ps?: number, search?: string, dofollow?: string) => {
+  const loadData = async (p?: number, ps?: number, search?: string, linkType?: string) => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
@@ -49,7 +49,7 @@ const Backlinks: React.FC = () => {
         backlinkAPI.getBacklinks(projectId, {
           page: p || page, pageSize: ps || pageSize,
           ...(search ? { search } : {}),
-          ...(dofollow !== undefined ? { isDofollow: dofollow } : {}),
+          ...(linkType ? { type: linkType } : {}),
         }),
         backlinkAPI.getBacklinkStats(projectId),
       ]);
@@ -240,8 +240,8 @@ const Backlinks: React.FC = () => {
               value={dofollowFilter}
               onChange={(v) => { setDofollowFilter(v); loadData(1, pageSize, searchFilter, v); }}
               options={[
-                { value: 'true', label: 'Dofollow' },
-                { value: 'false', label: 'Nofollow' },
+                { value: 'dofollow', label: 'Dofollow' },
+                { value: 'nofollow', label: 'Nofollow' },
               ]}
             />
           </Space>

@@ -19,4 +19,7 @@ export const contentAPI = {
 
   getAnalysisHistory: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
     apiGet<{ data: ContentAnalysisResult[]; total: number }>('/v1/content/history', params),
+
+  getQualityScore: (projectId: string) =>
+    apiGet<{ overallScore: number; readabilityScore: number; structureScore: number; seoScore: number }>('/v1/content/quality-score', { projectId }),
 };
