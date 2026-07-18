@@ -51,6 +51,6 @@ export const rankingAPI = {
     apiGet<RankingSummary>(`/v1/projects/${projectId}/rankings/summary`),
 
   // 刷新排名
-  refreshRankings: (projectId: string) =>
-    apiPost<{ message: string }>(`/v1/projects/${projectId}/rankings/refresh`),
+  refreshRankings: (projectId: string, data?: { keywords?: string[]; locationCode?: number; includeGSC?: boolean }) =>
+    apiPost<{ message: string }>(`/v1/projects/${projectId}/rankings/refresh`, data),
 };

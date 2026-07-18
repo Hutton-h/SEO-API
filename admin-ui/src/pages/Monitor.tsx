@@ -1,327 +1,97 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Card, Row, Col, Table, Tag, Button, Statistic, Badge, Space, Typography, message, Progress,
-  Spin, Empty, Alert, Modal, Form, Input, Select, InputNumber,
-} from 'antd';
-import {
-  CheckCircleOutlined, CloseCircleOutlined, SyncOutlined, ReloadOutlined,
-  ClockCircleOutlined, ThunderboltOutlined, CloudServerOutlined, DashboardOutlined, PlusOutlined,
-} from '@ant-design/icons';
+import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Progress, Tabs } from 'antd';
+import { ReloadOutlined, ThunderboltOutlined, PlusOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined, CloudServerOutlined, DashboardOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
-import { LineChart, GaugeChart } from 'echarts/charts';
+import { LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
-import { monitorAPI, MonitorStatus, ResponseTimePoint, SLAInfo, DowntimeRecord } from '@/services/monitor';
-import { apiPost } from '@/services/api';
-import dayjs from 'dayjs';
+import { monitorAPI } from '@/services/monitor';
 
-echarts.use([LineChart, GaugeChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
+echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text } = Typography;
-
-const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
-  online: { color: '#52c41a', text: '在线', icon: <CheckCircleOutlined /> },
-  offline: { color: '#ff4d4f', text: '离线', icon: <CloseCircleOutlined /> },
-  degraded: { color: '#faad14', text: '降级', icon: <SyncOutlined spin /> },
-};
 
 const Monitor: React.FC = () => {
   const projectId = useStore((s) => s.currentProject?.id);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusList, setStatusList] = useState<MonitorStatus[]>([]);
-  const [responseTimeData, setResponseTimeData] = useState<ResponseTimePoint[]>([]);
-  const [slaInfo, setSlaInfo] = useState<SLAInfo | null>(null);
-  const [downtimeRecords, setDowntimeRecords] = useState<DowntimeRecord[]>([]);
-  const [checkingId, setCheckingId] = useState<string | null>(null);
-  const [addModalVisible, setAddModalVisible] = useState(false);
-  const [addForm] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
+  const [statusList, setStatusList] = useState<any[]>([]);
+  const [responseTime, setResponseTime] = useState<any[]>([]);
+  const [sla, setSla] = useState<any>({ daily: 99.9, weekly: 99.8, monthly: 99.7, yearly: 99.5 });
+  const [downtime, setDowntime] = useState<any[]>([]);
+  const [targets, setTargets] = useState<any[]>([]);
+  const [checking, setChecking] = useState(false);
+  const [newTargetUrl, setNewTargetUrl] = useState('');
 
   const loadData = useCallback(async () => {
-    if (!projectId) return;
-    setLoading(true);
-    setError(null);
+    if (!projectId) return; setLoading(true); setError(null);
     try {
-      const [statusRes, trendRes, slaRes, downtimeRes] = await Promise.all([
+      const results = await Promise.allSettled([
         monitorAPI.getStatusList({ projectId }),
         monitorAPI.getResponseTimeTrend({ projectId }),
         monitorAPI.getSLAInfo(),
         monitorAPI.getDowntimeRecords({ projectId }),
+        (monitorAPI as any).getTargets?.(projectId),
       ]);
-      const statusData = (statusRes as any).data || statusRes;
-      const trendData = (trendRes as any).data || trendRes;
-      const slaData = (slaRes as any).data || slaRes;
-      const downtimeData = (downtimeRes as any).data || downtimeRes;
-
-      setStatusList(Array.isArray(statusData) ? statusData : statusData.data || []);
-      setResponseTimeData(Array.isArray(trendData) ? trendData : trendData.data || []);
-      setSlaInfo(slaData);
-      setDowntimeRecords(Array.isArray(downtimeData) ? downtimeData : downtimeData.data || []);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载监控数据失败';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
+      const extractArr = (r: PromiseSettledResult<any>, key?: string) => { if (r.status === 'fulfilled') { const d = (r.value as any).data !== undefined ? (r.value as any).data : r.value; return Array.isArray(d) ? d : (d?.data || d?.[key || 'data'] || []); } return []; };
+      setStatusList(extractArr(results[0]));
+      setResponseTime(extractArr(results[1]));
+      if (results[2].status === 'fulfilled') { const d = (results[2].value as any).data !== undefined ? (results[2].value as any).data : results[2].value; if (d) setSla(d); }
+      setDowntime(extractArr(results[3]));
+      setTargets(extractArr(results[4]));
+    } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
   }, [projectId]);
 
-  useEffect(() => {
-    if (!projectId) {
-      setLoading(false);
-      return;
-    }
-    loadData();
-  }, [projectId, loadData]);
+  useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 
-  const handleRefresh = async () => {
-    await loadData();
-  };
+  const handleCheck = async () => { setChecking(true); try { await monitorAPI.runManualCheck(); message.success('手动检查已触发'); setTimeout(() => { loadData(); setChecking(false); }, 3000); } catch (e: any) { message.error(e?.message || '检查失败'); setChecking(false); } };
 
-  const handleManualCheck = async (serviceId: string) => {
-    setCheckingId(serviceId);
-    try {
-      await monitorAPI.runManualCheck(serviceId === 'all' ? undefined : serviceId);
-      message.success('检测完成');
-      // 刷新数据
-      await loadData();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '检测失败';
-      message.error(msg);
-    } finally {
-      setCheckingId(null);
-    }
-  };
+  if (!projectId) return <div className="page-container"><PageHeader title="网站监控" /><Empty description="请先选择一个项目" style={{ marginTop: 120 }} /></div>;
+  if (loading) return <div className="page-container"><PageHeader title="网站监控" /><Spin size="large" style={{ display: 'block', margin: '40vh auto' }} /></div>;
+  if (error) return <div className="page-container"><PageHeader title="网站监控" /><Alert type="error" message="加载失败" description={error} showIcon style={{ marginTop: 24 }} action={<Button size="small" onClick={loadData}>重试</Button>} /></div>;
 
-  const handleAddTarget = () => {
-    addForm.resetFields();
-    addForm.setFieldsValue({ checkInterval: 60 });
-    setAddModalVisible(true);
-  };
+  const responseTimeChart = responseTime.length > 0 ? {
+    tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: responseTime.map((p: any) => p.time) },
+    yAxis: { type: 'value', name: 'ms' },
+    series: [{ type: 'line', data: responseTime.map((p: any) => p.value), smooth: true, areaStyle: { opacity: 0.3 }, itemStyle: { color: '#1677ff' } }],
+  } : null;
 
-  const handleAddSubmit = async () => {
-    try {
-      const values = await addForm.validateFields();
-      setSubmitting(true);
-      await apiPost('/v1/monitor/targets', { ...values, projectId });
-      message.success('监控目标添加成功');
-      setAddModalVisible(false);
-      addForm.resetFields();
-      loadData();
-    } catch (err: any) {
-      if (err?.errorFields) return;
-      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
-      message.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // ---- 渲染 ----
-
-  if (!projectId) {
-    return (
-      <div className="page-container">
-        <PageHeader
-          title="系统监控"
-          subtitle="实时服务状态、响应时间与 SLA 监控"
-        />
-        <Empty description="请先选择一个项目" />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="page-container">
-        <PageHeader
-          title="系统监控"
-          subtitle="实时服务状态、响应时间与 SLA 监控"
-        />
-        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="page-container">
-        <PageHeader
-          title="系统监控"
-          subtitle="实时服务状态、响应时间与 SLA 监控"
-          actions={[
-            { label: '重试', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
-          ]}
-        />
-        <Alert type="error" message="加载失败" description={error} showIcon />
-      </div>
-    );
-  }
-
-  const onlineCount = statusList.filter((s) => s.status === 'online').length;
-  const offlineCount = statusList.filter((s) => s.status === 'offline').length;
-  const degradedCount = statusList.filter((s) => s.status === 'degraded').length;
-  const avgResponseTime = Math.round(
-    statusList.filter((s) => s.responseTime > 0).reduce((a, b) => a + b.responseTime, 0) /
-    statusList.filter((s) => s.responseTime > 0).length || 0
-  );
-
-  const responseTimeOption = {
-    tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e8e8e8', textStyle: { color: '#333' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: responseTimeData.map((d) => d.time), axisLine: { lineStyle: { color: '#e8e8e8' } }, axisLabel: { color: '#999' } },
-    yAxis: { type: 'value', name: 'ms', axisLabel: { color: '#999' }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
-    series: [{
-      type: 'line', data: responseTimeData.map((d) => d.value), smooth: true,
-      lineStyle: { color: '#1677ff', width: 2 }, itemStyle: { color: '#1677ff' },
-      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(22,119,255,0.2)' }, { offset: 1, color: 'rgba(22,119,255,0.02)' }] } },
-      symbol: 'none', markLine: { silent: true, data: [{ yAxis: 300, lineStyle: { color: '#faad14', type: 'dashed' }, label: { formatter: '阈值: 300ms' } }] },
-    }],
-  };
-
-  const monthlySLA = slaInfo?.monthly ?? 99.87;
-
-  const gaugeOption = {
-    series: [{
-      type: 'gauge', radius: '90%', center: ['50%', '55%'],
-      startAngle: 210, endAngle: -30,
-      min: 95, max: 100, splitNumber: 10,
-      axisLine: { show: true, lineStyle: { width: 18, color: [[0.3, '#ff4d4f'], [0.7, '#faad14'], [1, '#52c41a']] } },
-      axisTick: { show: false },
-      splitLine: { show: false },
-      axisLabel: { show: false },
-      detail: { valueAnimation: true, fontSize: 28, fontWeight: 'bold', offsetCenter: [0, '60%'], formatter: '{value}%', color: '#333' },
-      title: { offsetCenter: [0, '85%'], fontSize: 13, color: '#999' },
-      data: [{ value: monthlySLA, name: '月度可用率' }],
-    }],
-  };
+  const statusColumns = [
+    { title: '服务', dataIndex: 'name', key: 'name', render: (n: string, r: any) => <Space><Text strong>{n}</Text><Text type="secondary" style={{ fontSize: 11 }}>{r.url}</Text></Space> },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (s: string) => <Tag color={s === 'up' ? 'green' : 'red'} icon={s === 'up' ? <CheckCircleOutlined /> : <CloseCircleOutlined />}>{s === 'up' ? '正常' : '故障'}</Tag> },
+    { title: '响应时间', dataIndex: 'responseTime', key: 'responseTime', width: 100, render: (t: number) => <Text style={{ color: t < 200 ? '#52c41a' : t < 500 ? '#faad14' : '#ff4d4f' }}>{t}ms</Text> },
+    { title: '可用率', dataIndex: 'uptime', key: 'uptime', width: 120, render: (u: number) => <Progress percent={u} size="small" strokeColor={u >= 99.9 ? '#52c41a' : '#faad14'} format={() => `${u}%`} /> },
+    { title: '最后检查', dataIndex: 'lastChecked', key: 'lastChecked', width: 150, render: (d: string) => d ? new Date(d).toLocaleString('zh-CN') : '-' },
+  ];
 
   const downtimeColumns = [
-    { title: '服务', dataIndex: 'serviceName', key: 'serviceName', render: (text: string) => <Text strong>{text}</Text> },
-    { title: '开始时间', dataIndex: 'startedAt', key: 'startedAt', render: (date: string) => dayjs(date).format('MM-DD HH:mm') },
-    { title: '结束时间', dataIndex: 'endedAt', key: 'endedAt', render: (date: string) => dayjs(date).format('MM-DD HH:mm') },
-    { title: '持续时长', dataIndex: 'duration', key: 'duration', render: (d: number) => <Tag color={d > 10 ? 'error' : 'warning'}>{d} 分钟</Tag> },
+    { title: '服务', dataIndex: 'serviceName', key: 'serviceName' },
+    { title: '开始时间', dataIndex: 'startedAt', key: 'startedAt', width: 160, render: (d: string) => d ? new Date(d).toLocaleString('zh-CN') : '-' },
+    { title: '结束时间', dataIndex: 'endedAt', key: 'endedAt', width: 160, render: (d: string) => d ? new Date(d).toLocaleString('zh-CN') : '-' },
+    { title: '持续时长', dataIndex: 'duration', key: 'duration', width: 100 },
     { title: '原因', dataIndex: 'cause', key: 'cause', ellipsis: true },
   ];
 
   return (
     <div className="page-container">
-      <PageHeader
-        title="系统监控"
-        subtitle="实时服务状态、响应时间与 SLA 监控"
-        actions={[
-          { label: '添加监控', icon: <PlusOutlined />, onClick: handleAddTarget },
-          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
-          { label: '手动检查全部', type: 'primary', icon: <ThunderboltOutlined />, onClick: () => handleManualCheck('all'), loading: checkingId === 'all' },
-        ]}
-      />
-
+      <PageHeader title="网站监控" subtitle="网站可用性、响应时间与SLA监控"
+        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: loadData, loading }, { label: '手动检查', type: 'primary', icon: <ThunderboltOutlined />, onClick: handleCheck, loading: checking }]} />
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="在线服务" value={onlineCount} suffix={`/ ${statusList.length}`} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="离线/降级" value={offlineCount + degradedCount} valueStyle={{ color: offlineCount > 0 ? '#ff4d4f' : '#faad14' }} prefix={<CloseCircleOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="平均响应" value={avgResponseTime} suffix="ms" valueStyle={{ color: avgResponseTime > 300 ? '#faad14' : '#52c41a' }} prefix={<ClockCircleOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="月度 SLA" value={monthlySLA} suffix="%" precision={2} valueStyle={{ color: '#52c41a' }} prefix={<DashboardOutlined />} /></Card>
-        </Col>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="监控服务" value={statusList.length} prefix={<CloudServerOutlined />} /></Card></Col>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="正常" value={statusList.filter((s: any) => s.status === 'up').length} valueStyle={{ color: '#52c41a' }} /></Card></Col>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="故障" value={statusList.filter((s: any) => s.status === 'down').length} valueStyle={{ color: '#ff4d4f' }} /></Card></Col>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="日SLA" value={sla?.daily || 99.9} suffix="%" precision={1} /></Card></Col>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="月SLA" value={sla?.monthly || 99.7} suffix="%" precision={1} /></Card></Col>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="宕机次数" value={downtime.length} valueStyle={{ color: '#ff4d4f' }} /></Card></Col>
       </Row>
-
-      {statusList.length === 0 ? (
-        <Empty description="暂无服务监控数据" style={{ marginBottom: 24 }} />
-      ) : (
-        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-          {statusList.map((item) => {
-            const config = statusConfig[item.status];
-            return (
-              <Col xs={24} sm={12} md={8} lg={4} key={item.id}>
-                <Card
-                  hoverable
-                  style={{ borderTop: `3px solid ${config.color}` }}
-                  actions={[
-                    <Button type="link" size="small" icon={<ThunderboltOutlined />} loading={checkingId === item.id} onClick={() => handleManualCheck(item.id)}>检查</Button>,
-                  ]}
-                >
-                  <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 32, color: config.color, marginBottom: 8 }}>{config.icon}</div>
-                    <Text strong style={{ fontSize: 15, display: 'block' }}>{item.name}</Text>
-                    <Tag color={config.color} style={{ marginTop: 8 }}>{config.text}</Tag>
-                    <div style={{ marginTop: 8 }}>
-                      <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{item.url}</Text>
-                      <Text style={{ fontSize: 13, display: 'block', marginTop: 4 }}>
-                        {item.responseTime > 0 ? `${item.responseTime} ms` : 'N/A'}
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 2 }}>
-                        可用率: {item.uptime}%
-                      </Text>
-                    </div>
-                  </div>
-                </Card>
-              </Col>
-            );
-          })}
-        </Row>
-      )}
-
-      <Row gutter={[24, 24]}>
-        <Col xs={24} lg={16}>
-          <Card title="24小时响应时间趋势" className="chart-card">
-            {responseTimeData.length === 0 ? (
-              <Empty description="暂无响应时间数据" />
-            ) : (
-              <ReactEChartsCore echarts={echarts} option={responseTimeOption} style={{ height: 350 }} notMerge />
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} lg={8}>
-          <Card title="SLA 可用率" className="chart-card">
-            <ReactEChartsCore echarts={echarts} option={gaugeOption} style={{ height: 350 }} notMerge />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card title="最近宕机记录" style={{ marginTop: 24 }}>
-        {downtimeRecords.length === 0 ? (
-          <Empty description="暂无宕机记录" />
-        ) : (
-          <Table columns={downtimeColumns} dataSource={downtimeRecords} rowKey="id" pagination={false} size="middle" />
-        )}
-      </Card>
-
-      <Modal
-        title="添加监控目标"
-        open={addModalVisible}
-        onCancel={() => setAddModalVisible(false)}
-        onOk={handleAddSubmit}
-        confirmLoading={submitting}
-        destroyOnClose
-      >
-        <Form form={addForm} layout="vertical" preserve={false}>
-          <Form.Item name="url" label="监控 URL" rules={[{ required: true, message: '请输入监控 URL' }]}>
-            <Input placeholder="https://example.com" />
-          </Form.Item>
-          <Form.Item name="name" label="目标名称" rules={[{ required: true, message: '请输入目标名称' }]}>
-            <Input placeholder="例如：官网首页" />
-          </Form.Item>
-          <Form.Item name="type" label="检测类型" rules={[{ required: true, message: '请选择检测类型' }]}>
-            <Select placeholder="请选择检测类型">
-              <Select.Option value="http">HTTP</Select.Option>
-              <Select.Option value="https">HTTPS</Select.Option>
-              <Select.Option value="ping">Ping</Select.Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="checkInterval" label="检测间隔（秒）" rules={[{ required: true, message: '请输入检测间隔' }]}>
-            <InputNumber min={10} max={3600} style={{ width: '100%' }} placeholder="60" />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {responseTimeChart && <Card title="响应时间趋势" style={{ marginBottom: 24 }}><ReactEChartsCore echarts={echarts} option={responseTimeChart} style={{ height: 250 }} /></Card>}
+      <Tabs size="large" items={[
+        { key: 'status', label: <span><DashboardOutlined /> 可用性状态</span>, children: <Card><Table columns={statusColumns} dataSource={statusList} rowKey="id" pagination={{ pageSize: 10 }} size="middle" /></Card> },
+        { key: 'downtime', label: <span><ClockCircleOutlined /> 宕机记录</span>, children: <Card><Table columns={downtimeColumns} dataSource={downtime} rowKey="id" pagination={{ pageSize: 10 }} size="middle" /></Card> },
+      ]} />
     </div>
   );
 };

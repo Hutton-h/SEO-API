@@ -1,23 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Progress, Empty, Spin, Alert, message,
-  Modal, Input, Form,
-} from 'antd';
-import {
-  YoutubeOutlined, ReloadOutlined, ArrowUpOutlined, ArrowDownOutlined,
-  MinusOutlined, EyeOutlined, LikeOutlined, CommentOutlined, PlusOutlined,
-} from '@ant-design/icons';
-import ReactEChartsCore from 'echarts-for-react/lib/core';
-import * as echarts from 'echarts/core';
-import { BarChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Tabs } from 'antd';
+import { ReloadOutlined, ThunderboltOutlined, PlusOutlined, YoutubeOutlined, AimOutlined, EyeOutlined, LikeOutlined, PlaySquareOutlined } from '@ant-design/icons';
+import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
 import { youtubeAPI } from '@/services/youtube';
-import type { YouTubeKeyword, YouTubeVideo } from '@/services/youtube';
-import PageHeader from '@/components/PageHeader';
-
-echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, CanvasRenderer]);
 
 const { Text } = Typography;
 
@@ -25,224 +11,71 @@ const YouTube: React.FC = () => {
   const projectId = useStore((s) => s.currentProject?.id);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [keywords, setKeywords] = useState<YouTubeKeyword[]>([]);
-  const [videos, setVideos] = useState<YouTubeVideo[]>([]);
-  const [addModalVisible, setAddModalVisible] = useState(false);
-  const [addType, setAddType] = useState<'keyword' | 'video'>('keyword');
-  const [addForm] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [keywords, setKeywords] = useState<any[]>([]);
+  const [videos, setVideos] = useState<any[]>([]);
+  const [newKeyword, setNewKeyword] = useState('');
+  const [newVideoUrl, setNewVideoUrl] = useState('');
 
-  const loadData = async () => {
-    if (!projectId) return;
-    setLoading(true);
-    setError(null);
+  const loadData = useCallback(async () => {
+    if (!projectId) return; setLoading(true); setError(null);
     try {
-      const [kwRes, vidRes] = await Promise.all([
-        youtubeAPI.getYouTubeKeywords(projectId),
-        youtubeAPI.getYouTubeVideos(projectId),
-      ]);
-
-      const kwResult = (kwRes as any).data || kwRes;
-      const vidResult = (vidRes as any).data || vidRes;
-
-      setKeywords(Array.isArray(kwResult) ? kwResult : kwResult.data || []);
-      setVideos(Array.isArray(vidResult) ? vidResult : vidResult.data || []);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!projectId) {
-      setLoading(false);
-      return;
-    }
-    loadData();
+      const [kwRes, vidRes] = await Promise.allSettled([youtubeAPI.getYouTubeKeywords(projectId), youtubeAPI.getYouTubeVideos(projectId)]);
+      const extractArr = (r: PromiseSettledResult<any>) => { if (r.status === 'fulfilled') { const d = (r.value as any).data !== undefined ? (r.value as any).data : r.value; return Array.isArray(d) ? d : (d?.data || []); } return []; };
+      setKeywords(extractArr(kwRes)); setVideos(extractArr(vidRes));
+    } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
   }, [projectId]);
 
-  const handleRefresh = async () => {
-    if (!projectId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await youtubeAPI.refreshYouTubeData(projectId);
-      message.success('YouTube 数据刷新成功');
-      await loadData();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
-      setError(msg);
-      setLoading(false);
-    }
-  };
+  useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 
-  const handleAddKeyword = () => {
-    setAddType('keyword');
-    addForm.resetFields();
-    setAddModalVisible(true);
-  };
+  const handleRefresh = async () => { setRefreshing(true); try { await youtubeAPI.refreshYouTubeData(projectId!); message.success('数据刷新中'); setTimeout(() => { loadData(); setRefreshing(false); }, 3000); } catch (e: any) { message.error(e?.message || '刷新失败'); setRefreshing(false); } };
+  const handleAddKeyword = async () => { if (!newKeyword.trim()) { message.warning('请输入关键词'); return; } try { await youtubeAPI.addYouTubeKeyword(projectId!, newKeyword.trim()); message.success('已添加'); setNewKeyword(''); loadData(); } catch (e: any) { message.error(e?.message || '添加失败'); } };
+  const handleAddVideo = async () => { if (!newVideoUrl.trim()) { message.warning('请输入视频URL'); return; } try { await youtubeAPI.addYouTubeVideo(projectId!, newVideoUrl.trim()); message.success('已添加'); setNewVideoUrl(''); loadData(); } catch (e: any) { message.error(e?.message || '添加失败'); } };
 
-  const handleAddVideo = () => {
-    setAddType('video');
-    addForm.resetFields();
-    setAddModalVisible(true);
-  };
+  if (!projectId) return <div className="page-container"><PageHeader title="YouTube分析" /><Empty description="请先选择一个项目" style={{ marginTop: 120 }} /></div>;
+  if (loading) return <div className="page-container"><PageHeader title="YouTube分析" /><Spin size="large" style={{ display: 'block', margin: '40vh auto' }} /></div>;
+  if (error) return <div className="page-container"><PageHeader title="YouTube分析" /><Alert type="error" message="加载失败" description={error} showIcon style={{ marginTop: 24 }} action={<Button size="small" onClick={loadData}>重试</Button>} /></div>;
 
-  const handleAddSubmit = async () => {
-    const values = await addForm.validateFields();
-    setSubmitting(true);
-    try {
-      if (addType === 'keyword') {
-        await youtubeAPI.addYouTubeKeyword(projectId!, values.keyword);
-      } else {
-        await youtubeAPI.addYouTubeVideo(projectId!, values.url);
-      }
-      message.success(addType === 'keyword' ? '关键词已添加' : '视频已添加');
-      setAddModalVisible(false);
-      await loadData();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
-      message.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  if (!projectId) return <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />;
-  if (loading && !keywords.length && !videos.length) {
-    return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
-  }
-  if (error && !keywords.length && !videos.length) {
-    return <Alert type="error" message="加载失败" description={error} showIcon style={{ margin: '20vh auto', maxWidth: 600 }} />;
-  }
-
-  const totalViews = keywords.reduce((acc, k) => acc + k.views, 0);
-  const totalLikes = videos.reduce((acc, v) => acc + v.likes, 0);
-  const totalComments = videos.reduce((acc, v) => acc + v.comments, 0);
-
-  const viewsOption = {
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    grid: { left: '3%', right: '4%', bottom: '3%', top: '5%', containLabel: true },
-    xAxis: {
-      type: 'category',
-      data: videos.map((v) => v.title.length > 10 ? v.title.slice(0, 10) + '...' : v.title),
-      axisLabel: { color: '#999', rotate: 15 },
-    },
-    yAxis: { type: 'value', name: '观看量', axisLabel: { color: '#999', formatter: (v: number) => (v / 1000).toFixed(0) + 'k' }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
-    series: [
-      {
-        type: 'bar', data: videos.map((v) => v.views),
-        itemStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#ff0000' }, { offset: 1, color: '#ff4444' }] }, borderRadius: [6, 6, 0, 0] },
-        barWidth: '50%',
-      },
-    ],
-  };
-
-  const keywordColumns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword', render: (t: string) => <Text strong>{t}</Text> },
-    {
-      title: '排名', dataIndex: 'position', key: 'position', width: 80,
-      render: (p: number) => <Tag color={p <= 3 ? '#52c41a' : '#1677ff'}>#{p}</Tag>,
-    },
-    {
-      title: '变化', key: 'change', width: 80,
-      render: (_: any, r: any) => {
-        if (r.change > 0) return <Tag color="success" icon={<ArrowUpOutlined />}>+{r.change}</Tag>;
-        if (r.change < 0) return <Tag color="error" icon={<ArrowDownOutlined />}>{r.change}</Tag>;
-        return <Tag icon={<MinusOutlined />}>0</Tag>;
-      },
-    },
-    { title: '总观看', dataIndex: 'views', key: 'views', width: 100, render: (v: number) => (v / 1000).toFixed(1) + 'k' },
-    { title: '平均观看', dataIndex: 'avgViews', key: 'avgViews', width: 100, render: (v: number) => (v / 1000).toFixed(1) + 'k' },
-    {
-      title: '竞争度', dataIndex: 'competition', key: 'competition', width: 90,
-      render: (c: string) => {
-        const colors: Record<string, string> = { high: '#ff4d4f', medium: '#faad14', low: '#52c41a' };
-        const labels: Record<string, string> = { high: '高', medium: '中', low: '低' };
-        return <Tag color={colors[c]}>{labels[c]}</Tag>;
-      },
-    },
+  const kwColumns = [
+    { title: '关键词', dataIndex: 'keyword', key: 'keyword', render: (kw: string) => <Text strong>{kw}</Text> },
+    { title: '排名', dataIndex: 'position', key: 'position', width: 80, render: (p: number) => <Tag color={p <= 3 ? 'green' : p <= 10 ? 'blue' : 'orange'}>{p || '-'}</Tag> },
+    { title: '变化', dataIndex: 'change', key: 'change', width: 80, render: (c: number) => c ? <Text type={c > 0 ? 'success' : 'danger'}>{c > 0 ? '+' : ''}{c}</Text> : '-' },
+    { title: '观看量', dataIndex: 'views', key: 'views', width: 100, render: (v: number) => v?.toLocaleString() || '-' },
+    { title: '平均观看', dataIndex: 'avgViews', key: 'avgViews', width: 100, render: (v: number) => v?.toLocaleString() || '-' },
+    { title: '竞争度', dataIndex: 'competition', key: 'competition', width: 90, render: (c: string) => <Tag>{c || '-'}</Tag> },
   ];
 
-  const videoColumns = [
+  const vidColumns = [
     { title: '视频标题', dataIndex: 'title', key: 'title', ellipsis: true },
-    { title: '排名', dataIndex: 'position', key: 'position', width: 70, render: (p: number) => <Tag color={p <= 3 ? '#52c41a' : '#1677ff'}>#{p}</Tag> },
-    { title: '观看量', dataIndex: 'views', key: 'views', width: 100, render: (v: number) => (v / 1000).toFixed(1) + 'k' },
-    { title: '点赞', dataIndex: 'likes', key: 'likes', width: 90, render: (v: number) => v.toLocaleString() },
-    { title: '评论', dataIndex: 'comments', key: 'comments', width: 80, render: (v: number) => v.toLocaleString() },
-    { title: '观看时长(h)', dataIndex: 'watchTime', key: 'watchTime', width: 110, render: (v: number) => (v / 60).toFixed(0) },
+    { title: '观看量', dataIndex: 'views', key: 'views', width: 100, render: (v: number) => v?.toLocaleString() || '-' },
+    { title: '点赞', dataIndex: 'likes', key: 'likes', width: 80, render: (v: number) => v?.toLocaleString() || '-' },
+    { title: '评论', dataIndex: 'comments', key: 'comments', width: 80, render: (v: number) => v?.toLocaleString() || '-' },
+    { title: '观看时长', dataIndex: 'watchTime', key: 'watchTime', width: 100, render: (v: string) => v || '-' },
   ];
 
   return (
     <div className="page-container">
-      <PageHeader
-        title="YouTube 排名"
-        subtitle="YouTube 视频 SEO 排名追踪"
-        actions={[
-          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
-          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
-          { label: '添加视频', icon: <PlusOutlined />, onClick: handleAddVideo },
-        ]}
-      />
-
+      <PageHeader title="YouTube 分析" subtitle="YouTube 关键词排名与视频表现分析"
+        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: loadData, loading }, { label: '刷新数据', type: 'primary', icon: <ThunderboltOutlined />, onClick: handleRefresh, loading: refreshing }]} />
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="追踪关键词" value={keywords.length} prefix={<YoutubeOutlined style={{ color: '#ff0000' }} />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="总观看量" value={(totalViews / 1000).toFixed(0) + 'k'} prefix={<EyeOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="总点赞" value={(totalLikes / 1000).toFixed(1) + 'k'} prefix={<LikeOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="总评论" value={(totalComments / 1000).toFixed(2) + 'k'} prefix={<CommentOutlined />} /></Card>
-        </Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="追踪关键词" value={keywords.length} prefix={<AimOutlined />} /></Card></Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="追踪视频" value={videos.length} prefix={<PlaySquareOutlined />} /></Card></Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="总观看量" value={videos.reduce((s, v) => s + (v.views || 0), 0)} prefix={<EyeOutlined />} /></Card></Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="总点赞" value={videos.reduce((s, v) => s + (v.likes || 0), 0)} prefix={<LikeOutlined />} /></Card></Col>
       </Row>
-
-      <Card title="视频观看量" className="chart-card" style={{ marginBottom: 24 }}>
-        <ReactEChartsCore echarts={echarts} option={viewsOption} style={{ height: 300 }} notMerge />
-      </Card>
-
-      <Card title="视频排名" style={{ marginBottom: 24 }}>
-        <Table columns={videoColumns} dataSource={videos} rowKey="title" pagination={false} size="middle" loading={loading} />
-      </Card>
-
-      <Card title="关键词排名">
-        <Table columns={keywordColumns} dataSource={keywords} rowKey="id" pagination={false} size="middle" loading={loading} />
-      </Card>
-
-    <Modal
-      title={addType === 'keyword' ? '添加 YouTube 关键词' : '添加 YouTube 视频'}
-      open={addModalVisible}
-      onOk={handleAddSubmit}
-      onCancel={() => setAddModalVisible(false)}
-      confirmLoading={submitting}
-      destroyOnClose
-    >
-      <Form form={addForm} layout="vertical">
-        {addType === 'keyword' ? (
-          <Form.Item
-            name="keyword"
-            label="关键词"
-            rules={[{ required: true, message: '请输入关键词' }]}
-          >
-            <Input placeholder="例如：起重机操作教程" />
-          </Form.Item>
-        ) : (
-          <Form.Item
-            name="url"
-            label="视频 URL"
-            rules={[{ required: true, message: '请输入视频链接' }, { type: 'url', message: '请输入有效的 URL' }]}
-          >
-            <Input placeholder="https://www.youtube.com/watch?v=..." />
-          </Form.Item>
-        )}
-      </Form>
-    </Modal>
-  </div>
+      <Tabs size="large" items={[
+        { key: 'keywords', label: <span><AimOutlined /> 关键词排名</span>, children: (
+          <Card title="YouTube 关键词" extra={<Input.Search placeholder="添加关键词" value={newKeyword} onChange={(e) => setNewKeyword(e.target.value)} onSearch={handleAddKeyword} enterButton={<PlusOutlined />} style={{ width: 250 }} />}>
+            <Table columns={kwColumns} dataSource={keywords} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
+          </Card>
+        )},
+        { key: 'videos', label: <span><PlaySquareOutlined /> 视频表现</span>, children: (
+          <Card title="视频列表" extra={<Input.Search placeholder="添加视频URL" value={newVideoUrl} onChange={(e) => setNewVideoUrl(e.target.value)} onSearch={handleAddVideo} enterButton={<PlusOutlined />} style={{ width: 300 }} />}>
+            <Table columns={vidColumns} dataSource={videos} rowKey="title" pagination={{ pageSize: 10 }} size="middle" />
+          </Card>
+        )},
+      ]} />
+    </div>
   );
 };
 

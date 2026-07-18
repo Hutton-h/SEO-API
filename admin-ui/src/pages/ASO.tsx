@@ -1,21 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Card, Table, Tag, Typography, Row, Col, Statistic, Button, Space, Select, Progress, Empty, Spin, Alert, message,
-  Modal, Input, Form,
-} from 'antd';
-import {
-  AppleOutlined, AndroidOutlined, ReloadOutlined, ArrowUpOutlined,
-  ArrowDownOutlined, MinusOutlined, StarOutlined, DownloadOutlined, PlusOutlined,
-} from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Select, Progress } from 'antd';
+import { ReloadOutlined, ThunderboltOutlined, PlusOutlined, AimOutlined, AppleOutlined, AndroidOutlined, RiseOutlined, FallOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
 import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
+import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
 import { asoAPI } from '@/services/aso';
-import type { ASOKeyword, ASOTrend } from '@/services/aso';
-import PageHeader from '@/components/PageHeader';
 
 echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
@@ -25,178 +18,92 @@ const ASO: React.FC = () => {
   const projectId = useStore((s) => s.currentProject?.id);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [asoKeywords, setAsoKeywords] = useState<ASOKeyword[]>([]);
-  const [trend, setTrend] = useState<ASOTrend[]>([]);
-  const [addModalVisible, setAddModalVisible] = useState(false);
-  const [addForm] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
-  const [platform, setPlatform] = useState('all');
+  const [refreshing, setRefreshing] = useState(false);
+  const [keywords, setKeywords] = useState<any[]>([]);
+  const [trend, setTrend] = useState<any[]>([]);
+  const [newKeyword, setNewKeyword] = useState('');
+  const [storeFilter, setStoreFilter] = useState<string | undefined>();
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!projectId) return;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const [kwRes, trendRes] = await Promise.all([
+      const [kwRes, trendRes] = await Promise.allSettled([
         asoAPI.getASOKeywords(projectId),
         asoAPI.getASOTrend(projectId),
       ]);
-
-      const kwResult = (kwRes as any).data || kwRes;
-      const trendResult = (trendRes as any).data || trendRes;
-
-      setAsoKeywords(Array.isArray(kwResult) ? kwResult : kwResult.data || []);
-      setTrend(Array.isArray(trendResult) ? trendResult : trendResult.data || []);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!projectId) {
-      setLoading(false);
-      return;
-    }
-    loadData();
+      const extractArr = (r: PromiseSettledResult<any>) => {
+        if (r.status === 'fulfilled') { const d = (r.value as any).data !== undefined ? (r.value as any).data : r.value; return Array.isArray(d) ? d : (d?.data || []); }
+        return [];
+      };
+      setKeywords(extractArr(kwRes));
+      setTrend(extractArr(trendRes));
+    } catch (e: any) { setError(e?.message || '加载失败'); }
+    finally { setLoading(false); }
   }, [projectId]);
 
-  const handleRefresh = async () => {
-    if (!projectId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      await asoAPI.refreshASOData(projectId);
-      message.success('ASO 数据刷新成功');
-      await loadData();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
-      setError(msg);
-      setLoading(false);
-    }
-  };
+  useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 
-  const handleAddKeyword = () => {
-    addForm.resetFields();
-    setAddModalVisible(true);
-  };
+  const handleRefresh = async () => { setRefreshing(true); try { await asoAPI.refreshASOData(projectId!); message.success('ASO数据刷新中'); setTimeout(() => { loadData(); setRefreshing(false); }, 3000); } catch (e: any) { message.error(e?.message || '刷新失败'); setRefreshing(false); } };
+  const handleAddKeyword = async () => { if (!newKeyword.trim()) { message.warning('请输入关键词'); return; } try { await asoAPI.addASOKeyword(projectId!, newKeyword.trim()); message.success('已添加'); setNewKeyword(''); loadData(); } catch (e: any) { message.error(e?.message || '添加失败'); } };
 
-  const handleAddSubmit = async () => {
-    const values = await addForm.validateFields();
-    setSubmitting(true);
-    try {
-      await asoAPI.addASOKeyword(projectId!, values.keyword);
-      message.success('关键词已添加');
-      setAddModalVisible(false);
-      await loadData();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
-      message.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  if (!projectId) return <div className="page-container"><PageHeader title="ASO优化" /><Empty description="请先选择一个项目" style={{ marginTop: 120 }} /></div>;
+  if (loading) return <div className="page-container"><PageHeader title="ASO优化" /><Spin size="large" style={{ display: 'block', margin: '40vh auto' }} /></div>;
+  if (error) return <div className="page-container"><PageHeader title="ASO优化" /><Alert type="error" message="加载失败" description={error} showIcon style={{ marginTop: 24 }} action={<Button size="small" onClick={loadData}>重试</Button>} /></div>;
 
-  if (!projectId) return <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />;
-  if (loading && !asoKeywords.length && !trend.length) {
-    return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
-  }
-  if (error && !asoKeywords.length && !trend.length) {
-    return <Alert type="error" message="加载失败" description={error} showIcon style={{ margin: '20vh auto', maxWidth: 600 }} />;
-  }
+  const filteredKw = storeFilter ? keywords.filter((k: any) => {
+    if (storeFilter === 'apple') return k.appStore?.position !== undefined;
+    if (storeFilter === 'google_play') return k.googlePlay?.position !== undefined;
+    return true;
+  }) : keywords;
 
-  const trendOption = {
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['App Store', 'Google Play'], bottom: 0 },
-    grid: { left: '3%', right: '4%', bottom: '12%', top: '8%', containLabel: true },
-    xAxis: { type: 'category', data: trend.map((d) => d.date), axisLabel: { color: '#999' } },
-    yAxis: { type: 'value', name: '排名', inverse: true, axisLabel: { color: '#999' }, splitLine: { lineStyle: { color: '#f0f0f0' } } },
+  const trendChartOption = trend.length > 0 ? {
+    tooltip: { trigger: 'axis' }, legend: { data: ['App Store', 'Google Play'], bottom: 0 },
+    xAxis: { type: 'category', data: trend.map((t: any) => t.date) },
+    yAxis: { type: 'value', inverse: true, name: '排名' },
     series: [
-      {
-        name: 'App Store', type: 'line', data: trend.map((d) => d.appStore),
-        smooth: true, lineStyle: { color: '#1677ff', width: 3 }, itemStyle: { color: '#1677ff' }, symbol: 'circle', symbolSize: 6,
-      },
-      {
-        name: 'Google Play', type: 'line', data: trend.map((d) => d.googlePlay),
-        smooth: true, lineStyle: { color: '#52c41a', width: 3 }, itemStyle: { color: '#52c41a' }, symbol: 'circle', symbolSize: 6,
-      },
+      { name: 'App Store', type: 'line', data: trend.map((t: any) => t.appStore), smooth: true, itemStyle: { color: '#1677ff' } },
+      { name: 'Google Play', type: 'line', data: trend.map((t: any) => t.googlePlay), smooth: true, itemStyle: { color: '#52c41a' } },
     ],
-  };
+  } : null;
 
   const columns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword', render: (t: string) => <Text strong>{t}</Text> },
-    {
-      title: 'App Store 排名', key: 'appStore', width: 140,
-      render: (_: any, r: any) => (
-        <Space>
-          <Tag color={r.appStore.position <= 3 ? '#52c41a' : '#1677ff'}>#{r.appStore.position}</Tag>
-          {r.appStore.change > 0 ? <ArrowUpOutlined style={{ color: '#52c41a' }} /> : r.appStore.change < 0 ? <ArrowDownOutlined style={{ color: '#ff4d4f' }} /> : <MinusOutlined />}
-        </Space>
-      ),
+    { title: '关键词', dataIndex: 'keyword', key: 'keyword', width: 180, render: (kw: string) => <Text strong>{kw}</Text> },
+    { title: 'App Store', key: 'appStore', width: 120,
+      render: (_: any, r: any) => r.appStore?.position ? <Space><Tag color={r.appStore.position <= 5 ? 'green' : 'orange'}>{r.appStore.position}</Tag>{r.appStore.change ? <Text type={r.appStore.change > 0 ? 'success' : 'danger'}>{r.appStore.change > 0 ? '+' : ''}{r.appStore.change}</Text> : null}</Space> : <Text type="secondary">-</Text>,
     },
-    {
-      title: 'Google Play 排名', key: 'googlePlay', width: 140,
-      render: (_: any, r: any) => (
-        <Space>
-          <Tag color={r.googlePlay.position <= 3 ? '#52c41a' : '#1677ff'}>#{r.googlePlay.position}</Tag>
-          {r.googlePlay.change > 0 ? <ArrowUpOutlined style={{ color: '#52c41a' }} /> : r.googlePlay.change < 0 ? <ArrowDownOutlined style={{ color: '#ff4d4f' }} /> : <MinusOutlined />}
-        </Space>
-      ),
+    { title: 'Google Play', key: 'googlePlay', width: 120,
+      render: (_: any, r: any) => r.googlePlay?.position ? <Space><Tag color={r.googlePlay.position <= 5 ? 'green' : 'orange'}>{r.googlePlay.position}</Tag>{r.googlePlay.change ? <Text type={r.googlePlay.change > 0 ? 'success' : 'danger'}>{r.googlePlay.change > 0 ? '+' : ''}{r.googlePlay.change}</Text> : null}</Space> : <Text type="secondary">-</Text>,
     },
-    { title: '搜索量', dataIndex: 'searchVolume', key: 'searchVolume', width: 100, render: (v: number) => v.toLocaleString() },
-    {
-      title: '难度', dataIndex: 'difficulty', key: 'difficulty', width: 90,
-      render: (d: string) => {
-        const colors: Record<string, string> = { high: '#ff4d4f', medium: '#faad14', low: '#52c41a' };
-        const labels: Record<string, string> = { high: '高', medium: '中', low: '低' };
-        return <Tag color={colors[d]}>{labels[d]}</Tag>;
-      },
+    { title: '搜索量', dataIndex: 'searchVolume', key: 'searchVolume', width: 90, render: (v: number) => v?.toLocaleString() || '-' },
+    { title: '难度', dataIndex: 'difficulty', key: 'difficulty', width: 100,
+      render: (d: number) => d !== undefined ? <Progress percent={d} size="small" strokeColor={d <= 30 ? '#52c41a' : d <= 60 ? '#faad14' : '#ff4d4f'} /> : '-',
     },
   ];
 
   return (
     <div className="page-container">
-      <PageHeader
-        title="ASO 排名"
-        subtitle="App Store & Google Play 关键词排名监控"
+      <PageHeader title="ASO 优化" subtitle="App Store / Google Play 关键词排名追踪与优化"
         actions={[
-          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
-          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
+          { label: '刷新', icon: <ReloadOutlined />, onClick: loadData, loading },
+          { label: '刷新排名', type: 'primary', icon: <ThunderboltOutlined />, onClick: handleRefresh, loading: refreshing },
         ]}
       />
-
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="App Store 关键词" value={asoKeywords.length} prefix={<AppleOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="Google Play 关键词" value={asoKeywords.length} prefix={<AndroidOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="App Store 评分" value={4.6} prefix={<StarOutlined style={{ color: '#faad14' }} />} precision={1} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small"><Statistic title="总下载量" value="12.5k" prefix={<DownloadOutlined />} /></Card>
-        </Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="ASO关键词" value={keywords.length} prefix={<AimOutlined />} /></Card></Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="App Store上榜" value={keywords.filter((k: any) => k.appStore?.position).length} prefix={<AppleOutlined />} /></Card></Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="Google Play上榜" value={keywords.filter((k: any) => k.googlePlay?.position).length} prefix={<AndroidOutlined />} /></Card></Col>
+        <Col xs={12} sm={6}><Card size="small"><Statistic title="趋势数据" value={trend.length} suffix="天" /></Card></Col>
       </Row>
-
-      <Card title="排名趋势" className="chart-card" style={{ marginBottom: 24 }}>
-        <ReactEChartsCore echarts={echarts} option={trendOption} style={{ height: 300 }} notMerge />
-      </Card>
-
-      <Card
-        title="关键词排名"
-        extra={
-          <Select defaultValue="all" style={{ width: 140 }} onChange={setPlatform} options={[
-            { value: 'all', label: '全部' },
-            { value: 'appstore', label: 'App Store' },
-            { value: 'googleplay', label: 'Google Play' },
-          ]} />
-        }
+      {trendChartOption && <Card title="排名趋势" style={{ marginBottom: 24 }}><ReactEChartsCore echarts={echarts} option={trendChartOption} style={{ height: 300 }} /></Card>}
+      <Card title="ASO关键词排名"
+        extra={<Space>
+          <Input.Search placeholder="添加关键词" value={newKeyword} onChange={(e) => setNewKeyword(e.target.value)} onSearch={handleAddKeyword} enterButton={<PlusOutlined />} style={{ width: 220 }} />
+          <Select placeholder="应用商店" allowClear style={{ width: 130 }} value={storeFilter} onChange={setStoreFilter}
+            options={[{ value: 'apple', label: 'App Store' }, { value: 'google_play', label: 'Google Play' }]} />
+        </Space>}
       >
-        <Table columns={columns} dataSource={asoKeywords} rowKey="id" pagination={false} size="middle" loading={loading} />
+        <Table columns={columns} dataSource={filteredKw} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
       </Card>
     </div>
   );

@@ -19,7 +19,7 @@ export interface ChangeDistribution {
 }
 
 export const competitorChangeAPI = {
-  getChanges: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
+  getChanges: (params?: { page?: number; pageSize?: number; projectId?: string; days?: number; changeType?: string }) =>
     apiGet<{ data: CompetitorChange[]; total: number }>('/v1/competitor-changes', params),
 
   runDetection: (projectId: string) =>

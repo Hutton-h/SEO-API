@@ -1,284 +1,101 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Card, Row, Col, Table, Progress, Typography, Space, Statistic, Button, Input, Spin, Empty, Alert, Modal, Form, message,
-} from 'antd';
-import {
-  SearchOutlined, RiseOutlined, ReloadOutlined, CheckCircleOutlined,
-  GlobalOutlined, VideoCameraOutlined, PictureOutlined, StarOutlined,
-  ReadOutlined, EnvironmentOutlined, ThunderboltOutlined, PlusOutlined,
-} from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Progress } from 'antd';
+import { ReloadOutlined, PlusOutlined, SearchOutlined, AimOutlined, StarOutlined, PictureOutlined, VideoCameraOutlined, EnvironmentOutlined, ReadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import ReactEChartsCore from 'echarts-for-react/lib/core';
 import * as echarts from 'echarts/core';
-import { PieChart } from 'echarts/charts';
-import { TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
+import { BarChart } from 'echarts/charts';
+import { GridComponent, TooltipComponent, TitleComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import PageHeader from '@/components/PageHeader';
 import { useStore } from '@/store';
 import { serpFeaturesAPI } from '@/services/serpFeatures';
 
-echarts.use([PieChart, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
+echarts.use([BarChart, GridComponent, TooltipComponent, TitleComponent, CanvasRenderer]);
 
 const { Text } = Typography;
 
-const featureConfig = [
-  { key: 'featuredSnippet', name: 'Featured Snippet', icon: <StarOutlined />, color: '#1677ff', description: '精选摘要' },
-  { key: 'knowledgeGraph', name: 'Knowledge Graph', icon: <GlobalOutlined />, color: '#52c41a', description: '知识图谱' },
-  { key: 'peopleAlsoAsk', name: 'People Also Ask', icon: <SearchOutlined />, color: '#fa8c16', description: '用户还问' },
-  { key: 'videoCarousel', name: 'Video Carousel', icon: <VideoCameraOutlined />, color: '#eb2f96', description: '视频轮播' },
-  { key: 'localPack', name: 'Local Pack', icon: <EnvironmentOutlined />, color: '#722ed1', description: '本地包' },
-  { key: 'imagePack', name: 'Image Pack', icon: <PictureOutlined />, color: '#13c2c2', description: '图片包' },
-  { key: 'topStories', name: 'Top Stories', icon: <ThunderboltOutlined />, color: '#faad14', description: '头条新闻' },
-  { key: 'siteLinks', name: 'Sitelinks', icon: <RiseOutlined />, color: '#2f54eb', description: '站点链接' },
-  { key: 'reviewStars', name: 'Review Stars', icon: <StarOutlined />, color: '#f5222d', description: '评价星级' },
-];
+const featureIcons: Record<string, React.ReactNode> = {
+  featuredSnippet: <StarOutlined />, knowledgeGraph: <ReadOutlined />, peopleAlsoAsk: <SearchOutlined />,
+  videoCarousel: <VideoCameraOutlined />, localPack: <EnvironmentOutlined />, imagePack: <PictureOutlined />,
+  topStories: <ThunderboltOutlined />, siteLinks: <AimOutlined />, reviewStars: <StarOutlined />,
+};
 
-interface FeatureStat {
-  key: string;
-  name: string;
-  icon: React.ReactNode;
-  color: string;
-  description: string;
-  count: number;
-  percentage: number;
-}
-
-interface KeywordItem {
-  keyword: string;
-  [key: string]: any;
-}
+const featureLabels: Record<string, string> = {
+  featuredSnippet: '精选摘要', knowledgeGraph: '知识图谱', peopleAlsoAsk: '用户还问',
+  videoCarousel: '视频轮播', localPack: '本地包', imagePack: '图片包',
+  topStories: '热门新闻', siteLinks: '站点链接', reviewStars: '评价星级',
+};
 
 const SerpFeatures: React.FC = () => {
-  const projectId = useStore(s => s.currentProject?.id);
+  const projectId = useStore((s) => s.currentProject?.id);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<FeatureStat[]>([]);
-  const [keywords, setKeywords] = useState<KeywordItem[]>([]);
-  const [totalKeywords, setTotalKeywords] = useState(0);
-  const [searchText, setSearchText] = useState('');
-  const [addModalVisible, setAddModalVisible] = useState(false);
-  const [addForm] = Form.useForm();
-  const [submitting, setSubmitting] = useState(false);
+  const [features, setFeatures] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>({ totalKeywords: 0, features: [] });
+  const [newKeyword, setNewKeyword] = useState('');
 
-  useEffect(() => {
-    if (!projectId) { setLoading(false); return; }
-    loadData();
+  const loadData = useCallback(async () => {
+    if (!projectId) return; setLoading(true); setError(null);
+    try {
+      const res = await serpFeaturesAPI.getFeatureStats(projectId);
+      const data = (res as any).data !== undefined ? (res as any).data : res;
+      if (data?.features) {
+        setStats(data);
+        setFeatures(data?.keywords || data?.keywordData || []);
+      } else if (Array.isArray(data)) {
+        setFeatures(data);
+      } else {
+        setFeatures(data?.data || []);
+        if (data?.totalKeywords) setStats({ totalKeywords: data.totalKeywords, features: data.features || [] });
+      }
+    } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
   }, [projectId]);
 
-  const loadData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await serpFeaturesAPI.getFeatureStats(projectId!);
-      const result = (res as any).data || res;
-      const data = result.data || result;
-      if (data) {
-        setTotalKeywords(data.totalKeywords || 0);
-        const featureStats = featureConfig.map((f) => {
-          const found = (data.features || []).find((item: any) => item.key === f.key);
-          return {
-            ...f,
-            count: found?.count || 0,
-            percentage: found?.percentage || 0,
-          };
-        });
-        setStats(featureStats);
-      }
-      const detailsRes = await serpFeaturesAPI.getFeatureDetails(projectId!, '');
-      const detailsResult = (detailsRes as any).data || detailsRes;
-      const keywordData = Array.isArray(detailsResult) ? detailsResult : detailsResult.data || [];
-      setKeywords(keywordData);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
 
-  const handleRefresh = () => { loadData(); };
+  const handleAddKeyword = async () => { if (!newKeyword.trim()) { message.warning('请输入关键词'); return; } try { await serpFeaturesAPI.addKeyword(projectId!, newKeyword.trim()); message.success('已添加'); setNewKeyword(''); loadData(); } catch (e: any) { message.error(e?.message || '添加失败'); } };
 
-  const handleAddKeyword = () => {
-    addForm.resetFields();
-    setAddModalVisible(true);
-  };
+  if (!projectId) return <div className="page-container"><PageHeader title="SERP特征" /><Empty description="请先选择一个项目" style={{ marginTop: 120 }} /></div>;
+  if (loading) return <div className="page-container"><PageHeader title="SERP特征" /><Spin size="large" style={{ display: 'block', margin: '40vh auto' }} /></div>;
+  if (error) return <div className="page-container"><PageHeader title="SERP特征" /><Alert type="error" message="加载失败" description={error} showIcon style={{ marginTop: 24 }} action={<Button size="small" onClick={loadData}>重试</Button>} /></div>;
 
-  const handleAddSubmit = async (values: { keyword: string }) => {
-    if (!projectId) return;
-    setSubmitting(true);
-    try {
-      await serpFeaturesAPI.addKeyword(projectId, values.keyword);
-      message.success('关键词添加成功');
-      setAddModalVisible(false);
-      addForm.resetFields();
-      await loadData();
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '添加失败';
-      message.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const featureStats = stats?.features || [];
+  const featureChartOption = featureStats.length > 0 ? {
+    tooltip: { trigger: 'axis' }, xAxis: { type: 'category', data: featureStats.map((f: any) => featureLabels[f.key || f.name] || f.key || f.name) },
+    yAxis: { type: 'value', name: '覆盖数' },
+    series: [{ type: 'bar', data: featureStats.map((f: any) => ({ value: f.count || f.value || 0, itemStyle: { color: '#1677ff' } })), barWidth: 30 }],
+  } : null;
 
-  if (!projectId) return <Empty description="请先选择一个项目" />;
-  if (loading) return <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />;
-  if (error) return <Alert type="error" message="加载失败" description={error} showIcon />;
-
-  const filteredKeywords = keywords.filter((k) =>
-    k.keyword.toLowerCase().includes(searchText.toLowerCase())
-  );
-
-  const pieData = stats.map((f) => ({ name: f.name, value: f.count, itemStyle: { color: f.color } }));
-
-  const pieOption = {
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    legend: { orient: 'vertical', right: '5%', top: 'center', itemGap: 12, textStyle: { fontSize: 12 } },
-    series: [{
-      type: 'pie', radius: ['45%', '75%'], center: ['35%', '50%'],
-      avoidLabelOverlap: false, itemStyle: { borderRadius: 4, borderColor: '#fff', borderWidth: 2 },
-      label: { show: false }, emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
-      data: pieData,
-    }],
-  };
-
-  const featureTableColumns = [
-    {
-      title: '特性名称', dataIndex: 'name', key: 'name',
-      render: (text: string, record: any) => (
-        <Space>
-          <span style={{ color: record.color }}>{record.icon}</span>
-          <Text strong>{text}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>({record.description})</Text>
-        </Space>
-      ),
-    },
-    { title: '出现次数', dataIndex: 'count', key: 'count', render: (v: number) => <Text strong>{v.toLocaleString()}</Text>, sorter: (a: any, b: any) => a.count - b.count },
-    {
-      title: '出现率', dataIndex: 'percentage', key: 'percentage',
-      render: (pct: number, record: any) => (
-        <Progress
-          percent={pct}
-          strokeColor={record.color}
-          size="small"
-          format={(p) => `${p}%`}
-          style={{ minWidth: 120 }}
-        />
-      ),
-      sorter: (a: any, b: any) => a.percentage - b.percentage,
-    },
+  const featureColumns = [
+    { title: '关键词', dataIndex: 'keyword', key: 'keyword', width: 180, render: (kw: string) => <Text strong>{kw}</Text> },
+    { title: '精选摘要', dataIndex: 'featuredSnippet', key: 'featuredSnippet', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
+    { title: '知识图谱', dataIndex: 'knowledgeGraph', key: 'knowledgeGraph', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
+    { title: '用户还问', dataIndex: 'peopleAlsoAsk', key: 'peopleAlsoAsk', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
+    { title: '视频轮播', dataIndex: 'videoCarousel', key: 'videoCarousel', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
+    { title: '本地包', dataIndex: 'localPack', key: 'localPack', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
+    { title: '图片包', dataIndex: 'imagePack', key: 'imagePack', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
+    { title: '站点链接', dataIndex: 'siteLinks', key: 'siteLinks', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
+    { title: '评价星级', dataIndex: 'reviewStars', key: 'reviewStars', width: 90, render: (v: boolean) => v ? <Tag color="green">有</Tag> : <Tag>无</Tag> },
   ];
-
-  const keywordColumns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword', render: (text: string) => <Text strong>{text}</Text>, filteredValue: searchText ? [searchText] : null, onFilter: (value: any, record: any) => record.keyword.includes(value) },
-    ...featureConfig.map((f) => ({
-      title: f.name,
-      dataIndex: f.key,
-      key: f.key,
-      width: 100,
-      render: (val: boolean) => val ? <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} /> : <Text type="secondary">-</Text>,
-    })),
-  ];
-
-  const avgFeaturesPerKeyword = keywords.length > 0
-    ? (keywords.reduce((sum, k) => sum + featureConfig.filter((f) => k[f.key]).length, 0) / keywords.length)
-    : 0;
-
-  const topFeature = stats.length > 0
-    ? stats.reduce((max, f) => (f.count > max.count ? f : max), stats[0])
-    : null;
 
   return (
     <div className="page-container">
-      <PageHeader
-        title="SERP 特性分析"
-        subtitle="分析关键词在搜索结果中的特性展示分布"
-        actions={[
-          { label: '添加关键词', icon: <PlusOutlined />, onClick: handleAddKeyword },
-          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
-        ]}
-      />
-
-      <Row gutter={[16, 16]} style={{ margin: 24 }}>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="关键词总数" value={totalKeywords} valueStyle={{ color: '#1677ff' }} prefix={<SearchOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="SERP 特性种类" value={featureConfig.length} valueStyle={{ color: '#52c41a' }} prefix={<GlobalOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="平均特性数/词" value={avgFeaturesPerKeyword} precision={1} valueStyle={{ color: '#fa8c16' }} prefix={<RiseOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card><Statistic title="覆盖率最高" value={topFeature?.name || '-'} valueStyle={{ color: '#1677ff', fontSize: 16 }} prefix={<StarOutlined />} /></Card>
-        </Col>
+      <PageHeader title="SERP 特征" subtitle="搜索特征分析 - 精选摘要、知识图谱、People Also Ask 等"
+        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: loadData, loading }]} />
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={12} sm={4}><Card size="small"><Statistic title="追踪关键词" value={stats?.totalKeywords || features.length} prefix={<AimOutlined />} /></Card></Col>
+        {featureStats.slice(0, 5).map((f: any, i: number) => (
+          <Col xs={12} sm={4} key={i}>
+            <Card size="small"><Statistic title={featureLabels[f.key || f.name] || f.key || f.name} value={f.count || f.value || 0}
+              prefix={featureIcons[f.key || f.name] || <StarOutlined />} /></Card>
+          </Col>
+        ))}
       </Row>
-
-      <Row gutter={[24, 24]}>
-        <Col xs={24} lg={14}>
-          <Card title="特性出现率统计" className="chart-card">
-            <Table
-              columns={featureTableColumns}
-              dataSource={stats}
-              rowKey="key"
-              pagination={false}
-              size="middle"
-            />
-          </Card>
-        </Col>
-        <Col xs={24} lg={10}>
-          <Card title="特性类型分布" className="chart-card">
-            <ReactEChartsCore echarts={echarts} option={pieOption} style={{ height: 380 }} notMerge />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card
-        title="关键词 SERP 特性详情"
-        style={{ marginTop: 24 }}
-        extra={
-          <Input
-            placeholder="搜索关键词"
-            prefix={<SearchOutlined />}
-            style={{ width: 240 }}
-            allowClear
-            onChange={(e) => setSearchText(e.target.value)}
-          />
-        }
-      >
-        <Table
-          columns={keywordColumns}
-          dataSource={filteredKeywords}
-          rowKey="keyword"
-          pagination={{ pageSize: 10 }}
-          size="middle"
-          scroll={{ x: 1200 }}
-        />
+      {featureChartOption && <Card title="SERP 特征分布" style={{ marginBottom: 24 }}><ReactEChartsCore echarts={echarts} option={featureChartOption} style={{ height: 300 }} /></Card>}
+      <Card title="关键词 SERP 特征"
+        extra={<Input.Search placeholder="添加关键词" value={newKeyword} onChange={(e) => setNewKeyword(e.target.value)} onSearch={handleAddKeyword} enterButton={<PlusOutlined />} style={{ width: 250 }} />}>
+        <Table columns={featureColumns} dataSource={features} rowKey="keyword" scroll={{ x: 900 }} pagination={{ pageSize: 10 }} size="middle" />
       </Card>
-
-      <Modal
-        title="添加 SERP 关键词"
-        open={addModalVisible}
-        onCancel={() => setAddModalVisible(false)}
-        footer={null}
-        destroyOnClose
-      >
-        <Form form={addForm} layout="vertical" onFinish={handleAddSubmit}>
-          <Form.Item
-            name="keyword"
-            label="关键词"
-            rules={[{ required: true, message: '请输入关键词' }]}
-          >
-            <Input placeholder="请输入关键词" />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" loading={submitting}>
-                提交
-              </Button>
-              <Button onClick={() => setAddModalVisible(false)}>取消</Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
     </div>
   );
 };
