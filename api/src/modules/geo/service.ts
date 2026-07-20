@@ -332,9 +332,9 @@ export async function getGeoGrid(
     gridPoints,
     averageRank: gridPoints.length > 0
       ? Math.round((gridPoints.reduce((a, b) => a + b.rank, 0) / gridPoints.length) * 100) / 100
-      : averageRank,
-    bestRank: gridPoints.length > 0 ? Math.min(...gridPoints.map((p) => p.rank)) : bestRank,
-    worstRank: gridPoints.length > 0 ? Math.max(...gridPoints.map((p) => p.rank)) : worstRank,
+      : null,
+    bestRank: gridPoints.length > 0 ? Math.min(...gridPoints.map((p) => p.rank)) : null,
+    worstRank: gridPoints.length > 0 ? Math.max(...gridPoints.map((p) => p.rank)) : null,
   };
 }
 
