@@ -40,7 +40,7 @@ router.post('/projects/:id/serp-features', async (req, res) => {
 router.get('/projects/:id/serp-features/:featureKey', async (req, res) => {
   try {
     const { id: projectId, featureKey } = req.params;
-    const { keyword, locationCode = 2840, languageCode = 'en' } = req.query as Record<string, string>;
+    const { keyword, locationCode = '2840', languageCode = 'en' } = req.query as Record<string, string>;
 
     if (!keyword) {
       return badRequest(res, 'Keyword query parameter is required');
