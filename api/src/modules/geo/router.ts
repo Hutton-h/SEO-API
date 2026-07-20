@@ -7,8 +7,12 @@ import {
   getLocalRankings,
   getGMBProfile,
   compareLocations,
+  getReviews,
+  getGeoGrid,
+  getCategories,
   localRankingsQuerySchema,
   compareLocationsSchema,
+  geoGridQuerySchema,
 } from './controller.js';
 
 const router = Router();
@@ -42,6 +46,9 @@ router.post('/projects/:id/local-seo/rankings', async (req, res) => {
 });
 router.get('/projects/:id/local-seo/gmb-profile', getGMBProfile);
 router.post('/projects/:id/local-seo/compare', validate({ body: compareLocationsSchema }), compareLocations);
+router.get('/projects/:id/local-seo/reviews', getReviews);
+router.get('/projects/:id/local-seo/geo-grid', validate({ query: geoGridQuerySchema }), getGeoGrid);
+router.get('/projects/:id/local-seo/categories', getCategories);
 router.post('/projects/:id/local-seo/refresh', async (req, res) => {
   try {
     const { id: projectId } = req.params;

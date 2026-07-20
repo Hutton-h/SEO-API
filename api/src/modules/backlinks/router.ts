@@ -6,7 +6,14 @@ import { db } from '../../shared/database.js';
 import {
   getBacklinks,
   refreshBacklinks,
+  getReferringDomains,
+  getAnchorText,
+  getNewBacklinks,
+  getLostBacklinks,
+  getLinkGap,
   backlinksQuerySchema,
+  referringDomainsQuerySchema,
+  linkGapBodySchema,
 } from './controller.js';
 
 const router = Router();
@@ -15,6 +22,11 @@ router.use(authMiddleware);
 
 router.get('/projects/:id/backlinks', validate({ query: backlinksQuerySchema }), getBacklinks);
 router.post('/projects/:id/backlinks/refresh', refreshBacklinks);
+router.get('/projects/:id/backlinks/referring-domains', validate({ query: referringDomainsQuerySchema }), getReferringDomains);
+router.get('/projects/:id/backlinks/anchor-text', getAnchorText);
+router.get('/projects/:id/backlinks/new', getNewBacklinks);
+router.get('/projects/:id/backlinks/lost', getLostBacklinks);
+router.post('/projects/:id/backlinks/link-gap', validate({ body: linkGapBodySchema }), getLinkGap);
 
 // ---- 外链统计 (真实数据库查询) ----
 router.get('/projects/:id/backlinks/stats', async (req, res) => {

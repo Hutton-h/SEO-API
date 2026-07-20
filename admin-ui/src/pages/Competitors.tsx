@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Row, Col, Table, Button, Modal, Form, Input, Tag, Typography, Space, Popconfirm,
-  Tabs, message, Tooltip,
+  Tabs, message, Tooltip, Select,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, TeamOutlined,
   AimOutlined, SwapOutlined, PercentageOutlined, GlobalOutlined,
-  TrophyOutlined, RiseOutlined,
+  TrophyOutlined, RiseOutlined, EyeOutlined, BarChartOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
@@ -15,6 +15,8 @@ import type { RadarSeriesData, ComparisonDataPoint, DistributionDataPoint } from
 import { useStore } from '@/store';
 import { useProject } from '@/hooks';
 import { competitorAPI } from '@/services/competitor';
+import { domainOverviewAPI } from '@/services/domainOverview';
+import { topPagesAPI } from '@/services/topPages';
 
 const { Text } = Typography;
 
@@ -88,6 +90,18 @@ const Competitors: React.FC = () => {
   const [form] = Form.useForm();
   const [adding, setAdding] = useState(false);
 
+  // ---- New Tab State ----
+
+  // Domain Overview
+  const [selectedDomain, setSelectedDomain] = useState<string>('');
+  const [domainOverview, setDomainOverview] = useState<any>(null);
+  const [domainOverviewLoading, setDomainOverviewLoading] = useState(false);
+
+  // Top Pages
+  const [topPagesDomain, setTopPagesDomain] = useState<string>('');
+  const [topPages, setTopPages] = useState<any[]>([]);
+  const [topPagesLoading, setTopPagesLoading] = useState(false);
+
   const loadData = useCallback(async () => {
     if (!projectId) return;
 
@@ -123,17 +137,63 @@ const Competitors: React.FC = () => {
       }
 
       setData({ competitors, keywordOverlap });
+
+      // Auto-select first competitor domain for new tabs
+      if (competitors.length > 0 && !selectedDomain) {
+        setSelectedDomain(competitors[0].domain);
+        setTopPagesDomain(competitors[0].domain);
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || err?.message || '加载竞品数据失败';
       setError(msg);
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, selectedDomain]);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [projectId]);
+
+  // ---- New Data Loading Functions ----
+
+  const loadDomainOverview = useCallback(async (domain: string) => {
+    if (!domain) return;
+    setDomainOverviewLoading(true);
+    try {
+      const res: any = await domainOverviewAPI.getDomainOverview({ domain });
+      const d = res?.data ?? res;
+      setDomainOverview(d);
+    } catch {
+      setDomainOverview(null);
+    } finally {
+      setDomainOverviewLoading(false);
+    }
+  }, []);
+
+  const loadTopPages = useCallback(async (domain: string) => {
+    if (!domain) return;
+    setTopPagesLoading(true);
+    try {
+      const res: any = await topPagesAPI.getTopPages({ domain });
+      const list = Array.isArray(res) ? res : (res?.data || res?.pages || []);
+      setTopPages(list);
+    } catch {
+      setTopPages([]);
+    } finally {
+      setTopPagesLoading(false);
+    }
+  }, []);
+
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+    if (key === 'domain-overview' && selectedDomain) {
+      loadDomainOverview(selectedDomain);
+    }
+    if (key === 'top-pages' && topPagesDomain) {
+      loadTopPages(topPagesDomain);
+    }
+  };
 
   // Add competitor
   const handleAddCompetitor = async () => {
@@ -251,7 +311,6 @@ const Competitors: React.FC = () => {
     const maxTraffic = Math.max(...competitors.map((c) => c.traffic || 0), 1000);
     const maxBacklinks = Math.max(...competitors.map((c) => c.backlinks || 0), 100);
 
-    // Normalize to 0-100 scale
     radarData.push(
       ...competitors.map((c: any) => ({
         name: c.name || c.domain,
@@ -281,6 +340,20 @@ const Competitors: React.FC = () => {
     { name: '独占关键词', value: keywordOverlap.filter((k) => k.ourRank > 0 &&
       k.compARank === 0 && k.compBRank === 0 && k.compCRank === 0 && k.compDRank === 0).length, color: '#1677ff' },
     { name: '共享关键词', value: overlapKeywords.length, color: '#52c41a' },
+  ].filter((d) => d.value > 0);
+
+  // Build overlap comparison chart data (for visual comparison)
+  const overlapComparisonData: ComparisonDataPoint[] = [
+    { name: '独占关键词', value: keywordOverlap.filter((k) => k.ourRank > 0 &&
+      k.compARank === 0 && k.compBRank === 0 && k.compCRank === 0 && k.compDRank === 0).length, color: '#1677ff' },
+    ...competitors.slice(0, 4).map((c: CompetitorItem, i: number) => {
+      const dataKey = `comp${String.fromCharCode(65 + i)}Rank`;
+      return {
+        name: c.name || c.domain,
+        value: keywordOverlap.filter((k: any) => (k[dataKey] || 0) > 0).length,
+        color: undefined,
+      };
+    }),
   ].filter((d) => d.value > 0);
 
   // Competitor table columns
@@ -342,6 +415,30 @@ const Competitors: React.FC = () => {
         render: (r: number) => <Tag>{r > 0 ? r : '-'}</Tag>,
       };
     }),
+  ];
+
+  // Domain Overview - Top Keywords columns
+  const domainTopKeywordsColumns = [
+    { title: '关键词', dataIndex: 'keyword', key: 'keyword', ellipsis: true,
+      render: (kw: string) => <Text strong>{kw}</Text> },
+    { title: '排名', dataIndex: 'position', key: 'position', width: 80,
+      render: (pos: number) => <Tag color={getRankColor(pos)}>{pos || '-'}</Tag> },
+    { title: '搜索量', dataIndex: 'searchVolume', key: 'searchVolume', width: 100,
+      render: (v: number) => v ? v.toLocaleString() : '-' },
+    { title: '流量', dataIndex: 'traffic', key: 'traffic', width: 100,
+      render: (v: number) => v ? v.toLocaleString() : '-' },
+  ];
+
+  // Top Pages columns
+  const topPagesColumns = [
+    { title: '页面URL', dataIndex: 'url', key: 'url', ellipsis: true,
+      render: (u: string) => <Text code style={{ fontSize: 11 }}>{u}</Text> },
+    { title: '预估流量', dataIndex: 'estimatedTraffic', key: 'estimatedTraffic', width: 120,
+      render: (v: number) => v ? v.toLocaleString() : '-' },
+    { title: '关键词数', dataIndex: 'keywordCount', key: 'keywordCount', width: 100,
+      render: (v: number) => <Tag>{v ?? 0}</Tag> },
+    { title: 'Top 关键词', dataIndex: 'topKeyword', key: 'topKeyword', width: 180, ellipsis: true,
+      render: (kw: string) => kw ? <Text strong>{kw}</Text> : '-' },
   ];
 
   const tabItems = [
@@ -436,6 +533,18 @@ const Competitors: React.FC = () => {
               </Card>
             </Col>
           </Row>
+
+          {/* NEW: Visual keyword overlap comparison */}
+          {overlapComparisonData.length > 0 && (
+            <Card title={<><BarChartOutlined /> 关键词重叠对比</>} style={{ borderRadius: 8 }}>
+              <ComparisonChart
+                data={overlapComparisonData}
+                height={300}
+                title=""
+                showLabel
+              />
+            </Card>
+          )}
         </>
       ),
     },
@@ -456,6 +565,189 @@ const Competitors: React.FC = () => {
             <EmptyState scene="data" description="暂无流量对比数据" />
           )}
         </Card>
+      ),
+    },
+    // =============================================
+    // NEW TAB: 域名总览
+    // =============================================
+    {
+      key: 'domain-overview',
+      label: <span><GlobalOutlined /> 域名总览</span>,
+      children: (
+        <>
+          {competitors.length === 0 ? (
+            <EmptyState
+              scene="data"
+              title="暂无竞品"
+              description="请先添加竞品域名"
+              action={{ text: '添加竞品', icon: <PlusOutlined />, onClick: () => setModalOpen(true) }}
+            />
+          ) : (
+            <>
+              <Card style={{ marginBottom: 24, borderRadius: 8 }}>
+                <Row gutter={[16, 16]} align="middle">
+                  <Col>
+                    <Text strong style={{ marginRight: 8 }}>选择竞品域名：</Text>
+                  </Col>
+                  <Col xs={24} sm={12}>
+                    <Select
+                      value={selectedDomain || undefined}
+                      onChange={(v) => {
+                        setSelectedDomain(v);
+                        loadDomainOverview(v);
+                      }}
+                      style={{ width: '100%' }}
+                      placeholder="选择竞品域名"
+                      showSearch
+                      optionFilterProp="label"
+                      options={competitors.map((c) => ({
+                        value: c.domain,
+                        label: `${c.name} (${c.domain})`,
+                      }))}
+                    />
+                  </Col>
+                </Row>
+              </Card>
+
+              {domainOverviewLoading ? (
+                <LoadingSkeleton type="page" />
+              ) : domainOverview ? (
+                <>
+                  <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="总关键词"
+                        value={domainOverview.totalKeywords || 0}
+                        icon={<AimOutlined />}
+                        color="#1677ff"
+                      />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="预估流量"
+                        value={(domainOverview.estimatedTraffic || 0).toLocaleString()}
+                        icon={<RiseOutlined />}
+                        color="#52c41a"
+                      />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="Top 3"
+                        value={domainOverview.rankingDistribution?.top3 || 0}
+                        icon={<TrophyOutlined />}
+                        color="#faad14"
+                      />
+                    </Col>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="Top 10"
+                        value={domainOverview.rankingDistribution?.top10 || 0}
+                        icon={<EyeOutlined />}
+                        color="#722ed1"
+                      />
+                    </Col>
+                  </Row>
+
+                  {/* Ranking distribution for domain */}
+                  {domainOverview.rankingDistribution && (
+                    <Card title="排名分布" style={{ marginBottom: 24, borderRadius: 8 }}>
+                      <ComparisonChart
+                        data={[
+                          { name: '1-3位', value: domainOverview.rankingDistribution.top3 || 0, color: '#52c41a' },
+                          { name: '4-10位', value: domainOverview.rankingDistribution.top10 || 0, color: '#1677ff' },
+                          { name: '11-20位', value: domainOverview.rankingDistribution.top20 || 0, color: '#faad14' },
+                          { name: '21-50位', value: domainOverview.rankingDistribution.top50 || 0, color: '#fa8c16' },
+                          { name: '50+', value: domainOverview.rankingDistribution.other || 0, color: '#ff4d4f' },
+                        ]}
+                        height={250}
+                        title=""
+                        showLabel
+                      />
+                    </Card>
+                  )}
+
+                  {/* Top Keywords */}
+                  {domainOverview.topKeywords && domainOverview.topKeywords.length > 0 && (
+                    <Card title="Top 关键词" style={{ borderRadius: 8 }}>
+                      <Table
+                        columns={domainTopKeywordsColumns}
+                        dataSource={domainOverview.topKeywords}
+                        rowKey="keyword"
+                        pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 个关键词` }}
+                        size="middle"
+                      />
+                    </Card>
+                  )}
+                </>
+              ) : (
+                <EmptyState scene="data" title="暂无域名数据" description="选择竞品域名后点击查询" />
+              )}
+            </>
+          )}
+        </>
+      ),
+    },
+    // =============================================
+    // NEW TAB: 流量页面
+    // =============================================
+    {
+      key: 'top-pages',
+      label: <span><EyeOutlined /> 流量页面</span>,
+      children: (
+        <>
+          {competitors.length === 0 ? (
+            <EmptyState
+              scene="data"
+              title="暂无竞品"
+              description="请先添加竞品域名"
+              action={{ text: '添加竞品', icon: <PlusOutlined />, onClick: () => setModalOpen(true) }}
+            />
+          ) : (
+            <>
+              <Card style={{ marginBottom: 24, borderRadius: 8 }}>
+                <Row gutter={[16, 16]} align="middle">
+                  <Col>
+                    <Text strong style={{ marginRight: 8 }}>选择竞品域名：</Text>
+                  </Col>
+                  <Col xs={24} sm={12}>
+                    <Select
+                      value={topPagesDomain || undefined}
+                      onChange={(v) => {
+                        setTopPagesDomain(v);
+                        loadTopPages(v);
+                      }}
+                      style={{ width: '100%' }}
+                      placeholder="选择竞品域名"
+                      showSearch
+                      optionFilterProp="label"
+                      options={competitors.map((c) => ({
+                        value: c.domain,
+                        label: `${c.name} (${c.domain})`,
+                      }))}
+                    />
+                  </Col>
+                </Row>
+              </Card>
+
+              {topPagesLoading ? (
+                <LoadingSkeleton type="page" />
+              ) : topPages.length > 0 ? (
+                <Card title="Top 流量页面" style={{ borderRadius: 8 }}>
+                  <Table
+                    columns={topPagesColumns}
+                    dataSource={topPages}
+                    rowKey="url"
+                    pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 个页面` }}
+                    size="middle"
+                    scroll={{ x: 700 }}
+                  />
+                </Card>
+              ) : (
+                <EmptyState scene="data" title="暂无流量页面数据" description="选择竞品域名后点击查询" />
+              )}
+            </>
+          )}
+        </>
       ),
     },
   ];
@@ -519,7 +811,7 @@ const Competitors: React.FC = () => {
       {/* Tabs */}
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={handleTabChange}
         size="large"
         items={tabItems}
       />

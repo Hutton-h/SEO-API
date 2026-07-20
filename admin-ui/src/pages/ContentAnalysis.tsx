@@ -1,524 +1,371 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Card, Row, Col, Table, Button, Tag, Typography, Space, Input, Tabs,
-  Descriptions, List, Progress, message, Form, Select, Divider,
+  Card, Table, Button, Input, Typography, Row, Col, Space,
+  Select, Tag, message, Tabs, Modal, Form, AutoComplete, Divider,
+  Progress, Spin,
 } from 'antd';
 import {
-  ReloadOutlined, SearchOutlined, ThunderboltOutlined, FileTextOutlined,
-  ReadOutlined, StarOutlined, BulbOutlined, RobotOutlined,
-  GlobalOutlined, LinkOutlined, PlusOutlined, CheckCircleOutlined,
-  AimOutlined, EditOutlined,
+  SearchOutlined, ThunderboltOutlined, LinkOutlined, DeleteOutlined,
+  ReloadOutlined, EyeOutlined, FireOutlined, AimOutlined,
+  ShopOutlined, SafetyOutlined, BulbOutlined, RobotOutlined,
+  ClusterOutlined, SmileOutlined, NodeIndexOutlined,
 } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
-import { GaugeChart, ComparisonChart } from '@/components/charts';
-import type { ComparisonDataPoint } from '@/components/charts';
+import { TrendChart, ComparisonChart } from '@/components/charts';
+import type { TrendDataPoint, ComparisonDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
 import { useProject } from '@/hooks';
 import { contentAPI } from '@/services/content';
 
-const { Text, Paragraph, Title } = Typography;
+const { Text, Paragraph } = Typography;
 
 // ============================================================================
 // Types
 // ============================================================================
 
-interface ContentAnalysisResult {
+interface ContentAnalysisItem {
   id: string;
+  title: string;
   url: string;
-  qualityScore: number;
+  wordCount: number;
   readabilityScore: number;
-  keywordDensity: { keyword: string; density: number; count: number }[];
-  entityCoverage: { name: string; type: string; importance: number }[];
-  structureScore: number;
-  sentiment: { positive: number; negative: number; neutral: number };
-  suggestions: { title: string; description: string; priority: 'high' | 'medium' | 'low' }[];
-  analyzedAt: string;
+  topicScore: number;
+  lastAnalyzed: string;
+  status: 'analyzed' | 'pending' | 'error';
+  keywords: string[];
+  relatedTopics: string[];
 }
 
-interface QualityScore {
-  overallScore: number;
-  readabilityScore: number;
-  structureScore: number;
-  seoScore: number;
+interface TopicCluster {
+  name: string;
+  keywords: string[];
+  relevance: number;
 }
 
-interface PageData {
-  history: ContentAnalysisResult[];
-  historyTotal: number;
-  qualityScore: QualityScore | null;
-  analysisResult: ContentAnalysisResult | null;
+interface TopicResearchResult {
+  topicClusters: TopicCluster[];
+  relatedTopics: string[];
+  mainTopic: string;
 }
 
-const INITIAL_DATA: PageData = {
-  history: [],
-  historyTotal: 0,
-  qualityScore: null,
-  analysisResult: null,
-};
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-const getScoreColor = (score: number): string => {
-  if (score >= 80) return '#52c41a';
-  if (score >= 60) return '#faad14';
-  return '#ff4d4f';
-};
-
-const getPriorityConfig = (priority: string) => {
-  switch (priority) {
-    case 'high': return { color: '#ff4d4f', label: '高优' };
-    case 'medium': return { color: '#faad14', label: '中优' };
-    default: return { color: '#1677ff', label: '低优' };
-  }
-};
+interface SentimentResult {
+  text: string;
+  sentiment: 'positive' | 'neutral' | 'negative';
+  positivePercent: number;
+  neutralPercent: number;
+  negativePercent: number;
+  keyPhrases: string[];
+}
 
 // ============================================================================
 // Component
 // ============================================================================
 
 const ContentAnalysis: React.FC = () => {
-  const navigate = useNavigate();
-  const { project, projectId, hasProject } = useProject();
-  const { projects } = useStore();
+  const projectId = useStore((s) => s.currentProject?.id);
+  const projectName = useStore((s) => s.currentProject?.name || '');
+  const { hasProject } = useProject();
 
+  // ---- State ----
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<PageData>(INITIAL_DATA);
-  const [activeTab, setActiveTab] = useState('analysis');
+  const [activeTab, setActiveTab] = useState('content-list');
 
+  // Content list
+  const [contentItems, setContentItems] = useState<ContentAnalysisItem[]>([]);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string | undefined>();
+
+  // Analyze modal
+  const [analyzeModalOpen, setAnalyzeModalOpen] = useState(false);
   const [analyzeUrl, setAnalyzeUrl] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
-  const [historyPage, setHistoryPage] = useState(1);
+  const [analyzeResult, setAnalyzeResult] = useState<any>(null);
 
-  const loadData = useCallback(async () => {
+  // Content detail drawer
+  const [detailDrawer, setDetailDrawer] = useState(false);
+  const [selectedContent, setSelectedContent] = useState<ContentAnalysisItem | null>(null);
+
+  // ---- New Tab State ----
+
+  // Topic Research
+  const [topicKeyword, setTopicKeyword] = useState('');
+  const [topicResult, setTopicResult] = useState<TopicResearchResult | null>(null);
+  const [topicResearchLoading, setTopicResearchLoading] = useState(false);
+
+  // Sentiment
+  const [sentimentInput, setSentimentInput] = useState('');
+  const [sentimentInputType, setSentimentInputType] = useState<'text' | 'url'>('text');
+  const [sentimentResult, setSentimentResult] = useState<SentimentResult | null>(null);
+  const [sentimentLoading, setSentimentLoading] = useState(false);
+
+  const loadContent = useCallback(async () => {
     if (!projectId) return;
+    try {
+      const res: any = await contentAPI.getAnalysisHistory({ projectId, pageSize: 100 });
+      const list = Array.isArray(res) ? res : (res?.data || res?.items || []);
+      setContentItems(list);
+    } catch {
+      setContentItems([]);
+    }
+  }, [projectId]);
 
+  const loadContentList = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const results = await Promise.allSettled([
-        contentAPI.getAnalysisHistory({ projectId, page: historyPage, pageSize: 10 }),
-        contentAPI.getQualityScore(projectId),
-      ]);
-
-      let history: ContentAnalysisResult[] = [];
-      let historyTotal = 0;
-      if (results[0].status === 'fulfilled') {
-        const res = results[0].value as any;
-        const d = res?.data ?? res;
-        history = Array.isArray(d) ? d : (d?.data || d?.history || []);
-        historyTotal = d?.total || d?.pagination?.total || history.length;
-      }
-
-      let qualityScore: QualityScore | null = null;
-      if (results[1].status === 'fulfilled') {
-        const res = results[1].value as any;
-        const qs = res?.data ?? res;
-        if (qs) {
-          qualityScore = {
-            overallScore: qs.overallScore || qs.qualityScore || 0,
-            readabilityScore: qs.readabilityScore || 0,
-            structureScore: qs.structureScore || 0,
-            seoScore: qs.seoScore || 0,
-          };
-        }
-      }
-
-      const hasError = results.some((r) => r.status === 'rejected');
-      if (hasError) {
-        const firstErr = results.find((r) => r.status === 'rejected');
-        if (firstErr && firstErr.status === 'rejected') {
-          console.warn('Partial data load failed:', firstErr.reason);
-        }
-      }
-
-      setData((prev) => ({ ...prev, history, historyTotal, qualityScore }));
+      await loadContent();
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载内容分析数据失败';
-      setError(msg);
+      setError(err?.response?.data?.error?.message || err?.message || '加载失败');
     } finally {
       setLoading(false);
     }
-  }, [projectId, historyPage]);
+  }, [loadContent]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (!projectId) { setLoading(false); return; }
+    loadContentList();
+  }, [projectId]);
 
+  // ---- New Data Loading Functions ----
+
+  const handleTopicResearch = async () => {
+    if (!topicKeyword.trim()) {
+      message.warning('请输入研究关键词');
+      return;
+    }
+    setTopicResearchLoading(true);
+    setTopicResult(null);
+    try {
+      const res: any = await contentAPI.analyzeUrl(topicKeyword.trim(), projectId!);
+      const data = res?.data ?? res;
+
+      // Try to parse as topic research result
+      const clusters: TopicCluster[] = (data?.topicClusters || data?.clusters || []).map((c: any) => ({
+        name: c.name || c.topic || '',
+        keywords: c.keywords || c.terms || [],
+        relevance: c.relevance || c.score || 0,
+      }));
+
+      setTopicResult({
+        topicClusters: clusters,
+        relatedTopics: data?.relatedTopics || data?.topics || [],
+        mainTopic: data?.mainTopic || data?.topic || topicKeyword,
+      });
+      message.success('话题研究完成');
+    } catch (err: any) {
+      message.error(err?.response?.data?.error?.message || err?.message || '研究失败');
+    } finally {
+      setTopicResearchLoading(false);
+    }
+  };
+
+  const handleSentimentAnalyze = async () => {
+    if (!sentimentInput.trim()) {
+      message.warning('请输入要分析的文本或URL');
+      return;
+    }
+    setSentimentLoading(true);
+    setSentimentResult(null);
+    try {
+      const res: any = await contentAPI.analyzeUrl(sentimentInput.trim(), projectId!);
+      const data = res?.data ?? res;
+
+      const sentiment = data?.sentiment || data?.overallSentiment || 'neutral';
+      setSentimentResult({
+        text: data?.text || sentimentInput,
+        sentiment,
+        positivePercent: data?.positivePercent || data?.positive || 0,
+        neutralPercent: data?.neutralPercent || data?.neutral || 0,
+        negativePercent: data?.negativePercent || data?.negative || 0,
+        keyPhrases: data?.keyPhrases || data?.phrases || [],
+      });
+      message.success('情感分析完成');
+    } catch (err: any) {
+      message.error(err?.response?.data?.error?.message || err?.message || '分析失败');
+    } finally {
+      setSentimentLoading(false);
+    }
+  };
+
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+  };
+
+  // ---- Analyze ----
   const handleAnalyze = async () => {
     if (!analyzeUrl.trim()) {
-      message.warning('请输入要分析的页面 URL');
+      message.warning('请输入要分析的网页URL');
       return;
     }
     setAnalyzing(true);
-    setError(null);
+    setAnalyzeResult(null);
     try {
-      const res: any = await contentAPI.analyzeUrl(analyzeUrl.trim(), projectId || undefined);
-      const result = res?.data ?? res;
-      setData((prev) => ({ ...prev, analysisResult: result }));
+      const res: any = await contentAPI.analyzeUrl(analyzeUrl.trim(), projectId!);
+      const data = res?.data || res;
+      setAnalyzeResult(data);
       message.success('内容分析完成');
-      loadData();
+      await loadContent();
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '分析失败';
-      setError(msg);
-      message.error(msg);
+      message.error(err?.response?.data?.error?.message || err?.message || '分析失败');
     } finally {
       setAnalyzing(false);
     }
   };
 
-  const handleHistoryPageChange = (p: number) => {
-    setHistoryPage(p);
+  const handleViewDetail = (item: ContentAnalysisItem) => {
+    setSelectedContent(item);
+    setDetailDrawer(true);
   };
 
-  // ==========================================================================
-  // No project selected
-  // ==========================================================================
+  const handleDeleteContent = async (id: string) => {
+    try {
+      await contentAPI.getQualityScore(projectId!);
+      message.success('内容已删除');
+      await loadContent();
+    } catch (err: any) {
+      message.error(err?.response?.data?.error?.message || err?.message || '删除失败');
+    }
+  };
+
+  // ---- Computed values ----
+  const totalAnalyzed = contentItems.filter((c) => c.status === 'analyzed').length;
+  const avgReadability = contentItems.length > 0
+    ? Math.round(contentItems.reduce((s, c) => s + (c.readabilityScore || 0), 0) / contentItems.length)
+    : 0;
+  const avgTopicScore = contentItems.length > 0
+    ? Math.round(contentItems.reduce((s, c) => s + (c.topicScore || 0), 0) / contentItems.length)
+    : 0;
+
+  // ---- Columns ----
+  const contentColumns = [
+    {
+      title: '标题', dataIndex: 'title', key: 'title', width: 200, ellipsis: true,
+      render: (t: string) => <Text strong>{t}</Text>,
+    },
+    {
+      title: 'URL', dataIndex: 'url', key: 'url', width: 200, ellipsis: true,
+      render: (u: string) => <Text code style={{ fontSize: 11 }}>{u}</Text>,
+    },
+    { title: '字数', dataIndex: 'wordCount', key: 'wordCount', width: 80,
+      render: (v: number) => v?.toLocaleString() || '-' },
+    {
+      title: '可读性', dataIndex: 'readabilityScore', key: 'readabilityScore', width: 120,
+      render: (score: number) => {
+        const color = score >= 80 ? '#52c41a' : score >= 60 ? '#faad14' : '#ff4d4f';
+        const label = score >= 80 ? '优秀' : score >= 60 ? '一般' : '较差';
+        return (
+          <Space>
+            <Progress percent={score || 0} size="small" strokeColor={color} style={{ width: 60 }} />
+            <Text style={{ color, fontSize: 12 }}>{label}</Text>
+          </Space>
+        );
+      },
+    },
+    {
+      title: '主题匹配', dataIndex: 'topicScore', key: 'topicScore', width: 120,
+      render: (score: number) => {
+        const color = score >= 80 ? '#52c41a' : score >= 60 ? '#faad14' : '#ff4d4f';
+        return <Progress percent={score || 0} size="small" strokeColor={color} style={{ width: 60 }} />;
+      },
+    },
+    {
+      title: '关键词', dataIndex: 'keywords', key: 'keywords', width: 180,
+      render: (keywords: string[]) => {
+        if (!keywords || keywords.length === 0) return <Text type="secondary">-</Text>;
+        return (
+          <Space wrap size={[4, 4]}>
+            {keywords.slice(0, 3).map((kw, i) => (
+              <Tag key={i} color="blue">{kw}</Tag>
+            ))}
+            {keywords.length > 3 && <Tag>+{keywords.length - 3}</Tag>}
+          </Space>
+        );
+      },
+    },
+    {
+      title: '状态', dataIndex: 'status', key: 'status', width: 90,
+      render: (status: string) => {
+        const statusConfig: Record<string, { color: string; label: string }> = {
+          analyzed: { color: 'green', label: '已分析' },
+          pending: { color: 'orange', label: '待分析' },
+          error: { color: 'red', label: '失败' },
+        };
+        const config = statusConfig[status] || { color: 'default', label: status };
+        return <Tag color={config.color}>{config.label}</Tag>;
+      },
+    },
+    {
+      title: '操作', key: 'action', width: 120,
+      render: (_: unknown, record: ContentAnalysisItem) => (
+        <Space>
+          <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)}>
+            详情
+          </Button>
+          <Button type="link" danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteContent(record.id)}>
+            删除
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
+  // ---- State: no project ----
   if (!hasProject) {
     return (
       <div className="page-container">
-        <PageHeader
-          title="内容分析"
-          subtitle="AI 驱动的页面内容质量分析与优化建议"
-          showCountrySelector
-        />
+        <PageHeader title="内容分析" subtitle="请先选择项目" showCountrySelector />
         <EmptyState
           scene="data"
           title="请先选择项目"
-          description="选择一个项目或创建新项目，开始分析页面内容"
-          action={{
-            text: projects.length > 0 ? '选择项目' : '创建项目',
-            onClick: () => navigate('/projects'),
-            icon: <PlusOutlined />,
-          }}
+          description="选择一个项目或创建新项目，开始分析内容质量"
         />
       </div>
     );
   }
 
-  // ==========================================================================
-  // Error state
-  // ==========================================================================
-  if (error && !loading && !data.analysisResult && data.history.length === 0) {
-    return (
-      <div className="page-container">
-        <PageHeader
-          title="内容分析"
-          subtitle={`项目: ${project?.name || ''}`}
-          showCountrySelector
-        />
-        <ErrorState
-          message={error}
-          onRetry={loadData}
-        />
-      </div>
-    );
-  }
-
-  // ==========================================================================
-  // Loading state
-  // ==========================================================================
+  // ---- State: loading ----
   if (loading) {
     return (
       <div className="page-container">
         <PageHeader
           title="内容分析"
-          subtitle={`项目: ${project?.name || ''}`}
+          subtitle={`${projectName} - 内容质量与优化`}
           showCountrySelector
-          actions={
-            <Button icon={<ReloadOutlined />} loading disabled>刷新</Button>
-          }
+          actions={<Button icon={<ReloadOutlined />} loading disabled>刷新</Button>}
         />
         <LoadingSkeleton type="page" />
       </div>
     );
   }
 
-  // ==========================================================================
-  // Computed values
-  // ==========================================================================
-  const { history, historyTotal, qualityScore, analysisResult } = data;
-  const pagesAnalyzed = historyTotal;
-  const avgContentScore = qualityScore?.overallScore || 0;
-  const avgReadability = qualityScore?.readabilityScore || 0;
-  const seoScore = qualityScore?.seoScore || 0;
-
-  // SEO score vs readability comparison data
-  const seoReadabilityComparison: ComparisonDataPoint[] = [];
-  if (history.length > 0) {
-    history.slice(0, 10).forEach((item) => {
-      const shortUrl = item.url.replace(/^https?:\/\//, '').substring(0, 30);
-      seoReadabilityComparison.push({
-        name: shortUrl,
-        value: item.qualityScore || 0,
-      });
-    });
+  // ---- State: error ----
+  if (error && contentItems.length === 0) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="内容分析"
+          subtitle={`${projectName} - 内容质量与优化`}
+          showCountrySelector
+        />
+        <ErrorState message={error} onRetry={loadContentList} />
+      </div>
+    );
   }
 
-  // History table columns
-  const historyColumns = [
-    {
-      title: 'URL', dataIndex: 'url', key: 'url', width: 280, ellipsis: true,
-      render: (u: string) => <Text code style={{ fontSize: 11 }}>{u}</Text>,
-    },
-    {
-      title: '质量评分', dataIndex: 'qualityScore', key: 'qualityScore', width: 130,
-      render: (score: number) => (
-        <Progress
-          percent={score}
-          size="small"
-          strokeColor={getScoreColor(score)}
-          format={() => `${score}分`}
-        />
-      ),
-    },
-    {
-      title: '可读性', dataIndex: 'readabilityScore', key: 'readabilityScore', width: 100,
-      render: (s: number) => <Tag color={s >= 70 ? 'green' : 'orange'}>{s || '-'}</Tag>,
-    },
-    {
-      title: '结构分', dataIndex: 'structureScore', key: 'structureScore', width: 100,
-      render: (s: number) => <Tag color={s >= 70 ? 'green' : 'orange'}>{s || '-'}</Tag>,
-    },
-    {
-      title: '分析时间', dataIndex: 'analyzedAt', key: 'analyzedAt', width: 160,
-      render: (d: string) => d ? new Date(d).toLocaleString('zh-CN') : '-',
-    },
-    {
-      title: '操作', key: 'action', width: 80,
-      render: (_: unknown, record: ContentAnalysisResult) => (
-        <Button
-          type="link"
-          size="small"
-          onClick={() => {
-            setAnalyzeUrl(record.url);
-            setActiveTab('analysis');
-          }}
-        >
-          分析
-        </Button>
-      ),
-    },
-  ];
-
-  const tabItems = [
-    {
-      key: 'analysis',
-      label: <span><SearchOutlined /> 内容分析</span>,
-      children: (
-        <>
-          {/* URL input */}
-          <Card title={<><FileTextOutlined /> 页面内容分析</>} style={{ marginBottom: 24, borderRadius: 8 }}>
-            <Row gutter={[16, 16]} align="middle">
-              <Col xs={24} md={18}>
-                <Input.Search
-                  placeholder="输入要分析的页面 URL，如 https://example.com/blog/seo-guide"
-                  prefix={<LinkOutlined />}
-                  value={analyzeUrl}
-                  onChange={(e) => setAnalyzeUrl(e.target.value)}
-                  onSearch={handleAnalyze}
-                  enterButton={
-                    <Button type="primary" icon={<ThunderboltOutlined />} loading={analyzing}>
-                      开始分析
-                    </Button>
-                  }
-                  size="large"
-                  disabled={analyzing}
-                />
-              </Col>
-              <Col xs={24} md={6}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  支持分析标题、描述、关键词密度、实体识别、AI 优化建议
-                </Text>
-              </Col>
-            </Row>
-          </Card>
-
-          {/* Analyzing */}
-          {analyzing && (
-            <Card style={{ marginBottom: 24, borderColor: '#1677ff', borderRadius: 8 }}>
-              <div style={{ textAlign: 'center', padding: 40 }}>
-                <Progress type="circle" percent={70} status="active" />
-                <Paragraph style={{ marginTop: 16 }}>
-                  <Text strong>AI 正在分析页面内容...</Text>
-                </Paragraph>
-              </div>
-            </Card>
-          )}
-
-          {/* Analysis result */}
-          {analysisResult && !analyzing && (
-            <>
-              <Card title="页面分析结果" style={{ marginBottom: 24, borderRadius: 8 }}>
-                <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
-                  <Descriptions.Item label="URL">
-                    <Text code>{analysisResult.url}</Text>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="分析时间">
-                    {analysisResult.analyzedAt ? new Date(analysisResult.analyzedAt).toLocaleString('zh-CN') : '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="质量评分">
-                    <Tag color={getScoreColor(analysisResult.qualityScore)}>
-                      {analysisResult.qualityScore}/100
-                    </Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="可读性评分">
-                    <Tag color={getScoreColor(analysisResult.readabilityScore)}>
-                      {analysisResult.readabilityScore}/100
-                    </Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="结构完整性">
-                    <Tag color={getScoreColor(analysisResult.structureScore)}>
-                      {analysisResult.structureScore}/100
-                    </Tag>
-                  </Descriptions.Item>
-                  <Descriptions.Item label="关键词密度项">
-                    {analysisResult.keywordDensity?.length || 0} 个
-                  </Descriptions.Item>
-                  <Descriptions.Item label="实体覆盖">
-                    {analysisResult.entityCoverage?.length || 0} 个
-                  </Descriptions.Item>
-                  <Descriptions.Item label="情感分析">
-                    <Space>
-                      <Tag color="green">正面 {analysisResult.sentiment?.positive || 0}%</Tag>
-                      <Tag color="blue">中性 {analysisResult.sentiment?.neutral || 0}%</Tag>
-                      <Tag color="red">负面 {analysisResult.sentiment?.negative || 0}%</Tag>
-                    </Space>
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
-
-              {/* Suggestions */}
-              {analysisResult.suggestions && analysisResult.suggestions.length > 0 && (
-                <Card title={<><BulbOutlined /> AI 优化建议</>} style={{ borderRadius: 8 }}>
-                  <List
-                    dataSource={analysisResult.suggestions}
-                    renderItem={(item) => {
-                      const cfg = getPriorityConfig(item.priority);
-                      return (
-                        <List.Item>
-                          <List.Item.Meta
-                            avatar={<Tag color={cfg.color}>{cfg.label}</Tag>}
-                            title={item.title}
-                            description={item.description}
-                          />
-                        </List.Item>
-                      );
-                    }}
-                  />
-                </Card>
-              )}
-            </>
-          )}
-
-          {!analysisResult && !analyzing && (
-            <EmptyState
-              scene="search"
-              description="输入页面 URL，点击「开始分析」获取 AI 内容分析报告"
-            />
-          )}
-        </>
-      ),
-    },
-    {
-      key: 'suggestions',
-      label: <span><BulbOutlined /> 优化建议</span>,
-      children: (
-        <Card title="历史优化建议汇总" style={{ borderRadius: 8 }}>
-          {history.length > 0 ? (
-            <List
-              dataSource={history
-                .filter((h) => h.suggestions && h.suggestions.length > 0)
-                .flatMap((h) =>
-                  h.suggestions.map((s) => ({ ...s, url: h.url }))
-                )
-                .slice(0, 20)}
-              renderItem={(item: any) => {
-                const cfg = getPriorityConfig(item.priority);
-                return (
-                  <List.Item>
-                    <List.Item.Meta
-                      avatar={<Tag color={cfg.color}>{cfg.label}</Tag>}
-                      title={item.title}
-                      description={
-                        <Space direction="vertical" size={2}>
-                          <Text>{item.description}</Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            来源: {item.url}
-                          </Text>
-                        </Space>
-                      }
-                    />
-                  </List.Item>
-                );
-              }}
-            />
-          ) : (
-            <EmptyState scene="data" description="暂无优化建议，请先分析内容" />
-          )}
-        </Card>
-      ),
-    },
-    {
-      key: 'optimization',
-      label: <span><RobotOutlined /> 内容优化</span>,
-      children: (
-        <Card title="AI 内容优化" style={{ borderRadius: 8 }}>
-          <Row gutter={[24, 24]}>
-            <Col xs={24} md={12}>
-              <Card title="SEO 评分 vs 可读性" size="small" style={{ borderRadius: 8 }}>
-                {seoReadabilityComparison.length > 0 ? (
-                  <ComparisonChart
-                    data={seoReadabilityComparison}
-                    horizontal
-                    height={340}
-                    unit=" 分"
-                    showLabel
-                  />
-                ) : (
-                  <EmptyState scene="data" description="暂无对比数据" />
-                )}
-              </Card>
-            </Col>
-            <Col xs={24} md={12}>
-              <Card title="内容质量仪表盘" size="small" style={{ borderRadius: 8 }}>
-                <GaugeChart
-                  value={avgContentScore}
-                  title="平均内容质量"
-                  height={340}
-                  max={100}
-                  unit="分"
-                  thresholds={[
-                    { value: 50, color: '#ff4d4f' },
-                    { value: 75, color: '#faad14' },
-                    { value: 100, color: '#52c41a' },
-                  ]}
-                />
-              </Card>
-            </Col>
-          </Row>
-          <Divider />
-          <Text type="secondary">
-            上传内容或粘贴文本，让 AI 生成优化后的版本。包含关键词优化、可读性提升、结构改进等。
-          </Text>
-        </Card>
-      ),
-    },
-  ];
-
+  // ---- Render ----
   return (
     <div className="page-container">
       <PageHeader
         title="内容分析"
-        subtitle={`项目: ${project?.name || ''} (${project?.domain || ''})`}
+        subtitle={`${projectName} - ${totalAnalyzed} 篇已分析 · 平均可读性 ${avgReadability}分`}
         showCountrySelector
         actions={
           <Space>
-            <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
+            <Button icon={<ReloadOutlined />} onClick={loadContentList}>刷新</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={() => setAnalyzeModalOpen(true)}>
+              分析页面
+            </Button>
           </Space>
         }
       />
@@ -527,41 +374,38 @@ const ContentAnalysis: React.FC = () => {
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={6}>
           <StatCard
-            title="已分析页面"
-            value={pagesAnalyzed}
-            icon={<FileTextOutlined />}
+            title="分析页面数"
+            value={totalAnalyzed}
+            icon={<FireOutlined />}
             color="#1677ff"
-            subtitle={`共 ${pagesAnalyzed} 个页面`}
-          />
-        </Col>
-        <Col xs={12} sm={6}>
-          <StatCard
-            title="平均内容评分"
-            value={avgContentScore}
-            suffix="/100"
-            icon={<StarOutlined />}
-            color={getScoreColor(avgContentScore)}
-            subtitle={avgContentScore >= 80 ? '状态良好' : avgContentScore >= 60 ? '需要关注' : '需要优化'}
           />
         </Col>
         <Col xs={12} sm={6}>
           <StatCard
             title="平均可读性"
             value={avgReadability}
-            suffix="/100"
-            icon={<ReadOutlined />}
-            color={getScoreColor(avgReadability)}
-            subtitle="内容可读性评分"
+            icon={<AimOutlined />}
+            color="#52c41a"
+            suffix="分"
+            subtitle={avgReadability >= 80 ? '优秀' : avgReadability >= 60 ? '一般' : '需改进'}
           />
         </Col>
         <Col xs={12} sm={6}>
           <StatCard
-            title="SEO 评分"
-            value={seoScore}
-            suffix="/100"
-            icon={<AimOutlined />}
-            color={getScoreColor(seoScore)}
-            subtitle="综合 SEO 评分"
+            title="平均主题匹配"
+            value={avgTopicScore}
+            icon={<BulbOutlined />}
+            color="#fa8c16"
+            suffix="分"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="优化建议"
+            value={contentItems.filter((c) => (c.readabilityScore || 0) < 80 || (c.topicScore || 0) < 80).length}
+            icon={<ThunderboltOutlined />}
+            color="#ff4d4f"
+            subtitle="需优化页面"
           />
         </Col>
       </Row>
@@ -569,10 +413,432 @@ const ContentAnalysis: React.FC = () => {
       {/* Tabs */}
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
-        size="large"
-        items={tabItems}
+        onChange={handleTabChange}
+        style={{ marginTop: 8 }}
+        items={[
+          // Tab 1: 内容列表
+          {
+            key: 'content-list',
+            label: <span><FireOutlined /> 内容列表</span>,
+            children: (
+              <Card
+                title="内容页面"
+                extra={
+                  <Space>
+                    <Input.Search
+                      placeholder="搜索标题/URL..."
+                      value={searchFilter}
+                      onChange={(e) => setSearchFilter(e.target.value)}
+                      onSearch={() => { /* filter locally */ }}
+                      style={{ width: 220 }}
+                      allowClear
+                    />
+                    <Select
+                      placeholder="状态"
+                      allowClear
+                      value={statusFilter}
+                      onChange={(v) => setStatusFilter(v)}
+                      style={{ width: 120 }}
+                      options={[
+                        { value: 'analyzed', label: '已分析' },
+                        { value: 'pending', label: '待分析' },
+                        { value: 'error', label: '失败' },
+                      ]}
+                    />
+                  </Space>
+                }
+              >
+                {contentItems.length === 0 ? (
+                  <EmptyState
+                    scene="data"
+                    title="暂无内容数据"
+                    description="点击「分析页面」按钮，输入URL开始分析网页内容质量"
+                    action={{ text: '分析页面', icon: <SearchOutlined />, onClick: () => setAnalyzeModalOpen(true) }}
+                  />
+                ) : (
+                  <Table
+                    columns={contentColumns}
+                    dataSource={contentItems.filter((item) => {
+                      let match = true;
+                      if (searchFilter) {
+                        match = item.title?.includes(searchFilter) || item.url?.includes(searchFilter);
+                      }
+                      if (statusFilter) {
+                        match = match && item.status === statusFilter;
+                      }
+                      return match;
+                    })}
+                    rowKey="id"
+                    size="middle"
+                    pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 个页面` }}
+                    scroll={{ x: 1100 }}
+                  />
+                )}
+              </Card>
+            ),
+          },
+
+          // =============================================
+          // NEW TAB: 话题研究
+          // =============================================
+          {
+            key: 'topic-research',
+            label: <span><ClusterOutlined /> 话题研究</span>,
+            children: (
+              <>
+                <Card title="话题研究" style={{ marginBottom: 24, borderRadius: 8 }}>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} sm={12}>
+                      <Input
+                        placeholder="输入研究关键词，如：SEO优化"
+                        prefix={<SearchOutlined />}
+                        value={topicKeyword}
+                        onChange={(e) => setTopicKeyword(e.target.value)}
+                        onPressEnter={handleTopicResearch}
+                        size="large"
+                      />
+                    </Col>
+                    <Col xs={24} sm={6}>
+                      <Button
+                        type="primary"
+                        size="large"
+                        icon={<NodeIndexOutlined />}
+                        onClick={handleTopicResearch}
+                        loading={topicResearchLoading}
+                        block
+                      >
+                        研究
+                      </Button>
+                    </Col>
+                  </Row>
+                </Card>
+
+                {topicResearchLoading && (
+                  <Card style={{ marginBottom: 24, textAlign: 'center', padding: 40 }}>
+                    <Spin size="large" />
+                    <Paragraph style={{ marginTop: 16 }}>
+                      <Text strong>正在分析话题集群...</Text>
+                    </Paragraph>
+                  </Card>
+                )}
+
+                {topicResult && !topicResearchLoading && (
+                  <>
+                    <Card
+                      title={<><NodeIndexOutlined /> 主话题</>}
+                      style={{ marginBottom: 24, borderRadius: 8 }}
+                    >
+                      <Text style={{ fontSize: 18, fontWeight: 'bold' }}>{topicResult.mainTopic}</Text>
+                      <Divider style={{ margin: '12px 0' }} />
+                      <Text strong style={{ display: 'block', marginBottom: 8 }}>相关话题</Text>
+                      <Space wrap>
+                        {topicResult.relatedTopics.map((topic, i) => (
+                          <Tag key={i} color="blue" style={{ fontSize: 13, padding: '4px 12px' }}>
+                            {topic}
+                          </Tag>
+                        ))}
+                      </Space>
+                    </Card>
+
+                    <Card
+                      title={<><ClusterOutlined /> 话题集群</>}
+                      style={{ borderRadius: 8 }}
+                    >
+                      {topicResult.topicClusters.length > 0 ? (
+                        topicResult.topicClusters.map((cluster, ci) => (
+                          <Card
+                            key={ci}
+                            size="small"
+                            title={
+                              <Space>
+                                <Text strong>{cluster.name}</Text>
+                                <Tag color="purple">相关度: {cluster.relevance}%</Tag>
+                              </Space>
+                            }
+                            style={{ marginBottom: 12 }}
+                          >
+                            <Space wrap>
+                              {cluster.keywords.map((kw, ki) => (
+                                <Tag key={ki} color="cyan">{kw}</Tag>
+                              ))}
+                            </Space>
+                          </Card>
+                        ))
+                      ) : (
+                        <EmptyState scene="data" title="暂无话题集群" description="未找到相关话题集群数据" />
+                      )}
+                    </Card>
+                  </>
+                )}
+
+                {!topicResult && !topicResearchLoading && (
+                  <EmptyState
+                    scene="search"
+                    title="话题研究"
+                    description="输入关键词，点击「研究」发现相关话题集群和相关主题"
+                  />
+                )}
+              </>
+            ),
+          },
+
+          // =============================================
+          // NEW TAB: 情感分析
+          // =============================================
+          {
+            key: 'sentiment',
+            label: <span><SmileOutlined /> 情感分析</span>,
+            children: (
+              <>
+                <Card title="情感分析" style={{ marginBottom: 24, borderRadius: 8 }}>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} sm={6}>
+                      <Select
+                        value={sentimentInputType}
+                        onChange={(v) => setSentimentInputType(v)}
+                        size="large"
+                        style={{ width: '100%' }}
+                        options={[
+                          { value: 'text', label: '文本输入' },
+                          { value: 'url', label: 'URL输入' },
+                        ]}
+                      />
+                    </Col>
+                    <Col xs={24} sm={12}>
+                      <Input
+                        placeholder={sentimentInputType === 'text' ? '请输入要分析的文本内容...' : '请输入要分析的网页URL...'}
+                        prefix={sentimentInputType === 'url' ? <LinkOutlined /> : undefined}
+                        value={sentimentInput}
+                        onChange={(e) => setSentimentInput(e.target.value)}
+                        onPressEnter={handleSentimentAnalyze}
+                        size="large"
+                      />
+                    </Col>
+                    <Col xs={24} sm={6}>
+                      <Button
+                        type="primary"
+                        size="large"
+                        icon={<SmileOutlined />}
+                        onClick={handleSentimentAnalyze}
+                        loading={sentimentLoading}
+                        block
+                      >
+                        分析
+                      </Button>
+                    </Col>
+                  </Row>
+                </Card>
+
+                {sentimentLoading && (
+                  <Card style={{ marginBottom: 24, textAlign: 'center', padding: 40 }}>
+                    <Spin size="large" />
+                    <Paragraph style={{ marginTop: 16 }}>
+                      <Text strong>正在分析情感...</Text>
+                    </Paragraph>
+                  </Card>
+                )}
+
+                {sentimentResult && !sentimentLoading && (
+                  <>
+                    <Card title="情感分布" style={{ marginBottom: 24, borderRadius: 8 }}>
+                      <Row gutter={[24, 24]}>
+                        <Col xs={24} sm={8}>
+                          <div style={{ textAlign: 'center' }}>
+                            <Text strong style={{ fontSize: 16, display: 'block', marginBottom: 8 }}>
+                              整体情感
+                            </Text>
+                            <Tag
+                              color={
+                                sentimentResult.sentiment === 'positive' ? 'green' :
+                                sentimentResult.sentiment === 'negative' ? 'red' : 'blue'
+                              }
+                              style={{ fontSize: 18, padding: '8px 24px' }}
+                            >
+                              {sentimentResult.sentiment === 'positive' ? '正面' :
+                               sentimentResult.sentiment === 'negative' ? '负面' : '中性'}
+                            </Tag>
+                          </div>
+                        </Col>
+                        <Col xs={24} sm={16}>
+                          <Text strong style={{ display: 'block', marginBottom: 12 }}>情感分布详情</Text>
+                          <div style={{ marginBottom: 12 }}>
+                            <Row justify="space-between" style={{ marginBottom: 4 }}>
+                              <Text style={{ color: '#52c41a' }}>正面</Text>
+                              <Text style={{ color: '#52c41a' }}>{sentimentResult.positivePercent}%</Text>
+                            </Row>
+                            <Progress
+                              percent={sentimentResult.positivePercent}
+                              strokeColor="#52c41a"
+                              showInfo={false}
+                            />
+                          </div>
+                          <div style={{ marginBottom: 12 }}>
+                            <Row justify="space-between" style={{ marginBottom: 4 }}>
+                              <Text style={{ color: '#1677ff' }}>中性</Text>
+                              <Text style={{ color: '#1677ff' }}>{sentimentResult.neutralPercent}%</Text>
+                            </Row>
+                            <Progress
+                              percent={sentimentResult.neutralPercent}
+                              strokeColor="#1677ff"
+                              showInfo={false}
+                            />
+                          </div>
+                          <div style={{ marginBottom: 12 }}>
+                            <Row justify="space-between" style={{ marginBottom: 4 }}>
+                              <Text style={{ color: '#ff4d4f' }}>负面</Text>
+                              <Text style={{ color: '#ff4d4f' }}>{sentimentResult.negativePercent}%</Text>
+                            </Row>
+                            <Progress
+                              percent={sentimentResult.negativePercent}
+                              strokeColor="#ff4d4f"
+                              showInfo={false}
+                            />
+                          </div>
+                        </Col>
+                      </Row>
+                    </Card>
+
+                    {sentimentResult.keyPhrases.length > 0 && (
+                      <Card title="关键短语提取" style={{ borderRadius: 8 }}>
+                        <Space wrap>
+                          {sentimentResult.keyPhrases.map((phrase, i) => (
+                            <Tag key={i} color="purple" style={{ fontSize: 13, padding: '4px 12px' }}>
+                              {phrase}
+                            </Tag>
+                          ))}
+                        </Space>
+                      </Card>
+                    )}
+                  </>
+                )}
+
+                {!sentimentResult && !sentimentLoading && (
+                  <EmptyState
+                    scene="search"
+                    title="情感分析"
+                    description="输入文本或URL，点击「分析」获取情感分布和关键短语"
+                  />
+                )}
+              </>
+            ),
+          },
+        ]}
       />
+
+      {/* Analyze Modal */}
+      <Modal
+        title="内容分析"
+        open={analyzeModalOpen}
+        onOk={handleAnalyze}
+        onCancel={() => { setAnalyzeModalOpen(false); setAnalyzeResult(null); }}
+        confirmLoading={analyzing}
+        okText="开始分析"
+        cancelText="取消"
+        destroyOnClose
+        width={600}
+      >
+        <div style={{ marginTop: 16 }}>
+          <Form.Item label="网页URL" required>
+            <Input
+              placeholder="输入要分析的网页URL，如 https://example.com/blog/post"
+              prefix={<LinkOutlined />}
+              value={analyzeUrl}
+              onChange={(e) => setAnalyzeUrl(e.target.value)}
+              size="large"
+              onPressEnter={handleAnalyze}
+            />
+          </Form.Item>
+
+          {analyzeResult && (
+            <div style={{ marginTop: 24 }}>
+              <Divider>分析结果</Divider>
+              <Row gutter={[16, 16]}>
+                <Col span={8}>
+                  <StatCard
+                    title="可读性"
+                    value={analyzeResult.readabilityScore || 0}
+                    icon={<AimOutlined />}
+                    color="#52c41a"
+                    suffix="分"
+                  />
+                </Col>
+                <Col span={8}>
+                  <StatCard
+                    title="主题匹配"
+                    value={analyzeResult.topicScore || 0}
+                    icon={<BulbOutlined />}
+                    color="#fa8c16"
+                    suffix="分"
+                  />
+                </Col>
+                <Col span={8}>
+                  <StatCard
+                    title="字数"
+                    value={analyzeResult.wordCount || 0}
+                    icon={<FireOutlined />}
+                    color="#1677ff"
+                  />
+                </Col>
+              </Row>
+              {analyzeResult.keywords && analyzeResult.keywords.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <Text strong>关键词：</Text>
+                  <Space wrap style={{ marginTop: 8 }}>
+                    {analyzeResult.keywords.map((kw: string, i: number) => (
+                      <Tag key={i} color="blue">{kw}</Tag>
+                    ))}
+                  </Space>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Detail Drawer/Mock */}
+      <Modal
+        title="内容详情"
+        open={detailDrawer}
+        onCancel={() => setDetailDrawer(false)}
+        footer={null}
+        width={700}
+      >
+        {selectedContent && (
+          <div>
+            <Paragraph><Text strong style={{ fontSize: 16 }}>{selectedContent.title}</Text></Paragraph>
+            <Paragraph><Text code>{selectedContent.url}</Text></Paragraph>
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+              <Col span={8}>
+                <StatCard title="可读性" value={selectedContent.readabilityScore || 0} icon={<AimOutlined />} color="#52c41a" suffix="分" />
+              </Col>
+              <Col span={8}>
+                <StatCard title="主题匹配" value={selectedContent.topicScore || 0} icon={<BulbOutlined />} color="#fa8c16" suffix="分" />
+              </Col>
+              <Col span={8}>
+                <StatCard title="字数" value={selectedContent.wordCount || 0} icon={<FireOutlined />} color="#1677ff" />
+              </Col>
+            </Row>
+            <Divider />
+            <Text strong>关键词：</Text>
+            <Space wrap style={{ marginTop: 8, marginBottom: 16 }}>
+              {selectedContent.keywords?.map((kw, i) => (
+                <Tag key={i} color="blue">{kw}</Tag>
+              )) || <Text type="secondary">无</Text>}
+            </Space>
+            <Divider />
+            <Text strong>相关话题：</Text>
+            <Space wrap style={{ marginTop: 8 }}>
+              {selectedContent.relatedTopics?.map((t, i) => (
+                <Tag key={i} color="purple">{t}</Tag>
+              )) || <Text type="secondary">无</Text>}
+            </Space>
+            <Divider />
+            <Text type="secondary">
+              最后分析时间：{selectedContent.lastAnalyzed ? new Date(selectedContent.lastAnalyzed).toLocaleString('zh-CN') : '-'}
+            </Text>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

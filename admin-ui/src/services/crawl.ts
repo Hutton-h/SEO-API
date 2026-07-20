@@ -67,6 +67,41 @@ export interface AuditTask {
   };
 }
 
+export interface SeoScoreCategory {
+  score: number;
+  issues: number;
+}
+
+export interface SeoScore {
+  overall: number;
+  categories: {
+    title: SeoScoreCategory;
+    meta: SeoScoreCategory;
+    headings: SeoScoreCategory;
+    content: SeoScoreCategory;
+    links: SeoScoreCategory;
+    images: SeoScoreCategory;
+    performance: SeoScoreCategory;
+    mobile: SeoScoreCategory;
+  };
+  criticalIssues: number;
+  warningIssues: number;
+  infoIssues: number;
+}
+
+export interface InternalLinkItem {
+  pageUrl: string;
+  internalLinksCount: number;
+  linksTo: string[];
+}
+
+export interface ImageAnalysisItem {
+  pageUrl: string;
+  totalImages: number;
+  missingAlt: number;
+  issues: string[];
+}
+
 export const crawlAPI = {
   // 触发爬虫
   startCrawl: (projectId: string, config?: Partial<CrawlConfig>) =>
@@ -95,4 +130,24 @@ export const crawlAPI = {
   // 获取审计任务状态
   getAuditStatus: (projectId: string, taskId: string) =>
     apiGet<AuditTask>(`/v1/projects/${projectId}/audit/status/${taskId}`),
+
+  // 获取 SEO 评分
+  getSeoScore: (projectId: string) =>
+    apiGet<SeoScore>(`/v1/projects/${projectId}/crawl/seo-score`),
+
+  // 获取内链分析
+  getInternalLinks: (projectId: string, pageId?: string) =>
+    apiGet<InternalLinkItem[]>(`/v1/projects/${projectId}/crawl/internal-links`, pageId ? { pageId } : undefined),
+
+  // 获取外链分析
+  getExternalLinks: (projectId: string, pageId?: string) =>
+    apiGet<InternalLinkItem[]>(`/v1/projects/${projectId}/crawl/external-links`, pageId ? { pageId } : undefined),
+
+  // 获取图片分析
+  getImageAnalysis: (projectId: string) =>
+    apiGet<ImageAnalysisItem[]>(`/v1/projects/${projectId}/crawl/images`),
+
+  // 获取结构化数据
+  getStructuredData: (projectId: string) =>
+    apiGet<{ pages: Array<{ url: string; hasSchema: boolean; schemaTypes: string[] }>; typeDistribution: Record<string, number>; issues: unknown[] }>(`/v1/projects/${projectId}/crawl/structured-data`),
 };

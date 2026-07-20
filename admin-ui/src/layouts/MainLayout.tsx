@@ -12,6 +12,7 @@ import {
   GlobalOutlined, ApartmentOutlined, ReadOutlined, VerifiedOutlined,
   SwapOutlined, ApiOutlined, PieChartOutlined, SafetyCertificateOutlined,
   FundOutlined, PlusOutlined, SunOutlined, MoonOutlined, SearchOutlined,
+  LineChartOutlined, ThunderboltOutlined,
 } from '@ant-design/icons';
 import { useStore } from '@/store';
 import { CountrySelector } from '@/components/common';
@@ -118,25 +119,37 @@ const MainLayout: React.FC = () => {
 
   // 菜单配置
   const menuItems: MenuProps['items'] = [
-    { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
-    { key: '/projects', icon: <ProjectOutlined />, label: '项目管理' },
-    { type: 'divider' },
-    { key: '/keywords', icon: <KeyOutlined />, label: '关键词研究' },
-    { key: '/rankings', icon: <RiseOutlined />, label: '排名追踪' },
-    { key: '/crawl-audit', icon: <BugOutlined />, label: '网站审计' },
-    { key: '/competitors', icon: <TeamOutlined />, label: '竞品分析' },
-    { key: '/content-analysis', icon: <ReadOutlined />, label: '内容优化' },
-    { key: '/backlinks', icon: <LinkOutlined />, label: '外链分析' },
-    { type: 'divider' },
     {
-      key: 'seo-group', icon: <PieChartOutlined />, label: '扩展工具',
+      key: 'core-seo-group', icon: <SearchOutlined />, label: '核心 SEO',
+      children: [
+        { key: '/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
+        { key: '/projects', icon: <ProjectOutlined />, label: '项目管理' },
+        { key: '/keywords', icon: <KeyOutlined />, label: '关键词研究' },
+        { key: '/rankings', icon: <RiseOutlined />, label: '排名追踪' },
+        { key: '/crawl-audit', icon: <BugOutlined />, label: '网站审计' },
+        { key: '/competitors', icon: <TeamOutlined />, label: '竞品分析' },
+        { key: '/domain-overview', icon: <GlobalOutlined />, label: '域名总览' },
+        { key: '/keyword-gap', icon: <SwapOutlined />, label: '关键词差距' },
+      ],
+    },
+    {
+      key: 'content-link-group', icon: <LinkOutlined />, label: '链接与内容',
+      children: [
+        { key: '/content-analysis', icon: <ReadOutlined />, label: '内容优化' },
+        { key: '/backlinks', icon: <LinkOutlined />, label: '外链分析' },
+        { key: '/ai-optimization', icon: <RobotOutlined />, label: 'AI 优化' },
+        { key: '/top-pages', icon: <FileTextOutlined />, label: '流量页面' },
+      ],
+    },
+    {
+      key: 'multi-channel-seo-group', icon: <PieChartOutlined />, label: '多渠道 SEO',
       children: [
         { key: '/sem-analysis', icon: <DollarOutlined />, label: 'SEM 分析' },
         { key: '/local-seo', icon: <EnvironmentOutlined />, label: '本地 SEO' },
         { key: '/aso', icon: <AppleOutlined />, label: 'ASO' },
         { key: '/youtube', icon: <YoutubeOutlined />, label: 'YouTube' },
-        { key: '/ai-optimization', icon: <RobotOutlined />, label: 'AI 优化' },
         { key: '/serp-features', icon: <GlobalOutlined />, label: 'SERP 特性' },
+        { key: '/trends', icon: <LineChartOutlined />, label: '趋势分析' },
       ],
     },
     {
@@ -147,6 +160,7 @@ const MainLayout: React.FC = () => {
         { key: '/alerting', icon: <BellOutlined />, label: '告警中心' },
         { key: '/notifications', icon: <SendOutlined />, label: '通知管理' },
         { key: '/schedule', icon: <ScheduleOutlined />, label: '定时任务' },
+        { key: '/competitor-changes', icon: <SwapOutlined />, label: '竞品变更' },
       ],
     },
     {
@@ -154,10 +168,10 @@ const MainLayout: React.FC = () => {
       children: [
         { key: '/roi-analysis', icon: <FundOutlined />, label: 'ROI 分析' },
         { key: '/domain-health', icon: <VerifiedOutlined />, label: '域名健康' },
-        { key: '/competitor-changes', icon: <SwapOutlined />, label: '竞品变更' },
         { key: '/sitemap', icon: <ApartmentOutlined />, label: 'Sitemap' },
         { key: '/api-usage', icon: <ApiOutlined />, label: 'API 用量' },
         { key: '/white-label', icon: <SafetyCertificateOutlined />, label: '白标配置' },
+        { key: '/bulk-domain-analysis', icon: <ThunderboltOutlined />, label: '批量域名分析' },
       ],
     },
   ];
@@ -165,13 +179,21 @@ const MainLayout: React.FC = () => {
   const getOpenKeys = () => {
     const path = '/' + location.pathname.split('/').filter(Boolean)[0];
     const submenuMap: Record<string, string> = {
-      '/sem-analysis': 'seo-group', '/local-seo': 'seo-group', '/aso': 'seo-group',
-      '/youtube': 'seo-group', '/ai-optimization': 'seo-group', '/serp-features': 'seo-group',
-      '/report': 'monitor-group', '/monitor': 'monitor-group', '/alerting': 'monitor-group',
-      '/notifications': 'monitor-group', '/schedule': 'monitor-group',
+      '/dashboard': 'core-seo-group', '/projects': 'core-seo-group',
+      '/keywords': 'core-seo-group', '/rankings': 'core-seo-group',
+      '/crawl-audit': 'core-seo-group', '/competitors': 'core-seo-group',
+      '/domain-overview': 'core-seo-group', '/keyword-gap': 'core-seo-group',
+      '/content-analysis': 'content-link-group', '/backlinks': 'content-link-group',
+      '/ai-optimization': 'content-link-group', '/top-pages': 'content-link-group',
+      '/sem-analysis': 'multi-channel-seo-group', '/local-seo': 'multi-channel-seo-group',
+      '/aso': 'multi-channel-seo-group', '/youtube': 'multi-channel-seo-group',
+      '/serp-features': 'multi-channel-seo-group', '/trends': 'multi-channel-seo-group',
+      '/report': 'monitor-group', '/monitor': 'monitor-group',
+      '/alerting': 'monitor-group', '/notifications': 'monitor-group',
+      '/schedule': 'monitor-group', '/competitor-changes': 'monitor-group',
       '/roi-analysis': 'tools-group', '/domain-health': 'tools-group',
-      '/competitor-changes': 'tools-group', '/sitemap': 'tools-group',
-      '/api-usage': 'tools-group', '/white-label': 'tools-group',
+      '/sitemap': 'tools-group', '/api-usage': 'tools-group',
+      '/white-label': 'tools-group', '/bulk-domain-analysis': 'tools-group',
     };
     return submenuMap[path] ? [submenuMap[path]] : [];
   };
@@ -186,6 +208,9 @@ const MainLayout: React.FC = () => {
     '/notifications': '通知管理', '/serp-features': 'SERP 特性', '/sitemap': 'Sitemap',
     '/content-analysis': '内容优化', '/domain-health': '域名健康',
     '/competitor-changes': '竞品变更', '/api-usage': 'API 用量',
+    '/domain-overview': '域名总览', '/keyword-gap': '关键词差距',
+    '/top-pages': '流量页面', '/trends': '趋势分析',
+    '/bulk-domain-analysis': '批量域名分析',
   };
 
   const currentPage = breadcrumbMap[selectedKey] || '';

@@ -33,6 +33,11 @@ const ContentAnalysis = lazy(() => import('@/pages/ContentAnalysis'));
 const DomainHealth = lazy(() => import('@/pages/DomainHealth'));
 const CompetitorChanges = lazy(() => import('@/pages/CompetitorChanges'));
 const ApiUsage = lazy(() => import('@/pages/ApiUsage'));
+const KeywordGap = lazy(() => import('@/pages/KeywordGap'));
+const DomainOverview = lazy(() => import('@/pages/DomainOverview'));
+const TopPages = lazy(() => import('@/pages/TopPages'));
+const Trends = lazy(() => import('@/pages/Trends'));
+const BulkDomainAnalysis = lazy(() => import('@/pages/BulkDomainAnalysis'));
 
 const PageLoading = () => <LoadingSpinner fullPage />;
 
@@ -99,6 +104,11 @@ const App: React.FC = () => {
               <Route path="domain-health" element={<DomainHealth />} />
               <Route path="competitor-changes" element={<CompetitorChanges />} />
               <Route path="api-usage" element={<ApiUsage />} />
+              <Route path="keyword-gap" element={<KeywordGap />} />
+              <Route path="domain-overview" element={<DomainOverview />} />
+              <Route path="top-pages" element={<TopPages />} />
+              <Route path="trends" element={<Trends />} />
+              <Route path="bulk-domain-analysis" element={<BulkDomainAnalysis />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

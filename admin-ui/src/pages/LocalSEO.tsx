@@ -2,12 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card, Table, Button, Modal, Input, Form, Typography, Row, Col,
   Space, Popconfirm, Tabs, Select, Tag, message, Descriptions, Tooltip,
+  Slider, InputNumber, Progress,
 } from 'antd';
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined,
   EnvironmentOutlined, StarOutlined, PhoneOutlined, SwapOutlined,
   ShopOutlined, GlobalOutlined, RiseOutlined, EyeOutlined,
   AimOutlined, CompassOutlined, TrophyOutlined,
+  CommentOutlined, SearchOutlined,
 } from '@ant-design/icons';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
 import { TrendChart, ComparisonChart } from '@/components/charts';
@@ -15,6 +17,7 @@ import type { TrendDataPoint, ComparisonDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
 import { useProject } from '@/hooks';
 import { localSEOAPI } from '@/services/localSeo';
+import { geoGridAPI } from '@/services/geoGrid';
 const { Text, Paragraph } = Typography;
 
 // Types
@@ -60,6 +63,36 @@ interface ComparisonMetric {
   metric: string;
   value1: string | number;
   value2: string | number;
+}
+
+interface ReviewItem {
+  id: string;
+  author: string;
+  rating: number;
+  text: string;
+  time: string;
+  response: string;
+}
+
+interface ReviewData {
+  businessName: string;
+  overallRating: number;
+  totalReviews: number;
+  ratingDistribution: { stars: number; count: number }[];
+  reviews: ReviewItem[];
+}
+
+interface GeoGridPoint {
+  lat: number;
+  lng: number;
+  rank: number;
+}
+
+interface GeoGridResult {
+  averageRank: number;
+  bestRank: number;
+  worstRank: number;
+  gridPoints: GeoGridPoint[];
 }
 
 const INITIAL_LOCATION: Location = {
@@ -125,6 +158,20 @@ const LocalSEO: React.FC = () => {
   const [compareLoc2, setCompareLoc2] = useState<string>('');
   const [compareResult, setCompareResult] = useState<ComparisonMetric[] | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
+
+  // ---- New Tab State ----
+
+  // Reviews
+  const [reviews, setReviews] = useState<ReviewData | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  // Geo Grid
+  const [geoLat, setGeoLat] = useState<number>(31.2304);
+  const [geoLng, setGeoLng] = useState<number>(121.4737);
+  const [geoRadius, setGeoRadius] = useState<number>(5);
+  const [geoGridSize, setGeoGridSize] = useState<number>(3);
+  const [geoGridResult, setGeoGridResult] = useState<GeoGridResult | null>(null);
+  const [geoGridLoading, setGeoGridLoading] = useState(false);
 
   // ---- Data loading ----
   const loadLocations = useCallback(async () => {
@@ -192,6 +239,77 @@ const LocalSEO: React.FC = () => {
     if (!projectId) { setLoading(false); return; }
     loadAll();
   }, [projectId]);
+
+  // ---- New Data Loading ----
+
+  const loadReviews = useCallback(async () => {
+    if (!projectId) return;
+    setReviewsLoading(true);
+    try {
+      const res: any = await geoGridAPI.getReviews(projectId);
+      const data = res?.data ?? res;
+      if (data) {
+        const ratingDist: { stars: number; count: number }[] = [];
+        if (data.ratingDistribution) {
+          for (let i = 5; i >= 1; i--) {
+            ratingDist.push({
+              stars: i,
+              count: data.ratingDistribution[i] || data.ratingDistribution[`${i}star`] || 0,
+            });
+          }
+        }
+        setReviews({
+          businessName: data.businessName || '',
+          overallRating: data.overallRating || data.rating || 0,
+          totalReviews: data.totalReviews || data.reviewCount || 0,
+          ratingDistribution: ratingDist,
+          reviews: Array.isArray(data.reviews) ? data.reviews : (data.items || []),
+        });
+      } else {
+        setReviews(null);
+      }
+    } catch {
+      setReviews(null);
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, [projectId]);
+
+  const handleGeoGridQuery = async () => {
+    if (!projectId) return;
+    setGeoGridLoading(true);
+    setGeoGridResult(null);
+    try {
+      const res: any = await geoGridAPI.getGeoGrid(projectId, {
+        lat: geoLat,
+        lng: geoLng,
+        radius: geoRadius,
+        gridSize: geoGridSize,
+      });
+      const data = res?.data ?? res;
+      if (data) {
+        const points = Array.isArray(data.gridPoints) ? data.gridPoints : (data.points || []);
+        setGeoGridResult({
+          averageRank: data.averageRank || data.avgRank || 0,
+          bestRank: data.bestRank || 0,
+          worstRank: data.worstRank || 0,
+          gridPoints: points,
+        });
+      } else {
+        setGeoGridResult(null);
+      }
+      message.success('Geo Grid 查询完成');
+    } catch (err: any) {
+      message.error(err?.response?.data?.error?.message || err?.message || '查询失败');
+    } finally {
+      setGeoGridLoading(false);
+    }
+  };
+
+  const handleTabChange = (key: string) => {
+    setActiveTab(key);
+    if (key === 'reviews' && !reviews) loadReviews();
+  };
 
   // ---- Location CRUD ----
   const handleAddLocation = () => {
@@ -330,6 +448,53 @@ const LocalSEO: React.FC = () => {
       ),
       dataIndex: 'value2', key: 'value2',
       render: (v: string | number) => <Text>{v}</Text>,
+    },
+  ];
+
+  const reviewsColumns = [
+    {
+      title: '作者', dataIndex: 'author', key: 'author', width: 120,
+      render: (t: string) => <Text strong>{t}</Text>,
+    },
+    {
+      title: '评分', dataIndex: 'rating', key: 'rating', width: 80,
+      render: (r: number) => {
+        const stars = [];
+        for (let i = 0; i < r; i++) {
+          stars.push(<StarOutlined key={i} style={{ color: '#faad14', fontSize: 12 }} />);
+        }
+        return <Space size={0}>{stars}</Space>;
+      },
+    },
+    {
+      title: '评论内容', dataIndex: 'text', key: 'text', ellipsis: true,
+      render: (t: string) => <Text style={{ fontSize: 12 }}>{t}</Text>,
+    },
+    {
+      title: '时间', dataIndex: 'time', key: 'time', width: 140,
+      render: (t: string) => t ? new Date(t).toLocaleString('zh-CN') : '-',
+    },
+    {
+      title: '回复', dataIndex: 'response', key: 'response', width: 150, ellipsis: true,
+      render: (t: string) => t ? <Text type="secondary" style={{ fontSize: 11 }}>{t}</Text> : <Tag>未回复</Tag>,
+    },
+  ];
+
+  const geoGridColumns = [
+    {
+      title: '纬度', dataIndex: 'lat', key: 'lat', width: 120,
+      render: (v: number) => <Tag color="blue">{v?.toFixed(6)}</Tag>,
+    },
+    {
+      title: '经度', dataIndex: 'lng', key: 'lng', width: 120,
+      render: (v: number) => <Tag color="green">{v?.toFixed(6)}</Tag>,
+    },
+    {
+      title: '排名', dataIndex: 'rank', key: 'rank', width: 100,
+      render: (v: number) => {
+        if (!v) return <Tag>--</Tag>;
+        return <Tag color={getRankColor(v)} style={{ fontWeight: 600 }}>#{v}</Tag>;
+      },
     },
   ];
 
@@ -473,7 +638,7 @@ const LocalSEO: React.FC = () => {
       {/* Tabs */}
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={handleTabChange}
         style={{ marginTop: 8 }}
         items={[
           // Tab 1: 位置管理
@@ -773,7 +938,6 @@ const LocalSEO: React.FC = () => {
                   </Row>
                 </Card>
 
-                {/* Comparison Results */}
                 {compareResult && compareResult.length > 0 && (
                   <>
                     <Card
@@ -816,6 +980,238 @@ const LocalSEO: React.FC = () => {
                     scene="data"
                     title="位置对比"
                     description="选择两个位置，点击「开始对比」查看并排比较数据"
+                  />
+                )}
+              </>
+            ),
+          },
+
+          // =============================================
+          // NEW TAB: 评论分析
+          // =============================================
+          {
+            key: 'reviews',
+            label: <span><CommentOutlined /> 评论分析</span>,
+            children: (
+              <>
+                {reviewsLoading ? (
+                  <LoadingSkeleton type="page" />
+                ) : reviews ? (
+                  <>
+                    {/* Business Info & Rating Card */}
+                    <Card style={{ marginBottom: 24, borderRadius: 8 }}>
+                      <Row gutter={[24, 16]} align="middle">
+                        <Col xs={24} sm={8}>
+                          <div style={{ textAlign: 'center' }}>
+                            <Text strong style={{ fontSize: 16 }}>{reviews.businessName}</Text>
+                            <div style={{ marginTop: 12 }}>
+                              <Text style={{ fontSize: 48, fontWeight: 'bold', color: '#fa8c16' }}>
+                                {reviews.overallRating.toFixed(1)}
+                              </Text>
+                              <Text type="secondary" style={{ fontSize: 16, marginLeft: 4 }}>/ 5</Text>
+                            </div>
+                            <div style={{ marginTop: 4 }}>
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <StarOutlined
+                                  key={star}
+                                  style={{
+                                    color: star <= Math.round(reviews.overallRating) ? '#faad14' : '#d9d9d9',
+                                    fontSize: 18,
+                                    marginRight: 2,
+                                  }}
+                                />
+                              ))}
+                            </div>
+                            <div style={{ marginTop: 8 }}>
+                              <Text type="secondary">共 {reviews.totalReviews} 条评论</Text>
+                            </div>
+                          </div>
+                        </Col>
+                        <Col xs={24} sm={16}>
+                          <Text strong style={{ display: 'block', marginBottom: 12 }}>评分分布</Text>
+                          {reviews.ratingDistribution.length > 0 ? (
+                            reviews.ratingDistribution.map((rd) => {
+                              const maxCount = Math.max(...reviews.ratingDistribution.map((d) => d.count), 1);
+                              const pct = Math.round((rd.count / maxCount) * 100);
+                              return (
+                                <Row key={rd.stars} align="middle" style={{ marginBottom: 6 }}>
+                                  <Col style={{ width: 60 }}>
+                                    <Text style={{ fontSize: 12 }}>
+                                      {rd.stars} <StarOutlined style={{ color: '#faad14', fontSize: 10 }} />
+                                    </Text>
+                                  </Col>
+                                  <Col flex="auto">
+                                    <Progress
+                                      percent={rd.count > 0 ? Math.round((rd.count / reviews.totalReviews) * 100) : 0}
+                                      size="small"
+                                      strokeColor="#faad14"
+                                      showInfo={false}
+                                    />
+                                  </Col>
+                                  <Col style={{ width: 40, textAlign: 'right' }}>
+                                    <Text type="secondary" style={{ fontSize: 11 }}>{rd.count}</Text>
+                                  </Col>
+                                </Row>
+                              );
+                            })
+                          ) : (
+                            <Text type="secondary">暂无评分分布数据</Text>
+                          )}
+                        </Col>
+                      </Row>
+                    </Card>
+
+                    {/* Reviews Table */}
+                    <Card title="评论列表" style={{ borderRadius: 8 }}>
+                      {reviews.reviews.length > 0 ? (
+                        <Table
+                          columns={reviewsColumns}
+                          dataSource={reviews.reviews}
+                          rowKey="id"
+                          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (t) => `共 ${t} 条评论` }}
+                          size="middle"
+                          scroll={{ x: 800 }}
+                        />
+                      ) : (
+                        <EmptyState scene="data" title="暂无评论" description="暂无用户评论数据" />
+                      )}
+                    </Card>
+                  </>
+                ) : (
+                  <EmptyState
+                    scene="data"
+                    title="暂无评论数据"
+                    description="连接 Google Business Profile 后将显示评论分析"
+                  />
+                )}
+              </>
+            ),
+          },
+
+          // =============================================
+          // NEW TAB: Geo Grid 排名
+          // =============================================
+          {
+            key: 'geo-grid',
+            label: <span><CompassOutlined /> Geo Grid 排名</span>,
+            children: (
+              <>
+                <Card title="Geo Grid 查询配置" style={{ marginBottom: 24, borderRadius: 8 }}>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} sm={6}>
+                      <Text strong style={{ display: 'block', marginBottom: 4 }}>中心纬度</Text>
+                      <InputNumber
+                        value={geoLat}
+                        onChange={(v) => setGeoLat(v || 31.2304)}
+                        style={{ width: '100%' }}
+                        step={0.0001}
+                        placeholder="纬度"
+                      />
+                    </Col>
+                    <Col xs={24} sm={6}>
+                      <Text strong style={{ display: 'block', marginBottom: 4 }}>中心经度</Text>
+                      <InputNumber
+                        value={geoLng}
+                        onChange={(v) => setGeoLng(v || 121.4737)}
+                        style={{ width: '100%' }}
+                        step={0.0001}
+                        placeholder="经度"
+                      />
+                    </Col>
+                    <Col xs={24} sm={6}>
+                      <Text strong style={{ display: 'block', marginBottom: 4 }}>半径 (km): {geoRadius}</Text>
+                      <Slider
+                        min={1}
+                        max={50}
+                        value={geoRadius}
+                        onChange={(v) => setGeoRadius(v)}
+                        marks={{ 1: '1', 10: '10', 25: '25', 50: '50' }}
+                      />
+                    </Col>
+                    <Col xs={24} sm={6}>
+                      <Text strong style={{ display: 'block', marginBottom: 4 }}>网格大小</Text>
+                      <Select
+                        value={geoGridSize}
+                        onChange={(v) => setGeoGridSize(v)}
+                        style={{ width: '100%' }}
+                        options={[
+                          { value: 3, label: '3x3' },
+                          { value: 5, label: '5x5' },
+                          { value: 7, label: '7x7' },
+                          { value: 9, label: '9x9' },
+                        ]}
+                      />
+                    </Col>
+                  </Row>
+                  <Row style={{ marginTop: 16 }} justify="center">
+                    <Button
+                      type="primary"
+                      size="large"
+                      icon={<SearchOutlined />}
+                      onClick={handleGeoGridQuery}
+                      loading={geoGridLoading}
+                    >
+                      查询
+                    </Button>
+                  </Row>
+                </Card>
+
+                {geoGridLoading && <LoadingSkeleton type="page" />}
+
+                {geoGridResult && !geoGridLoading && (
+                  <>
+                    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                      <Col xs={12} sm={8}>
+                        <StatCard
+                          title="平均排名"
+                          value={geoGridResult.averageRank || '--'}
+                          icon={<AimOutlined />}
+                          color="#1677ff"
+                          subtitle={geoGridResult.averageRank <= 3 ? '表现优秀' : geoGridResult.averageRank <= 10 ? '良好' : '需优化'}
+                        />
+                      </Col>
+                      <Col xs={12} sm={8}>
+                        <StatCard
+                          title="最佳排名"
+                          value={geoGridResult.bestRank || '--'}
+                          icon={<TrophyOutlined />}
+                          color="#52c41a"
+                        />
+                      </Col>
+                      <Col xs={12} sm={8}>
+                        <StatCard
+                          title="最差排名"
+                          value={geoGridResult.worstRank || '--'}
+                          icon={<CompassOutlined />}
+                          color="#ff4d4f"
+                        />
+                      </Col>
+                    </Row>
+
+                    <Card
+                      title={`网格点排名 (${geoGridResult.gridPoints.length} 个点)`}
+                      style={{ borderRadius: 8 }}
+                    >
+                      {geoGridResult.gridPoints.length > 0 ? (
+                        <Table
+                          columns={geoGridColumns}
+                          dataSource={geoGridResult.gridPoints.map((p, i) => ({ ...p, key: i }))}
+                          pagination={{ pageSize: 25, showSizeChanger: true, showTotal: (t) => `共 ${t} 个网格点` }}
+                          size="middle"
+                          scroll={{ x: 400 }}
+                        />
+                      ) : (
+                        <EmptyState scene="data" title="暂无网格点数据" />
+                      )}
+                    </Card>
+                  </>
+                )}
+
+                {!geoGridResult && !geoGridLoading && (
+                  <EmptyState
+                    scene="search"
+                    title="Geo Grid 排名"
+                    description="配置坐标和半径，点击「查询」查看网格化的本地排名数据"
                   />
                 )}
               </>

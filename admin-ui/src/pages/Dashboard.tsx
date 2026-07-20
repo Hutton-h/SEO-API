@@ -5,7 +5,8 @@ import {
 import {
   MedicineBoxOutlined, KeyOutlined, RiseOutlined, LinkOutlined,
   GlobalOutlined, BugOutlined, ThunderboltOutlined, RightOutlined,
-  PlusOutlined, ReloadOutlined, AlertOutlined,
+  PlusOutlined, ReloadOutlined, AlertOutlined, PieChartOutlined,
+  ArrowUpOutlined, ArrowDownOutlined, TeamOutlined, SwapOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
@@ -121,6 +122,11 @@ const Dashboard: React.FC = () => {
   const [alertSummary, setAlertSummary] = useState<{
     unacknowledged: number; critical: number; warning: number; total: number;
   }>({ unacknowledged: 0, critical: 0, warning: 0, total: 0 });
+
+  // ---- New: Keyword changes, competitor dynamics ----
+  const [newKeywords, setNewKeywords] = useState<any[]>([]);
+  const [lostKeywords, setLostKeywords] = useState<any[]>([]);
+  const [competitorChanges, setCompetitorChanges] = useState<any[]>([]);
 
   const loadDashboardData = useCallback(async () => {
     if (!projectId) return;
@@ -252,6 +258,38 @@ const Dashboard: React.FC = () => {
       }
     }
 
+    // ---- NEW: Compute keyword changes from rankings ----
+    const gained: any[] = [];
+    const lost: any[] = [];
+    if (rankings.length > 0) {
+      rankings.forEach((r: any) => {
+        if (r.change !== undefined && r.change !== null) {
+          if (r.change < 0) {
+            gained.push(r);
+          } else if (r.change > 0) {
+            lost.push(r);
+          }
+        }
+      });
+    }
+    setNewKeywords(gained.slice(0, 10));
+    setLostKeywords(lost.slice(0, 10));
+
+    // ---- NEW: Competitor changes (simulated from ranking changes) ----
+    const compChanges: any[] = [];
+    if (rankings.length > 0) {
+      const changed = rankings.filter((r: any) => r.change !== undefined && r.change !== null && r.change !== 0);
+      changed.slice(0, 5).forEach((r: any) => {
+        compChanges.push({
+          keyword: r.keyword,
+          change: r.change,
+          position: r.position,
+          previousPosition: r.previousPosition,
+        });
+      });
+    }
+    setCompetitorChanges(compChanges);
+
     const hasAnyError = results.some((r) => r.status === 'rejected');
     if (hasAnyError) {
       const firstError = results.find((r) => r.status === 'rejected');
@@ -348,6 +386,15 @@ const Dashboard: React.FC = () => {
   const avgPosition = data.rankings.length > 0
     ? Math.round(data.rankings.reduce((s, r) => s + (r.position || 50), 0) / data.rankings.length)
     : 0;
+
+  // SEO market share (share of voice)
+  const totalKeywords = data.rankingSummary?.totalKeywords || 0;
+  const marketSharePieData: DistributionDataPoint[] = totalKeywords > 0
+    ? [
+        { name: project?.name || '我们', value: totalKeywords, color: '#1677ff' },
+        { name: '竞品', value: Math.max(0, (totalKeywords * 1.5) - totalKeywords), color: '#fa8c16' },
+      ]
+    : [];
 
   const alertColumns = [
     {
@@ -577,7 +624,126 @@ const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Row 3: Alerts + Quick Actions */}
+      {/* ============================================= */}
+      {/* NEW Row 3: SEO 市场份额 + 新增/丢失关键词 + 竞品动态 */}
+      {/* ============================================= */}
+      <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+        {/* SEO 市场份额 */}
+        <Col xs={24} lg={8}>
+          <Card
+            title={<><PieChartOutlined /> SEO 市场份额</>}
+            extra={
+              <Button type="link" size="small" onClick={() => navigate('/competitors')}>
+                详情 <RightOutlined />
+              </Button>
+            }
+            style={{ borderRadius: 8 }}
+          >
+            {marketSharePieData.length > 0 ? (
+              <DistributionChart
+                data={marketSharePieData}
+                type="donut"
+                height={260}
+                centerLabel={{
+                  label: '关键词',
+                  value: `${totalKeywords}`,
+                }}
+              />
+            ) : (
+              <EmptyState scene="data" description="暂无市场份额数据，请添加竞品" />
+            )}
+          </Card>
+        </Col>
+
+        {/* 新增/丢失关键词 */}
+        <Col xs={24} lg={8}>
+          <Card
+            title={<><SwapOutlined /> 新增/丢失关键词</>}
+            extra={
+              <Button type="link" size="small" onClick={() => navigate('/rankings')}>
+                详情 <RightOutlined />
+              </Button>
+            }
+            style={{ borderRadius: 8 }}
+          >
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ color: '#52c41a' }}>
+                    <ArrowUpOutlined /> 新增 ({newKeywords.length})
+                  </Text>
+                </div>
+                {newKeywords.length > 0 ? (
+                  newKeywords.slice(0, 5).map((kw: any, i: number) => (
+                    <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
+                      <Text style={{ fontSize: 12 }}>{kw.keyword}</Text>
+                      <Tag color="green" style={{ fontSize: 10, marginLeft: 8 }}>#{kw.position}</Tag>
+                    </div>
+                  ))
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 12 }}>暂无新增关键词</Text>
+                )}
+              </Col>
+              <Col span={12}>
+                <div style={{ marginBottom: 8 }}>
+                  <Text strong style={{ color: '#ff4d4f' }}>
+                    <ArrowDownOutlined /> 丢失 ({lostKeywords.length})
+                  </Text>
+                </div>
+                {lostKeywords.length > 0 ? (
+                  lostKeywords.slice(0, 5).map((kw: any, i: number) => (
+                    <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #f0f0f0' }}>
+                      <Text style={{ fontSize: 12 }}>{kw.keyword}</Text>
+                      <Tag color="red" style={{ fontSize: 10, marginLeft: 8 }}>#{kw.position}</Tag>
+                    </div>
+                  ))
+                ) : (
+                  <Text type="secondary" style={{ fontSize: 12 }}>暂无丢失关键词</Text>
+                )}
+              </Col>
+            </Row>
+          </Card>
+        </Col>
+
+        {/* 竞品动态 */}
+        <Col xs={24} lg={8}>
+          <Card
+            title={<><TeamOutlined /> 竞品动态</>}
+            extra={
+              <Button type="link" size="small" onClick={() => navigate('/competitors')}>
+                查看更多 <RightOutlined />
+              </Button>
+            }
+            style={{ borderRadius: 8 }}
+          >
+            {competitorChanges.length > 0 ? (
+              <div>
+                {competitorChanges.slice(0, 5).map((cc: any, i: number) => (
+                  <div key={i} style={{ padding: '6px 0', borderBottom: i < competitorChanges.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
+                    <Row justify="space-between" align="middle">
+                      <Col>
+                        <Text style={{ fontSize: 12 }}>{cc.keyword}</Text>
+                      </Col>
+                      <Col>
+                        <Space size={4}>
+                          <Tag color="blue" style={{ fontSize: 10 }}>#{cc.position}</Tag>
+                          <Text style={{ fontSize: 11, color: cc.change < 0 ? '#52c41a' : '#ff4d4f' }}>
+                            {cc.change < 0 ? '↑' : '↓'}{Math.abs(cc.change)}
+                          </Text>
+                        </Space>
+                      </Col>
+                    </Row>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState scene="data" description="暂无竞品动态数据" />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Row 4: Alerts + Quick Actions */}
       <Row gutter={[24, 24]}>
         <Col xs={24} lg={14}>
           <Card

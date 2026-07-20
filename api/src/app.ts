@@ -32,6 +32,16 @@ import contentRouter from './modules/content/router.js';
 import domainHealthRouter from './modules/domain-health/router.js';
 import competitorChangeRouter from './modules/competitor-change/router.js';
 import apiUsageRouter from './modules/api-usage/router.js';
+import bulkAnalysisRouter from './modules/bulk-analysis/router.js';
+
+// New modules (trends & pagespeed)
+import trendsRouter from './modules/trends/router.js';
+import pagespeedRouter from './modules/pagespeed/router.js';
+
+// New SEO modules
+import domainOverviewRouter from './modules/domain-overview/router.js';
+import keywordGapRouter from './modules/keyword-gap/router.js';
+import topPagesRouter from './modules/top-pages/router.js';
 
 // ---------------------------------------------------------------------------
 // Swagger / OpenAPI spec
@@ -141,7 +151,17 @@ export function createApp(): Application {
   app.use('/api/v1', domainHealthRouter);    // frontend: /v1/domain-health/*
   app.use('/api/v1', competitorChangeRouter); // frontend: /v1/competitor-changes/*
   app.use('/api/v1', apiUsageRouter);        // frontend: /v1/api-usage/*
+  app.use('/api/v1', bulkAnalysisRouter);    // frontend: /v1/bulk-analysis/*
   app.use('/api/v1', tasksRouter);
+
+  // Trends & PageSpeed
+  app.use('/api/v1', trendsRouter);          // frontend: /v1/trends/*
+  app.use('/api/v1', pagespeedRouter);       // frontend: /v1/pagespeed/*
+
+  // New SEO modules
+  app.use('/api/v1', domainOverviewRouter);
+  app.use('/api/v1', keywordGapRouter);
+  app.use('/api/v1', topPagesRouter);
 
   // --- 404 handler ---
   app.use((_req: Request, res: Response) => {

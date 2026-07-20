@@ -21,6 +21,25 @@ export const compareLocationsSchema = z.object({
   location2: z.string().min(1),
 });
 
+export const geoGridQuerySchema = z.object({
+  lat: z
+    .string()
+    .min(1, 'Latitude is required')
+    .transform((v) => parseFloat(v)),
+  lng: z
+    .string()
+    .min(1, 'Longitude is required')
+    .transform((v) => parseFloat(v)),
+  radius: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseFloat(v) : undefined)),
+  gridSize: z
+    .string()
+    .optional()
+    .transform((v) => (v ? parseInt(v, 10) : undefined)),
+});
+
 // ---------------------------------------------------------------------------
 // Controller
 // ---------------------------------------------------------------------------
@@ -84,8 +103,57 @@ export async function compareLocations(
   }
 }
 
+export async function getReviews(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+    const result = await geoService.getReviews(projectId);
+    success(res, result);
+  } catch (err) {
+    badRequest(res, 'Failed to fetch GMB reviews', { error: (err as Error).message });
+  }
+}
+
+export async function getGeoGrid(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+    const { lat, lng, radius, gridSize } = req.query as unknown as z.infer<
+      typeof geoGridQuerySchema
+    >;
+
+    const result = await geoService.getGeoGrid(projectId, lat, lng, radius, gridSize);
+    success(res, result);
+  } catch (err) {
+    badRequest(res, 'Failed to fetch geo grid rankings', { error: (err as Error).message });
+  }
+}
+
+export async function getCategories(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+    const result = await geoService.getCategories(projectId);
+    success(res, result);
+  } catch (err) {
+    badRequest(res, 'Failed to fetch competitor categories', { error: (err as Error).message });
+  }
+}
+
 export default {
   getLocalRankings,
   getGMBProfile,
   compareLocations,
+  getReviews,
+  getGeoGrid,
+  getCategories,
 };

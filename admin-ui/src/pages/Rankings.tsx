@@ -1,20 +1,29 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card, Table, Button, Tag, Typography, Row, Col, Space,
-  Input, Select, Popconfirm, message, Tabs, Drawer,
+  Input, Select, Popconfirm, message, Tabs, Drawer, Segmented, Radio,
 } from 'antd';
 import {
   ReloadOutlined, SearchOutlined, RiseOutlined, FallOutlined,
   TrophyOutlined, ThunderboltOutlined, ArrowUpOutlined, ArrowDownOutlined,
   MinusOutlined, AimOutlined, HistoryOutlined, LineChartOutlined,
-  PieChartOutlined, GlobalOutlined, EyeOutlined,
+  PieChartOutlined, GlobalOutlined, EyeOutlined, DesktopOutlined,
+  MobileOutlined,
 } from '@ant-design/icons';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
-import { TrendChart, DistributionChart } from '@/components/charts';
+import { TrendChart, DistributionChart, ComparisonChart } from '@/components/charts';
 import { useStore } from '@/store';
 import { rankingAPI } from '@/services/rankings';
 
 const { Text } = Typography;
+
+// ============================================================================
+// CTR by position (approximate)
+// ============================================================================
+const CTR_BY_POSITION: Record<number, number> = {
+  1: 0.32, 2: 0.18, 3: 0.12, 4: 0.08, 5: 0.06,
+  6: 0.04, 7: 0.03, 8: 0.02, 9: 0.02, 10: 0.01,
+};
 
 // ============================================================================
 // Component
@@ -29,6 +38,9 @@ const Rankings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Device toggle
+  const [deviceType, setDeviceType] = useState<'mobile' | 'desktop'>('desktop');
 
   // Rankings data
   const [rankings, setRankings] = useState<any[]>([]);
@@ -56,6 +68,10 @@ const Rankings: React.FC = () => {
 
   // Distribution
   const [distribution, setDistribution] = useState<any[]>([]);
+  const [rankingDistribution, setRankingDistribution] = useState<any[]>([]);
+
+  // Visibility
+  const [visibilityScore, setVisibilityScore] = useState(0);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -68,6 +84,17 @@ const Rankings: React.FC = () => {
   const visibilityPercent = summary?.totalKeywords > 0
     ? Math.round(((summary?.top50 || 0) / summary.totalKeywords) * 100)
     : 0;
+
+  // ---- Calculate visibility score ----
+  const calculateVisibility = useCallback((rankingsList: any[]) => {
+    const totalCTR = rankingsList.reduce((sum, r) => {
+      const pos = r.position || 0;
+      const ctr = CTR_BY_POSITION[pos] || 0;
+      const sv = r.searchVolume || 0;
+      return sum + ctr * sv;
+    }, 0);
+    setVisibilityScore(Math.round(totalCTR));
+  }, []);
 
   // ---- Data loading ----
   const loadRankings = useCallback(async (p?: number, ps?: number, kw?: string, sb?: string, so?: string, eng?: string) => {
@@ -82,10 +109,11 @@ const Rankings: React.FC = () => {
       const t = res?.total || res?.pagination?.total || 0;
       setRankings(list);
       setTotal(t);
+      calculateVisibility(list);
     } catch {
       // graceful degradation
     }
-  }, [projectId, page, pageSize, engineFilter]);
+  }, [projectId, page, pageSize, engineFilter, calculateVisibility]);
 
   const loadSummary = useCallback(async () => {
     if (!projectId) return;
@@ -101,7 +129,6 @@ const Rankings: React.FC = () => {
   const loadDistribution = useCallback(async () => {
     if (!projectId) return;
     try {
-      // Compute distribution from rankings data
       const posData = rankings.length > 0 ? rankings : [];
       const dist = [
         { name: '1-3位', value: posData.filter((r: any) => r.position <= 3).length, color: '#52c41a' },
@@ -111,8 +138,19 @@ const Rankings: React.FC = () => {
         { name: '50+', value: posData.filter((r: any) => r.position > 50).length, color: '#ff4d4f' },
       ].filter((d) => d.value > 0);
       setDistribution(dist);
+
+      // Ranking distribution for the new card
+      const rankingDist = [
+        { name: '1-3位', value: posData.filter((r: any) => r.position <= 3).length, color: '#52c41a' },
+        { name: '4-10位', value: posData.filter((r: any) => r.position > 3 && r.position <= 10).length, color: '#1677ff' },
+        { name: '11-20位', value: posData.filter((r: any) => r.position > 10 && r.position <= 20).length, color: '#faad14' },
+        { name: '21-50位', value: posData.filter((r: any) => r.position > 20 && r.position <= 50).length, color: '#fa8c16' },
+        { name: '51-100位', value: posData.filter((r: any) => r.position > 50 && r.position <= 100).length, color: '#ff4d4f' },
+      ];
+      setRankingDistribution(rankingDist);
     } catch {
       setDistribution([]);
+      setRankingDistribution([]);
     }
   }, [rankings]);
 
@@ -280,6 +318,65 @@ const Rankings: React.FC = () => {
           </Space>
         }
       />
+
+      {/* ============================================= */}
+      {/* NEW: Device Toggle */}
+      {/* ============================================= */}
+      <Card style={{ marginBottom: 24 }}>
+        <Row align="middle" justify="space-between">
+          <Col>
+            <Text strong style={{ marginRight: 12 }}>设备类型：</Text>
+            <Radio.Group
+              value={deviceType}
+              onChange={(e) => setDeviceType(e.target.value)}
+              optionType="button"
+              buttonStyle="solid"
+            >
+              <Radio.Button value="desktop"><DesktopOutlined /> 桌面端</Radio.Button>
+              <Radio.Button value="mobile"><MobileOutlined /> 移动端</Radio.Button>
+            </Radio.Group>
+          </Col>
+        </Row>
+      </Card>
+
+      {/* ============================================= */}
+      {/* NEW: 搜索可见度 + 排名分布 */}
+      {/* ============================================= */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} md={8}>
+          <Card
+            title={<><EyeOutlined /> 搜索可见度</>}
+            style={{ borderRadius: 8 }}
+          >
+            <div style={{ textAlign: 'center', padding: '16px 0' }}>
+              <Text type="secondary" style={{ fontSize: 14 }}>可见度指数</Text>
+              <div style={{ fontSize: 42, fontWeight: 'bold', color: '#722ed1', margin: '8px 0' }}>
+                {visibilityScore.toLocaleString()}
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                sum(CTR by position x search volume)
+              </Text>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} md={16}>
+          <Card
+            title={<><PieChartOutlined /> 排名分布</>}
+            style={{ borderRadius: 8 }}
+          >
+            {rankingDistribution.length > 0 ? (
+              <ComparisonChart
+                data={rankingDistribution}
+                height={220}
+                title=""
+                showLabel
+              />
+            ) : (
+              <EmptyState scene="data" title="暂无分布数据" />
+            )}
+          </Card>
+        </Col>
+      </Row>
 
       {/* KPI StatCards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>

@@ -331,6 +331,113 @@ export async function getAuditStatus(
   }
 }
 
+// ---------------------------------------------------------------------------
+// SEO Score
+// ---------------------------------------------------------------------------
+
+export async function getSeoScore(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+
+    const score = await crawlService.getSeoScore(projectId);
+    success(res, score, 'SEO score calculated successfully');
+  } catch (err) {
+    console.error('[CrawlController] getSeoScore error:', err);
+    const msg = (err as Error)?.message || String(err);
+    badRequest(res, `Failed to calculate SEO score: ${msg}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Internal Links
+// ---------------------------------------------------------------------------
+
+export async function getInternalLinks(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+    const pageId = req.query['pageId'] as string | undefined;
+
+    const links = await crawlService.getInternalLinks(projectId, pageId);
+    success(res, links, 'Internal links retrieved successfully');
+  } catch (err) {
+    console.error('[CrawlController] getInternalLinks error:', err);
+    const msg = (err as Error)?.message || String(err);
+    badRequest(res, `Failed to get internal links: ${msg}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// External Links
+// ---------------------------------------------------------------------------
+
+export async function getExternalLinks(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+    const pageId = req.query['pageId'] as string | undefined;
+
+    const links = await crawlService.getExternalLinks(projectId, pageId);
+    success(res, links, 'External links retrieved successfully');
+  } catch (err) {
+    console.error('[CrawlController] getExternalLinks error:', err);
+    const msg = (err as Error)?.message || String(err);
+    badRequest(res, `Failed to get external links: ${msg}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Image Analysis
+// ---------------------------------------------------------------------------
+
+export async function getImageAnalysis(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+
+    const analysis = await crawlService.getImageAnalysis(projectId);
+    success(res, analysis, 'Image SEO analysis completed successfully');
+  } catch (err) {
+    console.error('[CrawlController] getImageAnalysis error:', err);
+    const msg = (err as Error)?.message || String(err);
+    badRequest(res, `Failed to get image analysis: ${msg}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Structured Data
+// ---------------------------------------------------------------------------
+
+export async function getStructuredData(
+  req: Request,
+  res: Response,
+  _next: NextFunction,
+): Promise<void> {
+  try {
+    const { id: projectId } = req.params;
+
+    const data = await crawlService.getStructuredData(projectId);
+    success(res, data, 'Structured data analysis completed successfully');
+  } catch (err) {
+    console.error('[CrawlController] getStructuredData error:', err);
+    const msg = (err as Error)?.message || String(err);
+    badRequest(res, `Failed to get structured data: ${msg}`);
+  }
+}
+
 export default {
   triggerCrawl,
   getCrawlStatus,
@@ -338,4 +445,9 @@ export default {
   getIssues,
   triggerAudit,
   getAuditStatus,
+  getSeoScore,
+  getInternalLinks,
+  getExternalLinks,
+  getImageAnalysis,
+  getStructuredData,
 };
