@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../shared/middleware/auth.js';
 import { validate } from '../../shared/middleware/validate.js';
+import { success, badRequest } from '../../shared/utils/response.js';
+import { db } from '../../shared/database.js';
 import {
   triggerCrawl,
   getCrawlStatus,
@@ -21,8 +23,20 @@ router.use(authMiddleware);
 router.post('/projects/:id/crawl', validate({ body: triggerCrawlSchema }), triggerCrawl);
 router.get('/projects/:id/crawl/:taskId', getCrawlStatus);
 router.get('/projects/:id/pages', validate({ query: pagesQuerySchema }), getPages);
-router.get('/projects/:id/pages/:pageId/issues', (req, res) => {
-  res.json({ success: true, data: { pageId: req.params.pageId, issues: [] } });
+router.get('/projects/:id/pages/:pageId/issues', async (req, res) => {
+  try {
+    const { pageId } = req.params;
+
+    const issues = await db('crawl_issues')
+      .where('page_id', pageId)
+      .orderBy('severity', 'asc')
+      .orderBy('created_at', 'desc')
+      .select('*');
+
+    success(res, { pageId, issues });
+  } catch (err) {
+    badRequest(res, 'Failed to fetch page issues', { error: (err as Error).message });
+  }
 });
 router.get('/projects/:id/issues', validate({ query: issuesQuerySchema }), getIssues);
 router.post('/projects/:id/audit', validate({ body: triggerAuditSchema }), triggerAudit);

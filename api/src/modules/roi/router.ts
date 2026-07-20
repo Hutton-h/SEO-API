@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { authMiddleware } from '../../shared/middleware/auth.js';
 import { validate } from '../../shared/middleware/validate.js';
-import { success } from '../../shared/utils/response.js';
+import { success, badRequest } from '../../shared/utils/response.js';
+import { db } from '../../shared/database.js';
+import * as dataforseo from '../../services/dataforseo.js';
 import {
   getROI,
   saveROI,
@@ -15,21 +17,48 @@ const router = Router();
 
 router.use(authMiddleware);
 
-// GET /v1/roi/data (was projects/:id/roi)
+// GET /v1/roi/data
 router.get('/roi/data', validate({ query: roiQuerySchema }), getROI);
-// GET /v1/roi/summary (was projects/:id/roi/trend)
+// GET /v1/roi/summary
 router.get('/roi/summary', validate({ query: trendQuerySchema }), getROITrend);
-// POST /v1/roi/entry (was projects/:id/roi)
+// POST /v1/roi/entry
 router.post('/roi/entry', validate({ body: saveROISchema }), saveROI);
-// GET /v1/roi/api-costs
-router.get('/roi/api-costs', (_req, res, _next) => {
-  success(res, { total: 45.32, breakdown: [
-    { service: 'DataForSEO', cost: 18.50, calls: 1240 },
-    { service: 'ValueSERP', cost: 12.00, calls: 850 },
-    { service: 'Google PageSpeed', cost: 0, calls: 320 },
-    { service: 'WhoisXML', cost: 8.82, calls: 180 },
-    { service: 'OpenAI', cost: 6.00, calls: 95 },
-  ] });
+
+// GET /v1/roi/api-costs (真实调用统计)
+router.get('/roi/api-costs', async (_req, res) => {
+  try {
+    const stats = dataforseo.getCallStats();
+    const projectId = (_req.query.projectId as string) || (_req.body as any)?.projectId;
+
+    // Get API usage from database as well
+    let dbUsage: Array<{ service: string; calls: number; cost: number }> = [];
+    try {
+      const usage = await db('api_usage_logs')
+        .select('service')
+        .count('* as call_count')
+        .groupBy('service')
+        .orderBy('call_count', 'desc');
+
+      dbUsage = (usage as Array<{ service: string; call_count: string }>).map((u) => ({
+        service: u.service,
+        calls: parseInt(u.call_count, 10),
+        cost: 0,
+      }));
+    } catch {
+      // Table may not exist yet
+    }
+
+    const breakdown = [
+      { service: 'DataForSEO', cost: stats.totalCost, calls: stats.totalCalls },
+      ...dbUsage.filter((u) => u.service !== 'DataForSEO'),
+    ];
+
+    const total = breakdown.reduce((sum, b) => sum + b.cost, 0);
+
+    success(res, { total: Math.round(total * 100) / 100, breakdown });
+  } catch (err) {
+    badRequest(res, 'Failed to fetch API costs', { error: (err as Error).message });
+  }
 });
 
 export default router;
