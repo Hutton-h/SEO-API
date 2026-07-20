@@ -6,7 +6,7 @@ import {
 import {
   ReloadOutlined, ThunderboltOutlined, DollarOutlined, RiseOutlined,
   AimOutlined, GlobalOutlined, BulbOutlined, PlusOutlined,
-  SearchOutlined, SwapOutlined,
+  SearchOutlined, SwapOutlined, FundOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
@@ -406,6 +406,94 @@ const SEMAnalysis: React.FC = () => {
               <EmptyState scene="data" description="暂无趋势数据" />
             )}
           </Card>
+
+          {/* CPC 趋势图 */}
+          <Card title="CPC 趋势" style={{ marginBottom: 24, borderRadius: 8 }}>
+            {keywords.length > 0 ? (
+              <TrendChart
+                data={keywords
+                  .filter(k => k.cpc != null)
+                  .slice(0, 20)
+                  .map(k => ({ date: k.keyword || '', value: k.cpc || 0 }))}
+                height={320}
+                showArea
+                smooth
+                unit="$"
+              />
+            ) : (
+              <EmptyState scene="data" description="暂无 CPC 数据" />
+            )}
+          </Card>
+
+          {/* 商业意图评分 */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+            <Col xs={24} sm={12}>
+              <Card title="商业意图评分" style={{ borderRadius: 8 }}>
+                {keywords.length > 0 ? (
+                  <Table
+                    dataSource={[...keywords]
+                      .sort((a, b) => ((b.cpc || 0) * (b.searchVolume || 0)) - ((a.cpc || 0) * (a.searchVolume || 0)))
+                      .slice(0, 10)
+                      .map((k, i) => ({ ...k, key: i }))}
+                    pagination={false}
+                    size="small"
+                    columns={[
+                      { title: '关键词', dataIndex: 'keyword', key: 'keyword', ellipsis: true },
+                      { title: '搜索量', dataIndex: 'searchVolume', key: 'searchVolume', render: (v: number) => v?.toLocaleString() ?? '--' },
+                      { title: 'CPC', dataIndex: 'cpc', key: 'cpc', render: (v: number) => v != null ? `$${v.toFixed(2)}` : '--' },
+                      { title: '商业价值', key: 'value', render: (_: unknown, r: any) => {
+                        const score = (r.cpc || 0) * (r.searchVolume || 0);
+                        const level = score > 1000 ? '高' : score > 100 ? '中' : '低';
+                        const color = score > 1000 ? '#ff4d4f' : score > 100 ? '#fa8c16' : '#52c41a';
+                        return <Tag color={color}>{level} ({score.toFixed(0)})</Tag>;
+                      }},
+                    ]}
+                  />
+                ) : (
+                  <EmptyState scene="data" description="暂无数据" />
+                )}
+              </Card>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Card title="广告竞争概览" style={{ borderRadius: 8 }}>
+                <Row gutter={[16, 16]}>
+                  <Col span={12}>
+                    <StatCard
+                      title="平均 CPC"
+                      value={keywords.length > 0 ? `$${(keywords.reduce((s, k) => s + (k.cpc || 0), 0) / keywords.length).toFixed(2)}` : '--'}
+                      icon={<DollarOutlined />}
+                      color="#fa8c16"
+                    />
+                  </Col>
+                  <Col span={12}>
+                    <StatCard
+                      title="高商业价值词"
+                      value={keywords.filter(k => (k.cpc || 0) * (k.searchVolume || 0) > 1000).length}
+                      icon={<RiseOutlined />}
+                      color="#ff4d4f"
+                    />
+                  </Col>
+                  <Col span={12}>
+                    <StatCard
+                      title="平均竞争度"
+                      value={keywords.length > 0 ? keywords.filter(k => (k.competition || '').toUpperCase() === 'HIGH').length : 0}
+                      suffix=" 个 HIGH"
+                      icon={<FundOutlined />}
+                      color="#1677ff"
+                    />
+                  </Col>
+                  <Col span={12}>
+                    <StatCard
+                      title="总搜索量"
+                      value={keywords.reduce((s, k) => s + (k.searchVolume || 0), 0).toLocaleString()}
+                      icon={<SearchOutlined />}
+                      color="#52c41a"
+                    />
+                  </Col>
+                </Row>
+              </Card>
+            </Col>
+          </Row>
 
           <Card
             title="SEM 关键词列表"

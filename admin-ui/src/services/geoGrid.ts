@@ -37,4 +37,17 @@ export const geoGridAPI = {
 
   getReviews: (projectId: string) =>
     apiGet<ReviewsResult>(`/v1/projects/${projectId}/local-seo/reviews`),
+
+  getCategories: (projectId: string) =>
+    apiGet<{
+      businessName: string;
+      primaryCategory: string;
+      additionalCategories: string[];
+      competitors: Array<{
+        name: string;
+        primaryCategory: string;
+        additionalCategories: string[];
+        categoryOverlap: number;
+      }>;
+    }>(`/v1/projects/${projectId}/local-seo/categories`),
 };

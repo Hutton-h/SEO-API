@@ -9,7 +9,7 @@ import {
   EnvironmentOutlined, StarOutlined, PhoneOutlined, SwapOutlined,
   ShopOutlined, GlobalOutlined, RiseOutlined, EyeOutlined,
   AimOutlined, CompassOutlined, TrophyOutlined,
-  CommentOutlined, SearchOutlined,
+  CommentOutlined, SearchOutlined, TagOutlined,
 } from '@ant-design/icons';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
 import { TrendChart, ComparisonChart } from '@/components/charts';
@@ -18,7 +18,7 @@ import { useStore } from '@/store';
 import { useProject } from '@/hooks';
 import { localSEOAPI } from '@/services/localSeo';
 import { geoGridAPI } from '@/services/geoGrid';
-const { Text, Paragraph } = Typography;
+const { Text, Paragraph, Title } = Typography;
 
 // Types
 interface Location {
@@ -93,6 +93,20 @@ interface GeoGridResult {
   bestRank: number;
   worstRank: number;
   gridPoints: GeoGridPoint[];
+}
+
+interface CompetitorCategory {
+  name: string;
+  primaryCategory: string;
+  additionalCategories: string[];
+  categoryOverlap: number;
+}
+
+interface CategoriesResult {
+  businessName: string;
+  primaryCategory: string;
+  additionalCategories: string[];
+  competitors: CompetitorCategory[];
 }
 
 const INITIAL_LOCATION: Location = {
@@ -172,6 +186,10 @@ const LocalSEO: React.FC = () => {
   const [geoGridSize, setGeoGridSize] = useState<number>(3);
   const [geoGridResult, setGeoGridResult] = useState<GeoGridResult | null>(null);
   const [geoGridLoading, setGeoGridLoading] = useState(false);
+
+  // Categories
+  const [categoriesResult, setCategoriesResult] = useState<CategoriesResult | null>(null);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
 
   // ---- Data loading ----
   const loadLocations = useCallback(async () => {
@@ -303,6 +321,32 @@ const LocalSEO: React.FC = () => {
       message.error(err?.response?.data?.error?.message || err?.message || '查询失败');
     } finally {
       setGeoGridLoading(false);
+    }
+  };
+
+  const handleLoadCategories = async () => {
+    if (!projectId) return;
+    setCategoriesLoading(true);
+    setCategoriesResult(null);
+    try {
+      const res: any = await geoGridAPI.getCategories(projectId);
+      const data = res?.data ?? res;
+      setCategoriesResult({
+        businessName: data?.businessName || data?.name || '',
+        primaryCategory: data?.primaryCategory || '',
+        additionalCategories: data?.additionalCategories || [],
+        competitors: (data?.competitors || []).map((c: any) => ({
+          name: c.name || c.businessName || '',
+          primaryCategory: c.primaryCategory || '',
+          additionalCategories: c.additionalCategories || [],
+          categoryOverlap: c.categoryOverlap || c.overlap || 0,
+        })),
+      });
+      message.success('分类对比加载完成');
+    } catch (err: any) {
+      message.error(err?.response?.data?.error?.message || err?.message || '加载失败');
+    } finally {
+      setCategoriesLoading(false);
     }
   };
 
@@ -1213,6 +1257,75 @@ const LocalSEO: React.FC = () => {
                     title="Geo Grid 排名"
                     description="配置坐标和半径，点击「查询」查看网格化的本地排名数据"
                   />
+                )}
+              </>
+            ),
+          },
+          {
+            key: 'categories',
+            label: <span><TagOutlined /> 分类对比</span>,
+            children: (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <Button type="primary" icon={<ReloadOutlined />} loading={categoriesLoading} onClick={handleLoadCategories}>
+                    加载分类对比
+                  </Button>
+                </div>
+                {categoriesLoading ? (
+                  <LoadingSkeleton type="table" />
+                ) : categoriesResult ? (
+                  <>
+                    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                      <Col xs={24} sm={8}>
+                        <Card size="small" style={{ borderRadius: 8 }}>
+                          <Text type="secondary">我的企业</Text>
+                          <Title level={5} style={{ margin: 0 }}>{categoriesResult.businessName}</Title>
+                        </Card>
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Card size="small" style={{ borderRadius: 8 }}>
+                          <Text type="secondary">主分类</Text>
+                          <div><Tag color="blue">{categoriesResult.primaryCategory || '未设置'}</Tag></div>
+                        </Card>
+                      </Col>
+                      <Col xs={24} sm={8}>
+                        <Card size="small" style={{ borderRadius: 8 }}>
+                          <Text type="secondary">附加分类</Text>
+                          <div>
+                            {categoriesResult.additionalCategories.length > 0
+                              ? categoriesResult.additionalCategories.map((c, i) => <Tag key={i}>{c}</Tag>)
+                              : <Tag>无</Tag>}
+                          </div>
+                        </Card>
+                      </Col>
+                    </Row>
+                    <Card title="竞品分类对比" style={{ borderRadius: 8 }}>
+                      {categoriesResult.competitors.length > 0 ? (
+                        <Table
+                          dataSource={categoriesResult.competitors}
+                          rowKey="name"
+                          pagination={false}
+                          columns={[
+                            { title: '竞品名称', dataIndex: 'name', key: 'name', render: (t: string) => <Text strong>{t}</Text> },
+                            { title: '主分类', dataIndex: 'primaryCategory', key: 'primaryCategory', render: (v: string) => <Tag color="blue">{v || '未设置'}</Tag> },
+                            { title: '附加分类', dataIndex: 'additionalCategories', key: 'additionalCategories', render: (cats: string[]) => (
+                                <Space size={[4, 4]} wrap>{cats.length > 0 ? cats.map((c, i) => <Tag key={i}>{c}</Tag>) : <Tag>无</Tag>}</Space>
+                              ),
+                            },
+                            { title: '分类重叠度', dataIndex: 'categoryOverlap', key: 'categoryOverlap', sorter: (a: CompetitorCategory, b: CompetitorCategory) => (a.categoryOverlap || 0) - (b.categoryOverlap || 0),
+                              render: (v: number) => (
+                                <Space><Progress percent={Math.min(v ?? 0, 100)} size="small" style={{ width: 100 }} /><Text>{v ?? 0}%</Text></Space>
+                              ),
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <EmptyState scene="data" description="暂无竞品分类数据" />
+                      )}
+                    </Card>
+                  </>
+                ) : (
+                  <EmptyState scene="data" title="分类对比" description="点击「加载分类对比」查看您的企业与竞品的 Google 分类设置对比" />
                 )}
               </>
             ),
