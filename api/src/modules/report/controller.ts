@@ -20,7 +20,7 @@ export async function getReport(
       notFound(res, 'Project not found');
       return;
     }
-    badRequest(res, 'Failed to generate report', { error: (err as Error).message });
+    badRequest(res, 'Failed to generate report', (err as Error).message);
   }
 }
 
@@ -39,7 +39,7 @@ export async function getReportPDF(
       message: 'Report generation queued. PDF will be available once the task completes.',
     });
   } catch (err) {
-    badRequest(res, 'Failed to queue report generation', { error: (err as Error).message });
+    badRequest(res, 'Failed to queue report generation', (err as Error).message);
   }
 }
 

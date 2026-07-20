@@ -28,7 +28,7 @@ export async function addCompetitor(
     const record = await competitorService.addCompetitor(projectId, domain, name);
     created(res, record, 'Competitor added successfully');
   } catch (err) {
-    badRequest(res, 'Failed to add competitor', { error: (err as Error).message });
+    badRequest(res, 'Failed to add competitor', (err as Error).message);
   }
 }
 
@@ -42,7 +42,7 @@ export async function getCompetitorOverview(
     const overview = await competitorService.getCompetitorOverview(projectId);
     success(res, overview);
   } catch (err) {
-    badRequest(res, 'Failed to fetch competitor overview', { error: (err as Error).message });
+    badRequest(res, 'Failed to fetch competitor overview', (err as Error).message);
   }
 }
 
@@ -63,7 +63,7 @@ export async function getKeywordOverlap(
     const overlap = await competitorService.getKeywordOverlap(projectId, competitorId);
     success(res, overlap);
   } catch (err) {
-    badRequest(res, 'Failed to fetch keyword overlap', { error: (err as Error).message });
+    badRequest(res, 'Failed to fetch keyword overlap', (err as Error).message);
   }
 }
 

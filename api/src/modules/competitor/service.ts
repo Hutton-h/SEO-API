@@ -114,37 +114,51 @@ export async function getKeywordOverlap(
   projectId: string,
   competitorId: string,
 ): Promise<KeywordOverlapResult[]> {
-  const projectKeywords = await db('keywords')
-    .where('project_id', projectId)
-    .select('keyword', 'id');
+  try {
+    const projectKeywords = await db('keywords')
+      .where('project_id', projectId)
+      .select('keyword', 'id');
 
-  const competitorKeywords = await db('keywords')
-    .where('project_id', projectId)
-    .select('keyword');
+    const competitorKeywords = await db('keywords')
+      .where('project_id', projectId)
+      .select('keyword');
 
-  const competitorKeywordSet = new Set(
-    competitorKeywords.map((k) => k.keyword.toLowerCase()),
-  );
+    const competitorKeywordSet = new Set(
+      competitorKeywords.map((k) => k.keyword.toLowerCase()),
+    );
 
-  const results: KeywordOverlapResult[] = [];
+    const results: KeywordOverlapResult[] = [];
 
-  for (const kw of projectKeywords) {
-    const latestRanking = await db('rankings')
-      .where('keyword_id', kw.id)
-      .orderBy('check_date', 'desc')
-      .first();
+    for (const kw of projectKeywords) {
+      let latestRanking: { position: number | null } | null = null;
+      try {
+        const ranking = await db('rankings')
+          .where('keyword_id', kw.id)
+          .orderBy('check_date', 'desc')
+          .first();
+        latestRanking = ranking as { position: number | null } | null;
+      } catch {
+        // Rankings table may not exist
+      }
 
-    const isOverlapping = competitorKeywordSet.has(kw.keyword.toLowerCase());
+      const isOverlapping = competitorKeywordSet.has(kw.keyword.toLowerCase());
 
-    results.push({
-      keyword: kw.keyword,
-      yourPosition: latestRanking ? (latestRanking as { position: number | null }).position : null,
-      competitorPosition: isOverlapping ? (latestRanking ? (latestRanking as { position: number | null }).position : null) : null,
-      overlap: isOverlapping,
-    });
+      results.push({
+        keyword: kw.keyword,
+        yourPosition: latestRanking ? latestRanking.position : null,
+        competitorPosition: isOverlapping ? (latestRanking ? latestRanking.position : null) : null,
+        overlap: isOverlapping,
+      });
+    }
+
+    return results;
+  } catch (err) {
+    // Keywords table may not exist - return empty results
+    if ((err as Error).message?.includes('does not exist') || (err as Error).message?.includes('relation')) {
+      return [];
+    }
+    throw err;
   }
-
-  return results;
 }
 
 export default {

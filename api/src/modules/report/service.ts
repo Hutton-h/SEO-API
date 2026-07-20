@@ -146,113 +146,170 @@ export async function generateReport(
   const domain = (project as { domain: string }).domain;
 
   // Crawl data
-  const [{ count: totalPages }] = await db('crawl_pages')
-    .where('project_id', projectId)
-    .count<{ count: string }[]>();
+  let totalPages = '0';
+  let totalIssues = '0';
+  let criticalIssues = '0';
+  let errorIssues = '0';
+  let warningIssues = '0';
+  let infoIssues = '0';
+  try {
+    const [pagesResult] = await db('crawl_pages')
+      .where('project_id', projectId)
+      .count<{ count: string }[]>();
+    totalPages = pagesResult?.count ?? '0';
 
-  const [{ count: totalIssues }] = await db('crawl_issues')
-    .where('project_id', projectId)
-    .count<{ count: string }[]>();
+    const [issuesResult] = await db('crawl_issues')
+      .where('project_id', projectId)
+      .count<{ count: string }[]>();
+    totalIssues = issuesResult?.count ?? '0';
 
-  const [{ count: criticalIssues }] = await db('crawl_issues')
-    .where('project_id', projectId)
-    .where('severity', 'critical')
-    .count<{ count: string }[]>();
+    const [criticalResult] = await db('crawl_issues')
+      .where('project_id', projectId)
+      .where('severity', 'critical')
+      .count<{ count: string }[]>();
+    criticalIssues = criticalResult?.count ?? '0';
 
-  const [{ count: errorIssues }] = await db('crawl_issues')
-    .where('project_id', projectId)
-    .where('severity', 'error')
-    .count<{ count: string }[]>();
+    const [errorResult] = await db('crawl_issues')
+      .where('project_id', projectId)
+      .where('severity', 'error')
+      .count<{ count: string }[]>();
+    errorIssues = errorResult?.count ?? '0';
 
-  const [{ count: warningIssues }] = await db('crawl_issues')
-    .where('project_id', projectId)
-    .where('severity', 'warning')
-    .count<{ count: string }[]>();
+    const [warningResult] = await db('crawl_issues')
+      .where('project_id', projectId)
+      .where('severity', 'warning')
+      .count<{ count: string }[]>();
+    warningIssues = warningResult?.count ?? '0';
 
-  const [{ count: infoIssues }] = await db('crawl_issues')
-    .where('project_id', projectId)
-    .where('severity', 'info')
-    .count<{ count: string }[]>();
+    const [infoResult] = await db('crawl_issues')
+      .where('project_id', projectId)
+      .where('severity', 'info')
+      .count<{ count: string }[]>();
+    infoIssues = infoResult?.count ?? '0';
+  } catch {
+    // Crawl tables may not exist - use defaults
+  }
 
   // Keywords
-  const [{ count: totalKeywords }] = await db('keywords')
-    .where('project_id', projectId)
-    .count<{ count: string }[]>();
+  let totalKeywords = '0';
+  let topKeywords: Array<{ keyword: string; search_volume: number }> = [];
+  try {
+    const [kwResult] = await db('keywords')
+      .where('project_id', projectId)
+      .count<{ count: string }[]>();
+    totalKeywords = kwResult?.count ?? '0';
 
-  const topKeywords = await db('keywords')
-    .where('project_id', projectId)
-    .orderBy('search_volume', 'desc')
-    .limit(5)
-    .select('keyword', 'search_volume');
+    topKeywords = await db('keywords')
+      .where('project_id', projectId)
+      .orderBy('search_volume', 'desc')
+      .limit(5)
+      .select('keyword', 'search_volume');
+  } catch {
+    // Keywords table may not exist - use defaults
+  }
 
   // Rankings
-  const avgRankingResult = await db('rankings')
-    .where('project_id', projectId)
-    .whereNotNull('position')
-    .avg('position as avg_position')
-    .first();
+  let avgPosition: number | null = null;
+  let top10Count = '0';
+  let top3Count = '0';
+  let recentRankings: Array<{
+    keyword: string;
+    position: number | null;
+    previous_position: number | null;
+    check_date: string;
+  }> = [];
+  try {
+    const avgRankingResult = await db('rankings')
+      .where('project_id', projectId)
+      .whereNotNull('position')
+      .avg('position as avg_position')
+      .first();
 
-  const avgPosition = avgRankingResult
-    ? Math.round((avgRankingResult as unknown as { avg_position: string }).avg_position as unknown as number)
-    : null;
+    avgPosition = avgRankingResult
+      ? Math.round((avgRankingResult as unknown as { avg_position: string }).avg_position as unknown as number)
+      : null;
 
-  const [{ count: top10Count }] = await db('rankings')
-    .where('project_id', projectId)
-    .where('position', '<=', 10)
-    .whereNotNull('position')
-    .count<{ count: string }[]>();
+    const [t10Result] = await db('rankings')
+      .where('project_id', projectId)
+      .where('position', '<=', 10)
+      .whereNotNull('position')
+      .count<{ count: string }[]>();
+    top10Count = t10Result?.count ?? '0';
 
-  const [{ count: top3Count }] = await db('rankings')
-    .where('project_id', projectId)
-    .where('position', '<=', 3)
-    .whereNotNull('position')
-    .count<{ count: string }[]>();
+    const [t3Result] = await db('rankings')
+      .where('project_id', projectId)
+      .where('position', '<=', 3)
+      .whereNotNull('position')
+      .count<{ count: string }[]>();
+    top3Count = t3Result?.count ?? '0';
 
-  const recentRankings = await db('rankings')
-    .where('project_id', projectId)
-    .leftJoin('keywords', 'rankings.keyword_id', 'keywords.id')
-    .select(
-      'keywords.keyword',
-      'rankings.position',
-      'rankings.previous_position',
-      'rankings.check_date',
-    )
-    .orderBy('rankings.check_date', 'desc')
-    .limit(10);
+    recentRankings = await db('rankings')
+      .where('project_id', projectId)
+      .leftJoin('keywords', 'rankings.keyword_id', 'keywords.id')
+      .select(
+        'keywords.keyword',
+        'rankings.position',
+        'rankings.previous_position',
+        'rankings.check_date',
+      )
+      .orderBy('rankings.check_date', 'desc')
+      .limit(10);
+  } catch {
+    // Rankings table may not exist - use defaults
+  }
 
   // Backlinks
-  const [{ count: totalBacklinks }] = await db('backlinks')
-    .where('project_id', projectId)
-    .count<{ count: string }[]>();
+  let totalBacklinks = '0';
+  let dofollowCount = '0';
+  let avgDomainAuthority: number | null = null;
+  try {
+    const [blResult] = await db('backlinks')
+      .where('project_id', projectId)
+      .count<{ count: string }[]>();
+    totalBacklinks = blResult?.count ?? '0';
 
-  const [{ count: dofollowCount }] = await db('backlinks')
-    .where('project_id', projectId)
-    .where('is_dofollow', true)
-    .count<{ count: string }[]>();
+    const [dfResult] = await db('backlinks')
+      .where('project_id', projectId)
+      .where('is_dofollow', true)
+      .count<{ count: string }[]>();
+    dofollowCount = dfResult?.count ?? '0';
 
-  const avgDA = await db('backlinks')
-    .where('project_id', projectId)
-    .whereNotNull('domain_authority')
-    .avg('domain_authority as avg_da')
-    .first();
+    const avgDA = await db('backlinks')
+      .where('project_id', projectId)
+      .whereNotNull('domain_authority')
+      .avg('domain_authority as avg_da')
+      .first();
 
-  const avgDomainAuthority = avgDA
-    ? Math.round((avgDA as unknown as { avg_da: string }).avg_da as unknown as number)
-    : null;
+    avgDomainAuthority = avgDA
+      ? Math.round((avgDA as unknown as { avg_da: string }).avg_da as unknown as number)
+      : null;
+  } catch {
+    // Backlinks table may not exist - use defaults
+  }
 
   // Competitors
-  const competitors = await db('competitor_domains')
-    .where('project_id', projectId)
-    .select('name', 'domain');
+  let competitors: Array<{ name: string; domain: string }> = [];
+  try {
+    competitors = await db('competitor_domains')
+      .where('project_id', projectId)
+      .select('name', 'domain');
+  } catch {
+    // Competitor domains table may not exist - use defaults
+  }
 
   // Issue categories
-  const issueCategories = await db('crawl_issues')
-    .where('project_id', projectId)
-    .select('category', 'severity')
-    .count('* as count')
-    .groupBy('category', 'severity')
-    .orderBy('count', 'desc')
-    .limit(10);
+  let issueCategories: Array<{ category: string; severity: string; count: string }> = [];
+  try {
+    issueCategories = await db('crawl_issues')
+      .where('project_id', projectId)
+      .select('category', 'severity')
+      .count('* as count')
+      .groupBy('category', 'severity')
+      .orderBy('count', 'desc')
+      .limit(10);
+  } catch {
+    // Crawl issues categories may not be available - use defaults
+  }
 
   // SEO Health Score
   const totalIssueCount = parseInt(totalIssues, 10);

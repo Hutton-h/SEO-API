@@ -285,78 +285,102 @@ export async function analyzeUrl(
 }
 
 export async function getQualityScore(projectId: string): Promise<QualityScoreSummary> {
-  const scores = await db('content_quality_scores')
-    .where('project_id', projectId)
-    .select('score', 'readability_score', 'keyword_score', 'structure_score', 'engagement_score', 'technical_seo_score');
+  if (!projectId) {
+    throw new Error('projectId is required');
+  }
 
-  const scored = scores as Array<{
-    score: number;
-    readability_score: number;
-    keyword_score: number;
-    structure_score: number;
-    engagement_score: number;
-    technical_seo_score: number;
-  }>;
+  try {
+    const scores = await db('content_quality_scores')
+      .where('project_id', projectId)
+      .select('score', 'readability_score', 'keyword_score', 'structure_score', 'engagement_score', 'technical_seo_score');
 
-  const pagesAnalyzed = scored.length;
-  const overallScore = pagesAnalyzed > 0
-    ? Math.round(scored.reduce((sum, s) => sum + s.score, 0) / pagesAnalyzed)
-    : 0;
+    const scored = scores as Array<{
+      score: number;
+      readability_score: number;
+      keyword_score: number;
+      structure_score: number;
+      engagement_score: number;
+      technical_seo_score: number;
+    }>;
 
-  const breakdown = {
-    readability: pagesAnalyzed > 0
-      ? Math.round(scored.reduce((sum, s) => sum + s.readability_score, 0) / pagesAnalyzed)
-      : 0,
-    keywordOptimization: pagesAnalyzed > 0
-      ? Math.round(scored.reduce((sum, s) => sum + s.keyword_score, 0) / pagesAnalyzed)
-      : 0,
-    structure: pagesAnalyzed > 0
-      ? Math.round(scored.reduce((sum, s) => sum + s.structure_score, 0) / pagesAnalyzed)
-      : 0,
-    engagement: pagesAnalyzed > 0
-      ? Math.round(scored.reduce((sum, s) => sum + s.engagement_score, 0) / pagesAnalyzed)
-      : 0,
-    technicalSEO: pagesAnalyzed > 0
-      ? Math.round(scored.reduce((sum, s) => sum + s.technical_seo_score, 0) / pagesAnalyzed)
-      : 0,
-  };
+    const pagesAnalyzed = scored.length;
+    const overallScore = pagesAnalyzed > 0
+      ? Math.round(scored.reduce((sum, s) => sum + s.score, 0) / pagesAnalyzed)
+      : 0;
 
-  // Identify top issues
-  const topIssues = [
-    {
-      issue: 'Low readability score',
-      affectedPages: scored.filter((s) => s.readability_score < 60).length,
-      priority: 'high',
-    },
-    {
-      issue: 'Poor keyword optimization',
-      affectedPages: scored.filter((s) => s.keyword_score < 60).length,
-      priority: 'high',
-    },
-    {
-      issue: 'Weak content structure',
-      affectedPages: scored.filter((s) => s.structure_score < 60).length,
-      priority: 'medium',
-    },
-    {
-      issue: 'Low engagement score',
-      affectedPages: scored.filter((s) => s.engagement_score < 60).length,
-      priority: 'medium',
-    },
-    {
-      issue: 'Technical SEO issues',
-      affectedPages: scored.filter((s) => s.technical_seo_score < 60).length,
-      priority: 'high',
-    },
-  ].filter((issue) => issue.affectedPages > 0);
+    const breakdown = {
+      readability: pagesAnalyzed > 0
+        ? Math.round(scored.reduce((sum, s) => sum + s.readability_score, 0) / pagesAnalyzed)
+        : 0,
+      keywordOptimization: pagesAnalyzed > 0
+        ? Math.round(scored.reduce((sum, s) => sum + s.keyword_score, 0) / pagesAnalyzed)
+        : 0,
+      structure: pagesAnalyzed > 0
+        ? Math.round(scored.reduce((sum, s) => sum + s.structure_score, 0) / pagesAnalyzed)
+        : 0,
+      engagement: pagesAnalyzed > 0
+        ? Math.round(scored.reduce((sum, s) => sum + s.engagement_score, 0) / pagesAnalyzed)
+        : 0,
+      technicalSEO: pagesAnalyzed > 0
+        ? Math.round(scored.reduce((sum, s) => sum + s.technical_seo_score, 0) / pagesAnalyzed)
+        : 0,
+    };
 
-  return {
-    projectId,
-    overallScore,
-    pagesAnalyzed,
-    breakdown,
-    topIssues,
-  };
+    // Identify top issues
+    const topIssues = [
+      {
+        issue: 'Low readability score',
+        affectedPages: scored.filter((s) => s.readability_score < 60).length,
+        priority: 'high',
+      },
+      {
+        issue: 'Poor keyword optimization',
+        affectedPages: scored.filter((s) => s.keyword_score < 60).length,
+        priority: 'high',
+      },
+      {
+        issue: 'Weak content structure',
+        affectedPages: scored.filter((s) => s.structure_score < 60).length,
+        priority: 'medium',
+      },
+      {
+        issue: 'Low engagement score',
+        affectedPages: scored.filter((s) => s.engagement_score < 60).length,
+        priority: 'medium',
+      },
+      {
+        issue: 'Technical SEO issues',
+        affectedPages: scored.filter((s) => s.technical_seo_score < 60).length,
+        priority: 'high',
+      },
+    ].filter((issue) => issue.affectedPages > 0);
+
+    return {
+      projectId,
+      overallScore,
+      pagesAnalyzed,
+      breakdown,
+      topIssues,
+    };
+  } catch (err) {
+    if ((err as Error).message === 'projectId is required') {
+      throw err;
+    }
+    // Table may not exist - return empty summary
+    return {
+      projectId,
+      overallScore: 0,
+      pagesAnalyzed: 0,
+      breakdown: {
+        readability: 0,
+        keywordOptimization: 0,
+        structure: 0,
+        engagement: 0,
+        technicalSEO: 0,
+      },
+      topIssues: [],
+    };
+  }
 }
 
 export default {

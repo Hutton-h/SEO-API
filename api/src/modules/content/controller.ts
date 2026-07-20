@@ -44,7 +44,7 @@ export async function getContentAnalysis(
     const result = await contentService.getContentAnalysis(projectId, { page, pageSize });
     success(res, result);
   } catch (err) {
-    badRequest(res, 'Failed to get content analysis', { error: (err as Error).message });
+    badRequest(res, 'Failed to get content analysis', (err as Error).message);
   }
 }
 
@@ -60,7 +60,7 @@ export async function analyzeUrl(
     const result = await contentService.analyzeUrl(projectId, url);
     success(res, result, 'URL analysis completed successfully');
   } catch (err) {
-    badRequest(res, 'Failed to analyze URL', { error: (err as Error).message });
+    badRequest(res, 'Failed to analyze URL', (err as Error).message);
   }
 }
 
@@ -72,10 +72,15 @@ export async function getQualityScore(
   try {
     const projectId = (req.query.projectId as string) || (req.body as any)?.projectId;
 
+    if (!projectId) {
+      badRequest(res, 'projectId query parameter is required');
+      return;
+    }
+
     const result = await contentService.getQualityScore(projectId);
     success(res, result);
   } catch (err) {
-    badRequest(res, 'Failed to get quality score', { error: (err as Error).message });
+    badRequest(res, 'Failed to get quality score', (err as Error).message);
   }
 }
 
