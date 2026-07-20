@@ -15,13 +15,9 @@ import type { TrendDataPoint, ComparisonDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
 import { useProject } from '@/hooks';
 import { localSEOAPI } from '@/services/localSeo';
-
 const { Text, Paragraph } = Typography;
 
-// ============================================================================
 // Types
-// ============================================================================
-
 interface Location {
   id: string;
   name: string;
@@ -33,7 +29,6 @@ interface Location {
   lat: number;
   lng: number;
 }
-
 interface Ranking {
   id: string;
   keyword: string;
@@ -43,13 +38,28 @@ interface Ranking {
   change: number;
   mapPack: boolean;
 }
-
 interface GBPInsight {
   date: string;
   views: number;
   clicks: number;
   calls: number;
   directionRequests: number;
+}
+
+interface GMBProfileData {
+  businessName: string;
+  category: string;
+  address: string;
+  phone: string;
+  rating: number;
+  reviewCount: number;
+  status: string;
+}
+
+interface ComparisonMetric {
+  metric: string;
+  value1: string | number;
+  value2: string | number;
 }
 
 const INITIAL_LOCATION: Location = {
@@ -64,10 +74,7 @@ const INITIAL_LOCATION: Location = {
   lng: 0,
 };
 
-// ============================================================================
-// Helpers
-// ============================================================================
-
+// ---- Helpers ----
 const getRankColor = (pos: number): string => {
   if (!pos || pos === 0) return 'default';
   if (pos <= 3) return '#52c41a';
@@ -82,10 +89,15 @@ const getChangeText = (change: number): { text: string; color: string } => {
   return { text: '--', color: '#d9d9d9' };
 };
 
-// ============================================================================
-// Component
-// ============================================================================
+const getStatusColor = (status: string): string => {
+  const s = status?.toLowerCase() || '';
+  if (s === 'verified' || s === 'active') return 'green';
+  if (s === 'pending') return 'orange';
+  if (s === 'unverified' || s === 'suspended') return 'red';
+  return 'default';
+};
 
+// ---- Component ----
 const LocalSEO: React.FC = () => {
   const projectId = useStore((s) => s.currentProject?.id);
   const projectName = useStore((s) => s.currentProject?.name || '');
@@ -100,12 +112,19 @@ const LocalSEO: React.FC = () => {
   const [locations, setLocations] = useState<Location[]>([]);
   const [rankings, setRankings] = useState<Ranking[]>([]);
   const [gbpInsights, setGbpInsights] = useState<GBPInsight[]>([]);
+  const [gmbProfile, setGmbProfile] = useState<GMBProfileData | null>(null);
 
   // Location modal
   const [locationModalOpen, setLocationModalOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location>(INITIAL_LOCATION);
   const [locationSaving, setLocationSaving] = useState(false);
   const [locationForm] = Form.useForm();
+
+  // Comparison
+  const [compareLoc1, setCompareLoc1] = useState<string>('');
+  const [compareLoc2, setCompareLoc2] = useState<string>('');
+  const [compareResult, setCompareResult] = useState<ComparisonMetric[] | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
 
   // ---- Data loading ----
   const loadLocations = useCallback(async () => {
@@ -141,18 +160,33 @@ const LocalSEO: React.FC = () => {
     }
   }, [projectId]);
 
+  const loadGMBProfile = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res: any = await localSEOAPI.getGMBProfile(projectId);
+      const data = res?.data || res;
+      if (data && !Array.isArray(data) && typeof data === 'object') {
+        setGmbProfile(data as GMBProfileData);
+      } else {
+        setGmbProfile(null);
+      }
+    } catch {
+      setGmbProfile(null);
+    }
+  }, [projectId]);
+
   const loadAll = useCallback(async () => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
     try {
-      await Promise.all([loadLocations(), loadRankings(), loadGbpInsights()]);
+      await Promise.all([loadLocations(), loadRankings(), loadGbpInsights(), loadGMBProfile()]);
     } catch (err: any) {
       setError(err?.response?.data?.error?.message || err?.message || '加载数据失败');
     } finally {
       setLoading(false);
     }
-  }, [projectId, loadLocations, loadRankings, loadGbpInsights]);
+  }, [projectId, loadLocations, loadRankings, loadGbpInsights, loadGMBProfile]);
 
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }
@@ -186,7 +220,7 @@ const LocalSEO: React.FC = () => {
       setLocationModalOpen(false);
       await loadLocations();
     } catch (err: any) {
-      if (err?.errorFields) return; // validation error
+      if (err?.errorFields) return;
       message.error(err?.response?.data?.error?.message || err?.message || '保存失败');
     } finally {
       setLocationSaving(false);
@@ -203,13 +237,42 @@ const LocalSEO: React.FC = () => {
     }
   };
 
+  // ---- Comparison ----
+  const handleCompare = async () => {
+    if (!compareLoc1 || !compareLoc2) {
+      message.warning('请选择两个位置进行对比');
+      return;
+    }
+    if (compareLoc1 === compareLoc2) {
+      message.warning('请选择两个不同的位置');
+      return;
+    }
+    setCompareLoading(true);
+    setCompareResult(null);
+    try {
+      const res: any = await localSEOAPI.compareLocations(projectId!, compareLoc1, compareLoc2);
+      const data = res?.data || res;
+      const metrics = data?.metrics || data?.comparison || (Array.isArray(data) ? data : []);
+      setCompareResult(metrics);
+      message.success('对比完成');
+    } catch (err: any) {
+      message.error(err?.response?.data?.error?.message || err?.message || '对比失败');
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
   // ---- KPI calculations ----
   const locationsCount = locations.length;
   const avgRanking = rankings.length > 0
     ? Math.round(rankings.reduce((s, r) => s + (r.position || 50), 0) / rankings.length)
     : 0;
+
   const totalGbpViews = gbpInsights.reduce((s, i) => s + (i.views || 0), 0);
-  const totalReviews = 0; // would come from GBP profile data
+  const totalGbpClicks = gbpInsights.reduce((s, i) => s + (i.clicks || 0), 0);
+  const totalGbpCalls = gbpInsights.reduce((s, i) => s + (i.calls || 0), 0);
+  const totalGbpDirections = gbpInsights.reduce((s, i) => s + (i.directionRequests || 0), 0);
+  const totalReviews = gmbProfile?.reviewCount || 0;
 
   // ---- Columns ----
   const rankingColumns = [
@@ -243,6 +306,33 @@ const LocalSEO: React.FC = () => {
     },
   ];
 
+  const comparisonColumns = [
+    {
+      title: '指标', dataIndex: 'metric', key: 'metric', width: 160,
+      render: (t: string) => <Text strong>{t}</Text>,
+    },
+    {
+      title: (
+        <span>
+          <EnvironmentOutlined style={{ marginRight: 4 }} />
+          {compareLoc1 || '位置1'}
+        </span>
+      ),
+      dataIndex: 'value1', key: 'value1',
+      render: (v: string | number) => <Text>{v}</Text>,
+    },
+    {
+      title: (
+        <span>
+          <EnvironmentOutlined style={{ marginRight: 4 }} />
+          {compareLoc2 || '位置2'}
+        </span>
+      ),
+      dataIndex: 'value2', key: 'value2',
+      render: (v: string | number) => <Text>{v}</Text>,
+    },
+  ];
+
   // ---- Chart data ----
   const rankingComparisonData: ComparisonDataPoint[] = locations.map((loc) => {
     const locRankings = rankings.filter((r) => r.locationName === loc.name);
@@ -270,6 +360,16 @@ const LocalSEO: React.FC = () => {
   const directionsTrendData: TrendDataPoint[] = gbpInsights.map((i) => ({
     date: i.date || '',
     value: i.directionRequests || 0,
+  }));
+
+  const compareChartData: ComparisonDataPoint[] = (compareResult || []).map((m) => ({
+    name: m.metric,
+    value: typeof m.value1 === 'number' ? m.value1 : parseFloat(String(m.value1)) || 0,
+  }));
+
+  const compareChartData2: ComparisonDataPoint[] = (compareResult || []).map((m) => ({
+    name: `${m.metric} (${compareLoc2})`,
+    value: typeof m.value2 === 'number' ? m.value2 : parseFloat(String(m.value2)) || 0,
   }));
 
   // ---- State: no project ----
@@ -376,6 +476,7 @@ const LocalSEO: React.FC = () => {
         onChange={setActiveTab}
         style={{ marginTop: 8 }}
         items={[
+          // Tab 1: 位置管理
           {
             key: 'locations',
             label: <span><EnvironmentOutlined /> 位置管理</span>,
@@ -451,12 +552,13 @@ const LocalSEO: React.FC = () => {
               </>
             ),
           },
+
+          // Tab 2: 排名数据
           {
             key: 'rankings',
-            label: <span><RiseOutlined /> 本地排名</span>,
+            label: <span><RiseOutlined /> 排名数据</span>,
             children: (
               <>
-                {/* Comparison chart */}
                 {rankingComparisonData.length > 0 && (
                   <Card
                     title={<><SwapOutlined /> 各位置排名对比</>}
@@ -470,7 +572,6 @@ const LocalSEO: React.FC = () => {
                   </Card>
                 )}
 
-                {/* Rankings table */}
                 <Card
                   title="关键词排名详情"
                   style={{ borderRadius: 8 }}
@@ -491,36 +592,231 @@ const LocalSEO: React.FC = () => {
               </>
             ),
           },
+
+          // Tab 3: GMB 档案
           {
             key: 'gbp-insights',
-            label: <span><AimOutlined /> GBP Insights</span>,
+            label: <span><AimOutlined /> GMB 档案</span>,
             children: (
               <>
-                {gbpInsights.length === 0 ? (
-                  <EmptyState scene="data" title="暂无 GBP 数据" description="连接 Google Business Profile 后将显示洞察数据" />
-                ) : (
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} lg={12}>
-                      <Card title={<><EyeOutlined /> 浏览次数</>} style={{ borderRadius: 8 }}>
-                        <TrendChart data={viewsTrendData} height={280} smooth showArea color="#1677ff" />
-                      </Card>
+                {/* GMB Profile Descriptions */}
+                {gmbProfile && (
+                  <Card
+                    title={<><ShopOutlined /> GMB 商家档案</>}
+                    style={{ marginBottom: 24, borderRadius: 8 }}
+                  >
+                    <Descriptions
+                      bordered
+                      size="small"
+                      column={{ xs: 1, sm: 2, lg: 3 }}
+                    >
+                      <Descriptions.Item label="商家名称">
+                        <Text strong>{gmbProfile.businessName || '--'}</Text>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="类别">
+                        <Tag color="blue">{gmbProfile.category || '--'}</Tag>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="状态">
+                        <Tag color={getStatusColor(gmbProfile.status)}>
+                          {gmbProfile.status || '--'}
+                        </Tag>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="地址" span={2}>
+                        <Text><EnvironmentOutlined style={{ marginRight: 4 }} />{gmbProfile.address || '--'}</Text>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="电话">
+                        <Text><PhoneOutlined style={{ marginRight: 4 }} />{gmbProfile.phone || '--'}</Text>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="评分">
+                        <Text style={{ color: '#fa8c16', fontWeight: 600 }}>
+                          <StarOutlined style={{ marginRight: 4 }} />
+                          {gmbProfile.rating != null ? gmbProfile.rating.toFixed(1) : '--'}
+                        </Text>
+                      </Descriptions.Item>
+                      <Descriptions.Item label="评价数">
+                        <Text strong>{gmbProfile.reviewCount != null ? gmbProfile.reviewCount.toLocaleString() : '--'}</Text>
+                      </Descriptions.Item>
+                    </Descriptions>
+                  </Card>
+                )}
+
+                {/* GBP Insight StatCards */}
+                {gbpInsights.length > 0 && (
+                  <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="浏览数"
+                        value={totalGbpViews.toLocaleString()}
+                        icon={<EyeOutlined />}
+                        color="#1677ff"
+                        suffix=" 次"
+                      />
                     </Col>
-                    <Col xs={24} lg={12}>
-                      <Card title={<><AimOutlined /> 点击次数</>} style={{ borderRadius: 8 }}>
-                        <TrendChart data={clicksTrendData} height={280} smooth showArea color="#52c41a" />
-                      </Card>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="点击数"
+                        value={totalGbpClicks.toLocaleString()}
+                        icon={<AimOutlined />}
+                        color="#52c41a"
+                        suffix=" 次"
+                      />
                     </Col>
-                    <Col xs={24} lg={12}>
-                      <Card title={<><PhoneOutlined /> 来电次数</>} style={{ borderRadius: 8 }}>
-                        <TrendChart data={callsTrendData} height={280} smooth showArea color="#fa8c16" />
-                      </Card>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="来电数"
+                        value={totalGbpCalls.toLocaleString()}
+                        icon={<PhoneOutlined />}
+                        color="#fa8c16"
+                        suffix=" 次"
+                      />
                     </Col>
-                    <Col xs={24} lg={12}>
-                      <Card title={<><CompassOutlined /> 路线请求</>} style={{ borderRadius: 8 }}>
-                        <TrendChart data={directionsTrendData} height={280} smooth showArea color="#13c2c2" />
-                      </Card>
+                    <Col xs={12} sm={6}>
+                      <StatCard
+                        title="路线请求"
+                        value={totalGbpDirections.toLocaleString()}
+                        icon={<CompassOutlined />}
+                        color="#13c2c2"
+                        suffix=" 次"
+                      />
                     </Col>
                   </Row>
+                )}
+
+                {/* Trend Charts */}
+                {gbpInsights.length === 0 && !gmbProfile ? (
+                  <EmptyState scene="data" title="暂无 GMB 数据" description="连接 Google Business Profile 后将显示档案与洞察数据" />
+                ) : (
+                  gbpInsights.length > 0 && (
+                    <Row gutter={[16, 16]}>
+                      <Col xs={24} lg={12}>
+                        <Card title={<><EyeOutlined /> 浏览次数</>} style={{ borderRadius: 8 }}>
+                          <TrendChart data={viewsTrendData} height={280} smooth showArea color="#1677ff" />
+                        </Card>
+                      </Col>
+                      <Col xs={24} lg={12}>
+                        <Card title={<><AimOutlined /> 点击次数</>} style={{ borderRadius: 8 }}>
+                          <TrendChart data={clicksTrendData} height={280} smooth showArea color="#52c41a" />
+                        </Card>
+                      </Col>
+                      <Col xs={24} lg={12}>
+                        <Card title={<><PhoneOutlined /> 来电次数</>} style={{ borderRadius: 8 }}>
+                          <TrendChart data={callsTrendData} height={280} smooth showArea color="#fa8c16" />
+                        </Card>
+                      </Col>
+                      <Col xs={24} lg={12}>
+                        <Card title={<><CompassOutlined /> 路线请求</>} style={{ borderRadius: 8 }}>
+                          <TrendChart data={directionsTrendData} height={280} smooth showArea color="#13c2c2" />
+                        </Card>
+                      </Col>
+                    </Row>
+                  )
+                )}
+              </>
+            ),
+          },
+
+          // Tab 4: 位置对比
+          {
+            key: 'compare',
+            label: <span><SwapOutlined /> 位置对比</span>,
+            children: (
+              <>
+                <Card style={{ borderRadius: 8, marginBottom: 24 }}>
+                  <Row gutter={[16, 16]} align="middle">
+                    <Col xs={24} sm={10}>
+                      <Select
+                        placeholder="选择位置 1"
+                        value={compareLoc1 || undefined}
+                        onChange={(val) => setCompareLoc1(val)}
+                        style={{ width: '100%' }}
+                        allowClear
+                        showSearch
+                        optionFilterProp="label"
+                        options={locations.map((loc) => ({
+                          value: loc.name,
+                          label: loc.name,
+                        }))}
+                      />
+                    </Col>
+                    <Col xs={24} sm={4} style={{ textAlign: 'center' }}>
+                      <Text type="secondary" style={{ fontSize: 18 }}>
+                        <SwapOutlined /> VS
+                      </Text>
+                    </Col>
+                    <Col xs={24} sm={10}>
+                      <Select
+                        placeholder="选择位置 2"
+                        value={compareLoc2 || undefined}
+                        onChange={(val) => setCompareLoc2(val)}
+                        style={{ width: '100%' }}
+                        allowClear
+                        showSearch
+                        optionFilterProp="label"
+                        options={locations.map((loc) => ({
+                          value: loc.name,
+                          label: loc.name,
+                        }))}
+                      />
+                    </Col>
+                  </Row>
+                  <Row style={{ marginTop: 16 }} justify="center">
+                    <Button
+                      type="primary"
+                      icon={<SwapOutlined />}
+                      onClick={handleCompare}
+                      loading={compareLoading}
+                      disabled={!compareLoc1 || !compareLoc2}
+                      size="large"
+                    >
+                      开始对比
+                    </Button>
+                  </Row>
+                </Card>
+
+                {/* Comparison Results */}
+                {compareResult && compareResult.length > 0 && (
+                  <>
+                    <Card
+                      title="对比详情"
+                      style={{ borderRadius: 8, marginBottom: 24 }}
+                    >
+                      <Table
+                        columns={comparisonColumns}
+                        dataSource={compareResult.map((m, i) => ({ ...m, key: i }))}
+                        pagination={false}
+                        size="middle"
+                        bordered
+                      />
+                    </Card>
+
+                    <Card
+                      title={<><SwapOutlined /> 指标对比图</>}
+                      style={{ borderRadius: 8 }}
+                    >
+                      <ComparisonChart
+                        data={[...compareChartData, ...compareChartData2]}
+                        height={350}
+                        horizontal
+                        title=""
+                      />
+                    </Card>
+                  </>
+                )}
+
+                {compareResult && compareResult.length === 0 && (
+                  <EmptyState
+                    scene="data"
+                    title="暂无对比数据"
+                    description="所选位置暂无可用对比数据，请尝试其他位置组合"
+                  />
+                )}
+
+                {!compareResult && !compareLoading && (
+                  <EmptyState
+                    scene="data"
+                    title="位置对比"
+                    description="选择两个位置，点击「开始对比」查看并排比较数据"
+                  />
                 )}
               </>
             ),

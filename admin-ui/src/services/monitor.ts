@@ -31,6 +31,25 @@ export interface DowntimeRecord {
   cause: string;
 }
 
+export interface MonitorLog {
+  id: string;
+  timestamp: string;
+  status: 'up' | 'down';
+  responseTime: number;
+  statusCode: number;
+  errorMessage?: string;
+}
+
+export interface MonitorTarget {
+  id: string;
+  url: string;
+  name: string;
+  status: 'up' | 'down' | 'degraded';
+  lastChecked: string;
+  uptime: number;
+  responseTime: number;
+}
+
 export const monitorAPI = {
   getStatusList: (params?: { projectId?: string }) =>
     apiGet<MonitorStatus[]>('/v1/monitor/status', params),
@@ -46,4 +65,13 @@ export const monitorAPI = {
 
   runManualCheck: (serviceId?: string) =>
     apiPost<{ success: boolean; message: string }>('/v1/monitor/check', { serviceId }),
+
+  getLogs: (params?: { page?: number; pageSize?: number; projectId?: string }) =>
+    apiGet<{ data: MonitorLog[]; total: number }>('/v1/monitor/logs', params),
+
+  getTargets: (params?: { projectId?: string }) =>
+    apiGet<MonitorTarget[]>('/v1/monitor/targets', params),
+
+  addTarget: (data: { url: string; name?: string }) =>
+    apiPost<MonitorTarget>('/v1/monitor/targets', data),
 };

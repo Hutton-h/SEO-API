@@ -93,6 +93,12 @@ const Schedule: React.FC = () => {
   const [form] = Form.useForm();
   const [runningId, setRunningId] = useState<string | null>(null);
 
+  // Cron validation
+  const [validatingCron, setValidatingCron] = useState(false);
+  const [cronValidation, setCronValidation] = useState<{
+    valid: boolean; description: string; nextRuns: string[];
+  } | null>(null);
+
   // Execution logs
   const [logs, setLogs] = useState<ExecutionLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -232,6 +238,28 @@ const Schedule: React.FC = () => {
       message.error(msg);
     } finally {
       setRunningId(null);
+    }
+  };
+
+  const handleValidateCron = async () => {
+    const expression = form.getFieldValue('cronExpression');
+    if (!expression) {
+      message.warning('请先输入 Cron 表达式');
+      return;
+    }
+    setValidatingCron(true);
+    setCronValidation(null);
+    try {
+      const res: any = await scheduleAPI.validateCron(expression);
+      setCronValidation({
+        valid: res?.valid ?? false,
+        description: res?.description || '',
+        nextRuns: res?.nextRuns || [],
+      });
+    } catch (err: any) {
+      message.error(err?.message || '验证失败');
+    } finally {
+      setValidatingCron(false);
     }
   };
 
@@ -659,8 +687,58 @@ const Schedule: React.FC = () => {
             <Input
               placeholder="0 8 * * *"
               style={{ fontFamily: 'monospace' }}
+              suffix={
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<CheckCircleOutlined />}
+                  loading={validatingCron}
+                  onClick={handleValidateCron}
+                  style={{ padding: 0 }}
+                >
+                  验证
+                </Button>
+              }
             />
           </Form.Item>
+
+          {/* Cron validation result */}
+          {cronValidation && (
+            <Card
+              size="small"
+              style={{
+                marginBottom: 16,
+                background: cronValidation.valid ? '#f6fff9' : '#fff8f6',
+                borderColor: cronValidation.valid ? '#b7eb8f' : '#ffbb96',
+              }}
+            >
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Space>
+                  <Tag color={cronValidation.valid ? 'success' : 'error'}>
+                    {cronValidation.valid ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                    {' '}{cronValidation.valid ? '有效' : '无效'}
+                  </Tag>
+                  <Text type="secondary" style={{ fontSize: 13 }}>
+                    {cronValidation.description}
+                  </Text>
+                </Space>
+                {cronValidation.nextRuns.length > 0 && (
+                  <div>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      接下来 {cronValidation.nextRuns.length} 次执行:
+                    </Text>
+                    <div style={{ marginTop: 4 }}>
+                      {cronValidation.nextRuns.map((d, i) => (
+                        <Tag key={i} color="geekblue" style={{ fontSize: 11, marginBottom: 4 }}>
+                          {d}
+                        </Tag>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </Space>
+            </Card>
+          )}
 
           <Form.Item label="快速选择">
             <Space wrap>

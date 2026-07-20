@@ -83,6 +83,11 @@ const Notifications: React.FC = () => {
   const [testForm] = Form.useForm();
   const [sendingTest, setSendingTest] = useState(false);
 
+  // Send Notification
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [sendForm] = Form.useForm();
+  const [sending, setSending] = useState(false);
+
   // ==========================================================================
   // Data loading
   // ==========================================================================
@@ -229,6 +234,28 @@ const Notifications: React.FC = () => {
       message.error(msg);
     } finally {
       setSendingTest(false);
+    }
+  };
+
+  const handleSendNotification = async () => {
+    try {
+      const values = await sendForm.validateFields();
+      setSending(true);
+      await notificationsAPI.sendNotification({
+        channel: values.channel,
+        title: values.title,
+        message: values.message,
+      });
+      message.success('通知已发送');
+      sendForm.resetFields();
+      setSendModalOpen(false);
+      loadNotifications();
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      const msg = err?.message || '发送失败';
+      message.error(msg);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -417,9 +444,14 @@ const Notifications: React.FC = () => {
         title="通知中心"
         subtitle={`项目: ${currentProject?.name || ''} - 多渠道通知管理`}
         actions={
-          <Button icon={<ReloadOutlined />} onClick={loadNotifications}>
-            刷新
-          </Button>
+          <Space>
+            <Button icon={<SendOutlined />} type="primary" onClick={() => { sendForm.resetFields(); setSendModalOpen(true); }}>
+              发送通知
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={loadNotifications}>
+              刷新
+            </Button>
+          </Space>
         }
       />
 
@@ -696,6 +728,52 @@ const Notifications: React.FC = () => {
           ]}
         />
       </Card>
+
+      {/* Send Notification Modal */}
+      <Modal
+        title="发送通知"
+        open={sendModalOpen}
+        onOk={handleSendNotification}
+        onCancel={() => { setSendModalOpen(false); sendForm.resetFields(); }}
+        confirmLoading={sending}
+        okText="发送"
+        cancelText="取消"
+        width={520}
+        destroyOnClose
+      >
+        <Form form={sendForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item
+            name="channel"
+            label="通知渠道"
+            rules={[{ required: true, message: '请选择渠道' }]}
+          >
+            <Select placeholder="选择通知渠道">
+              {CHANNELS.map((ch) => (
+                <Option key={ch.key} value={ch.key}>
+                  <Space>
+                    {ch.icon}
+                    {ch.label}
+                  </Space>
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item
+            name="title"
+            label="通知标题"
+            rules={[{ required: true, message: '请输入通知标题' }]}
+          >
+            <Input placeholder="请输入通知标题" />
+          </Form.Item>
+          <Form.Item
+            name="message"
+            label="通知内容"
+            rules={[{ required: true, message: '请输入通知内容' }]}
+          >
+            <TextArea rows={4} placeholder="请输入通知内容" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };

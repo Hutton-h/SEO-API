@@ -117,6 +117,11 @@ const Dashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DashboardData>(INITIAL_DATA);
 
+  // Alert summary
+  const [alertSummary, setAlertSummary] = useState<{
+    unacknowledged: number; critical: number; warning: number; total: number;
+  }>({ unacknowledged: 0, critical: 0, warning: 0, total: 0 });
+
   const loadDashboardData = useCallback(async () => {
     if (!projectId) return;
 
@@ -138,6 +143,8 @@ const Dashboard: React.FC = () => {
       alertingAPI.getAlertHistory({ projectId, pageSize: 5 }),
       // 监控状态
       monitorAPI.getStatusList({ projectId }),
+      // 告警摘要
+      alertingAPI.getAlertSummary().catch(() => null),
     ]);
 
     const [
@@ -148,6 +155,7 @@ const Dashboard: React.FC = () => {
       rankingsResult,
       alertsResult,
       monitorResult,
+      alertSummaryResult,
     ] = results;
 
     // 排名概览
@@ -205,6 +213,17 @@ const Dashboard: React.FC = () => {
     if (monitorResult.status === 'fulfilled') {
       const ms = monitorResult.value as any;
       monitorStatus = Array.isArray(ms) ? ms : (ms?.data || ms?.items || []);
+    }
+
+    // 告警摘要
+    if (alertSummaryResult.status === 'fulfilled' && alertSummaryResult.value) {
+      const as = alertSummaryResult.value as any;
+      setAlertSummary({
+        unacknowledged: as?.unacknowledged ?? 0,
+        critical: as?.critical ?? 0,
+        warning: as?.warning ?? 0,
+        total: as?.total ?? 0,
+      });
     }
 
     // 计算健康分
@@ -565,8 +584,14 @@ const Dashboard: React.FC = () => {
             title="最近告警"
             extra={
               <Space>
-                {data.alerts.filter((a) => !a.acknowledged).length > 0 && (
-                  <Tag color="red">{data.alerts.filter((a) => !a.acknowledged).length} 条未处理</Tag>
+                {alertSummary.critical > 0 && (
+                  <Tag color="red">{alertSummary.critical} 严重</Tag>
+                )}
+                {alertSummary.warning > 0 && (
+                  <Tag color="orange">{alertSummary.warning} 警告</Tag>
+                )}
+                {alertSummary.unacknowledged > 0 && (
+                  <Tag color="red">{alertSummary.unacknowledged} 条未处理</Tag>
                 )}
                 <Button type="link" size="small" onClick={() => navigate('/alerting')}>
                   查看全部 <RightOutlined />

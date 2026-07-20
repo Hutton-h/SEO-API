@@ -43,4 +43,7 @@ export const notificationsAPI = {
 
   getSendRecords: (params?: { page?: number; pageSize?: number; channelId?: string }) =>
     apiGet<{ data: SendRecord[]; total: number }>('/v1/notifications/records', params),
+
+  sendNotification: (data: { channel: string; title: string; message: string; metadata?: Record<string, unknown> }) =>
+    apiPost<{ success: boolean; message: string }>('/v1/notifications/send', data),
 };

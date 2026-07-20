@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Card, Row, Col, Table, Typography, Button, Space, Tag, Select,
-  message, Modal, Form, Input, InputNumber, Progress, DatePicker,
+  message, Modal, Form, Input, InputNumber, Progress, DatePicker, Tooltip,
 } from 'antd';
 import {
   ReloadOutlined, PlusOutlined, DollarOutlined, RiseOutlined,
   FallOutlined, TrophyOutlined, SettingOutlined, FundOutlined,
   LineChartOutlined, BarChartOutlined, CalculatorOutlined,
+  ApiOutlined, CloudOutlined,
 } from '@ant-design/icons';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
 import { TrendChart, ComparisonChart } from '@/components/charts';
@@ -69,6 +70,10 @@ const ROIAnalysis: React.FC = () => {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
+  // API cost summary
+  const [apiCosts, setApiCosts] = useState<Array<{ service: string; cost: number; calls: number }>>([]);
+  const [apiCostsLoading, setApiCostsLoading] = useState(false);
+
   // ==========================================================================
   // Data loading
   // ==========================================================================
@@ -128,10 +133,24 @@ const ROIAnalysis: React.FC = () => {
     }
   }, [projectId]);
 
+  const loadApiCosts = useCallback(async () => {
+    setApiCostsLoading(true);
+    try {
+      const res: any = await roiAPI.getApiCostSummary();
+      const data = Array.isArray(res) ? res : (res?.data || []);
+      setApiCosts(data);
+    } catch {
+      setApiCosts([]);
+    } finally {
+      setApiCostsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }
     loadData();
-  }, [loadData, projectId]);
+    loadApiCosts();
+  }, [loadData, loadApiCosts, projectId]);
 
   // ==========================================================================
   // Add ROI entry
@@ -444,6 +463,66 @@ const ROIAnalysis: React.FC = () => {
             description="点击「添加条目」按钮录入 ROI 数据，开始追踪投资回报"
             action={{ text: '添加条目', icon: <PlusOutlined />, onClick: () => setAddModalOpen(true) }}
           />
+        )}
+      </Card>
+
+      {/* API Cost Summary */}
+      <Card
+        title={<><ApiOutlined /> API 成本明细</>}
+        style={{ borderRadius: 8, marginTop: 24 }}
+        loading={apiCostsLoading}
+      >
+        {apiCosts.length > 0 ? (
+          <Table
+            dataSource={apiCosts}
+            rowKey="service"
+            pagination={false}
+            size="middle"
+            columns={[
+              {
+                title: '服务', dataIndex: 'service', key: 'service',
+                render: (v: string) => (
+                  <Space>
+                    <CloudOutlined style={{ color: '#1677ff' }} />
+                    <Text strong>{v}</Text>
+                  </Space>
+                ),
+              },
+              {
+                title: '调用次数', dataIndex: 'calls', key: 'calls',
+                render: (v: number) => (
+                  <Tooltip title={`${v?.toLocaleString() ?? 0} 次 API 调用`}>
+                    <Tag color="blue">{v?.toLocaleString() ?? 0}</Tag>
+                  </Tooltip>
+                ),
+              },
+              {
+                title: '费用 ($)', dataIndex: 'cost', key: 'cost',
+                render: (v: number) => (
+                  <Text style={{ color: v > 0 ? '#ff4d4f' : '#52c41a', fontWeight: 500 }}>
+                    ${(v ?? 0).toFixed(4)}
+                  </Text>
+                ),
+              },
+            ]}
+            summary={() => {
+              const totalCost = apiCosts.reduce((s, c) => s + (c.cost || 0), 0);
+              const totalCalls = apiCosts.reduce((s, c) => s + (c.calls || 0), 0);
+              return (
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0}><Text strong>合计</Text></Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}>
+                    <Tag color="blue">{totalCalls.toLocaleString()}</Tag>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={2}>
+                    <Text strong style={{ color: '#ff4d4f' }}>${totalCost.toFixed(4)}</Text>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              );
+            }}
+          />
+        ) : (
+          <EmptyState scene="data" description="暂无 API 成本数据" />
         )}
       </Card>
 

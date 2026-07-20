@@ -7,7 +7,7 @@ import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined,
   YoutubeOutlined, PlayCircleOutlined, EyeOutlined, LikeOutlined,
   CommentOutlined, RiseOutlined, BarChartOutlined, TrophyOutlined,
-  StarFilled, TagOutlined, SearchOutlined,
+  StarFilled, TagOutlined, SearchOutlined, LinkOutlined,
 } from '@ant-design/icons';
 import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
 import { TrendChart, ComparisonChart } from '@/components/charts';
@@ -15,6 +15,7 @@ import type { TrendDataPoint, ComparisonDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
 import { useProject } from '@/hooks';
 import { youtubeAPI } from '@/services/youtube';
+import type { YouTubeVideo } from '@/services/youtube';
 
 const { Text, Paragraph } = Typography;
 
@@ -79,6 +80,14 @@ const formatNumber = (n: number): string => {
   return String(n);
 };
 
+const formatWatchTime = (seconds: number): string => {
+  if (!seconds || seconds < 60) return `${seconds || 0}秒`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60}秒`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}时${m}分`;
+};
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -102,11 +111,20 @@ const YouTube: React.FC = () => {
     topVideos: [],
   });
 
+  // Video management
+  const [videoList, setVideoList] = useState<YouTubeVideo[]>([]);
+  const [videoListLoading, setVideoListLoading] = useState(false);
+
   // Channel modal
   const [channelModalOpen, setChannelModalOpen] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel>(INITIAL_CHANNEL);
   const [channelSaving, setChannelSaving] = useState(false);
   const [channelForm] = Form.useForm();
+
+  // Video management modal
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoSaving, setVideoSaving] = useState(false);
+  const [videoForm] = Form.useForm();
 
   // Search
   const [videoSearchText, setVideoSearchText] = useState('');
@@ -162,6 +180,20 @@ const YouTube: React.FC = () => {
     }
   }, [projectId, loadChannels, loadVideos, loadSummary]);
 
+  const loadVideosList = useCallback(async () => {
+    if (!projectId) return;
+    setVideoListLoading(true);
+    try {
+      const res: any = await youtubeAPI.getYouTubeVideos(projectId);
+      const list = Array.isArray(res) ? res : (res?.data || res?.items || []);
+      setVideoList(list);
+    } catch {
+      setVideoList([]);
+    } finally {
+      setVideoListLoading(false);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     if (!projectId) { setLoading(false); return; }
     loadAll();
@@ -210,6 +242,35 @@ const YouTube: React.FC = () => {
       message.error(err?.response?.data?.error?.message || err?.message || '删除失败');
     }
   };
+
+  // ---- Video Management CRUD ----
+  const handleAddVideo = () => {
+    videoForm.resetFields();
+    setVideoModalOpen(true);
+  };
+
+  const handleSaveVideo = async () => {
+    try {
+      const values = await videoForm.validateFields();
+      setVideoSaving(true);
+      await youtubeAPI.addYouTubeVideo(projectId!, values.url);
+      message.success('视频已添加');
+      setVideoModalOpen(false);
+      await loadVideosList();
+    } catch (err: any) {
+      if (err?.errorFields) return;
+      message.error(err?.response?.data?.error?.message || err?.message || '添加失败');
+    } finally {
+      setVideoSaving(false);
+    }
+  };
+
+  const handleVideoTabActivated = useCallback((key: string) => {
+    setActiveTab(key);
+    if (key === 'video-management' && videoList.length === 0) {
+      loadVideosList();
+    }
+  }, [videoList.length, loadVideosList]);
 
   // ---- KPI calculations ----
   const channelsCount = channels.length;
@@ -280,6 +341,57 @@ const YouTube: React.FC = () => {
           )}
         </Space>
       ),
+    },
+  ];
+
+  const videoManagementColumns = [
+    {
+      title: '标题', dataIndex: 'title', key: 'title', width: 280, ellipsis: true,
+      render: (t: string) => (
+        <Space>
+          <PlayCircleOutlined style={{ color: '#1677ff' }} />
+          <Text strong>{t || '—'}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '播放量', dataIndex: 'views', key: 'views', width: 110,
+      sorter: (a: YouTubeVideo, b: YouTubeVideo) => (a.views || 0) - (b.views || 0),
+      render: (v: number) => (
+        <Space size={4}><EyeOutlined style={{ color: '#52c41a' }} />{formatNumber(v ?? 0)}</Space>
+      ),
+    },
+    {
+      title: '点赞', dataIndex: 'likes', key: 'likes', width: 100,
+      sorter: (a: YouTubeVideo, b: YouTubeVideo) => (a.likes || 0) - (b.likes || 0),
+      render: (v: number) => (
+        <Space size={4}><LikeOutlined style={{ color: '#1677ff' }} />{formatNumber(v ?? 0)}</Space>
+      ),
+    },
+    {
+      title: '评论', dataIndex: 'comments', key: 'comments', width: 100,
+      sorter: (a: YouTubeVideo, b: YouTubeVideo) => (a.comments || 0) - (b.comments || 0),
+      render: (v: number) => (
+        <Space size={4}><CommentOutlined style={{ color: '#fa8c16' }} />{formatNumber(v ?? 0)}</Space>
+      ),
+    },
+    {
+      title: '观看时长', dataIndex: 'watchTime', key: 'watchTime', width: 120,
+      sorter: (a: YouTubeVideo, b: YouTubeVideo) => (a.watchTime || 0) - (b.watchTime || 0),
+      render: (v: number) => <Text>{formatWatchTime(v ?? 0)}</Text>,
+    },
+    {
+      title: '排名', dataIndex: 'position', key: 'position', width: 90,
+      sorter: (a: YouTubeVideo, b: YouTubeVideo) => (a.position || 0) - (b.position || 0),
+      render: (p: number) => {
+        if (!p) return <Text type="secondary">—</Text>;
+        return (
+          <Tag color={p <= 3 ? '#ff4d4f' : p <= 10 ? '#fa8c16' : 'default'}>
+            <TrophyOutlined style={{ marginRight: 4 }} />
+            #{p}
+          </Tag>
+        );
+      },
     },
   ];
 
@@ -398,7 +510,7 @@ const YouTube: React.FC = () => {
       {/* Tabs */}
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
+        onChange={handleVideoTabActivated}
         style={{ marginTop: 8 }}
         items={[
           {
@@ -482,8 +594,46 @@ const YouTube: React.FC = () => {
             ),
           },
           {
+            key: 'video-management',
+            label: <span><PlayCircleOutlined /> 视频管理</span>,
+            children: (
+              <Card
+                style={{ borderRadius: 8 }}
+                extra={
+                  <Button type="primary" icon={<LinkOutlined />} onClick={handleAddVideo}>
+                    添加视频
+                  </Button>
+                }
+              >
+                {videoListLoading ? (
+                  <LoadingSkeleton type="table" />
+                ) : videoList.length === 0 ? (
+                  <EmptyState
+                    scene="data"
+                    title="暂无视频"
+                    description="添加 YouTube 视频 URL，开始追踪视频数据"
+                    action={{ text: '添加视频', icon: <LinkOutlined />, onClick: handleAddVideo }}
+                  />
+                ) : (
+                  <Table
+                    columns={videoManagementColumns}
+                    dataSource={videoList}
+                    rowKey={(record, index) => record.title || `video-${index}`}
+                    size="middle"
+                    pagination={{
+                      pageSize: 20,
+                      showSizeChanger: true,
+                      showTotal: (t) => `共 ${t} 个视频`,
+                    }}
+                    scroll={{ x: 900 }}
+                  />
+                )}
+              </Card>
+            ),
+          },
+          {
             key: 'videos',
-            label: <span><PlayCircleOutlined /> 视频分析</span>,
+            label: <span><SearchOutlined /> 视频分析</span>,
             children: (
               <Card style={{ borderRadius: 8 }}>
                 <div style={{ marginBottom: 16 }}>
@@ -519,7 +669,7 @@ const YouTube: React.FC = () => {
           },
           {
             key: 'summary',
-            label: <span><BarChartOutlined /> 数据概览</span>,
+            label: <span><BarChartOutlined /> 趋势分析</span>,
             children: (
               <Row gutter={[16, 16]}>
                 <Col xs={24} lg={12}>
@@ -613,6 +763,36 @@ const YouTube: React.FC = () => {
             rules={[{ required: true, message: '请输入频道名称' }]}
           >
             <Input placeholder="如：我的频道" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Video Add Modal */}
+      <Modal
+        title="添加视频"
+        open={videoModalOpen}
+        onOk={handleSaveVideo}
+        onCancel={() => { setVideoModalOpen(false); videoForm.resetFields(); }}
+        confirmLoading={videoSaving}
+        okText="添加"
+        cancelText="取消"
+        destroyOnClose
+        width={520}
+      >
+        <Form
+          form={videoForm}
+          layout="vertical"
+          style={{ marginTop: 16 }}
+        >
+          <Form.Item
+            name="url"
+            label="视频URL"
+            rules={[
+              { required: true, message: '请输入视频 URL' },
+              { type: 'url', message: '请输入有效的 URL' },
+            ]}
+          >
+            <Input placeholder="https://www.youtube.com/watch?v=..." />
           </Form.Item>
         </Form>
       </Modal>
