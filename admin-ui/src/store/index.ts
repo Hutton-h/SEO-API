@@ -1,6 +1,11 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
-interface Project {
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface Project {
   id: string;
   name: string;
   domain: string;
@@ -9,7 +14,7 @@ interface Project {
   settings?: Record<string, unknown>;
 }
 
-interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
@@ -17,98 +22,276 @@ interface User {
   role: 'admin' | 'editor' | 'viewer';
 }
 
-interface ApiUsage {
+export interface ApiUsage {
   monthlyCost: number;
   totalCalls: number;
   lastMonthCost: number;
   costChange: number;
 }
 
-interface Branding {
+export interface Branding {
   brandName: string;
   logoUrl: string;
   primaryColor: string;
   customDomain: string;
 }
 
+export interface Country {
+  code: string;
+  name: string;
+  language: string;
+}
+
+export interface SearchEngine {
+  code: string;
+  name: string;
+  country: string;
+}
+
+export interface DateRange {
+  start: string;
+  end: string;
+  label: string; // '7d' | '30d' | '90d' | 'custom'
+}
+
+// ============================================================================
+// State
+// ============================================================================
+
 interface AppState {
-  // 当前项目
-  currentProject: Project | null;
-  // 项目列表
-  projects: Project[];
-  // 用户信息
+  // 认证
   user: User | null;
-  // 主题模式
-  theme: 'light' | 'dark';
-  // 是否已登录
   isAuthenticated: boolean;
+  token: string | null;
+
+  // 项目
+  currentProject: Project | null;
+  projects: Project[];
+
+  // 地区/国家/搜索引擎 — 全局维度
+  selectedCountry: Country;
+  selectedSearchEngine: SearchEngine;
+  availableCountries: Country[];
+  availableSearchEngines: SearchEngine[];
+
+  // 时间范围
+  dateRange: DateRange;
+
+  // 主题
+  theme: 'light' | 'dark';
+
   // API 用量
   apiUsage: ApiUsage;
+
   // 白标配置
   branding: Branding;
 
+  // 侧边栏
+  sidebarCollapsed: boolean;
+
+  // ==========================================================================
   // Actions
+  // ==========================================================================
+
+  // 认证
+  setUser: (user: User | null) => void;
+  setAuthenticated: (auth: boolean) => void;
+  setToken: (token: string | null) => void;
+  logout: () => void;
+
+  // 项目
   setCurrentProject: (project: Project | null) => void;
   setProjects: (projects: Project[]) => void;
   addProject: (project: Project) => void;
   removeProject: (id: string) => void;
   updateProject: (id: string, updates: Partial<Project>) => void;
-  setUser: (user: User | null) => void;
+
+  // 地区
+  setSelectedCountry: (country: Country) => void;
+  setSelectedSearchEngine: (engine: SearchEngine) => void;
+  setAvailableCountries: (countries: Country[]) => void;
+  setAvailableSearchEngines: (engines: SearchEngine[]) => void;
+
+  // 时间
+  setDateRange: (range: DateRange) => void;
+
+  // 主题
   setTheme: (theme: 'light' | 'dark') => void;
-  setAuthenticated: (auth: boolean) => void;
+
+  // API 用量
   setApiUsage: (usage: Partial<ApiUsage>) => void;
+
+  // 白标
   setBranding: (branding: Partial<Branding>) => void;
-  logout: () => void;
+
+  // 侧边栏
+  toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 }
 
-export const useStore = create<AppState>((set) => ({
-  currentProject: null,
-  projects: [],
-  user: null,
-  theme: 'light',
-  isAuthenticated: !!localStorage.getItem('access_token'),
-  apiUsage: {
-    monthlyCost: 0,
-    totalCalls: 0,
-    lastMonthCost: 0,
-    costChange: 0,
-  },
-  branding: {
-    brandName: 'Crane SEO Platform',
-    logoUrl: '',
-    primaryColor: '#1677ff',
-    customDomain: '',
-  },
+// ============================================================================
+// Defaults
+// ============================================================================
 
-  setCurrentProject: (project) => set({ currentProject: project }),
-  setProjects: (projects) => set({ projects }),
-  addProject: (project) =>
-    set((state) => ({ projects: [...state.projects, project] })),
-  removeProject: (id) =>
-    set((state) => ({
-      projects: state.projects.filter((p) => p.id !== id),
-      currentProject: state.currentProject?.id === id ? null : state.currentProject,
-    })),
-  updateProject: (id, updates) =>
-    set((state) => ({
-      projects: state.projects.map((p) =>
-        p.id === id ? { ...p, ...updates } : p
-      ),
-      currentProject:
-        state.currentProject?.id === id
-          ? { ...state.currentProject, ...updates }
-          : state.currentProject,
-    })),
-  setUser: (user) => set({ user }),
-  setTheme: (theme) => set({ theme }),
-  setAuthenticated: (auth) => set({ isAuthenticated: auth }),
-  setApiUsage: (usage) =>
-    set((state) => ({ apiUsage: { ...state.apiUsage, ...usage } })),
-  setBranding: (branding) =>
-    set((state) => ({ branding: { ...state.branding, ...branding } })),
-  logout: () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    set({ user: null, isAuthenticated: false });
-  },
-}));
+const DEFAULT_COUNTRY: Country = {
+  code: '2840', // 美国
+  name: 'United States',
+  language: 'en',
+};
+
+const DEFAULT_SEARCH_ENGINE: SearchEngine = {
+  code: 'google',
+  name: 'Google',
+  country: '2840',
+};
+
+const getDefaultDateRange = (): DateRange => {
+  const end = new Date().toISOString().split('T')[0];
+  const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return { start, end, label: '30d' };
+};
+
+// ============================================================================
+// Country / Search Engine data
+// ============================================================================
+
+const DEFAULT_COUNTRIES: Country[] = [
+  { code: '2840', name: 'United States', language: 'en' },
+  { code: '2826', name: 'United Kingdom', language: 'en' },
+  { code: '2276', name: 'Germany', language: 'de' },
+  { code: '2250', name: 'France', language: 'fr' },
+  { code: '2724', name: 'Japan', language: 'ja' },
+  { code: '2356', name: 'Canada', language: 'en' },
+  { code: '2036', name: 'Australia', language: 'en' },
+  { code: '2152', name: 'China', language: 'zh' },
+  { code: '2720', name: 'South Korea', language: 'ko' },
+  { code: '2359', name: 'Brazil', language: 'pt' },
+  { code: '2484', name: 'India', language: 'hi' },
+  { code: '2528', name: 'Italy', language: 'it' },
+  { code: '2723', name: 'Spain', language: 'es' },
+  { code: '2529', name: 'Netherlands', language: 'nl' },
+  { code: '2756', name: 'Singapore', language: 'en' },
+];
+
+const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
+  { code: 'google', name: 'Google', country: '2840' },
+  { code: 'bing', name: 'Bing', country: '2840' },
+  { code: 'yahoo', name: 'Yahoo', country: '2840' },
+  { code: 'baidu', name: 'Baidu', country: '2152' },
+  { code: 'yandex', name: 'Yandex', country: '2643' },
+  { code: 'naver', name: 'Naver', country: '2720' },
+  { code: 'duckduckgo', name: 'DuckDuckGo', country: '2840' },
+];
+
+// ============================================================================
+// Store
+// ============================================================================
+
+export const useStore = create<AppState>()(
+  persist(
+    (set) => ({
+      // 认证
+      user: null,
+      isAuthenticated: !!localStorage.getItem('access_token'),
+      token: localStorage.getItem('access_token'),
+
+      // 项目
+      currentProject: null,
+      projects: [],
+
+      // 地区
+      selectedCountry: DEFAULT_COUNTRY,
+      selectedSearchEngine: DEFAULT_SEARCH_ENGINE,
+      availableCountries: DEFAULT_COUNTRIES,
+      availableSearchEngines: DEFAULT_SEARCH_ENGINES,
+
+      // 时间
+      dateRange: getDefaultDateRange(),
+
+      // 主题
+      theme: 'light',
+
+      // API 用量
+      apiUsage: {
+        monthlyCost: 0,
+        totalCalls: 0,
+        lastMonthCost: 0,
+        costChange: 0,
+      },
+
+      // 白标
+      branding: {
+        brandName: 'Crane SEO Platform',
+        logoUrl: '',
+        primaryColor: '#1677ff',
+        customDomain: '',
+      },
+
+      // 侧边栏
+      sidebarCollapsed: false,
+
+      // ====================================================================
+      // Actions
+      // ====================================================================
+
+      setUser: (user) => set({ user }),
+      setAuthenticated: (auth) => set({ isAuthenticated: auth }),
+      setToken: (token) => {
+        if (token) {
+          localStorage.setItem('access_token', token);
+        } else {
+          localStorage.removeItem('access_token');
+        }
+        set({ token });
+      },
+      logout: () => {
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        set({ user: null, isAuthenticated: false, token: null, currentProject: null, projects: [] });
+      },
+
+      setCurrentProject: (project) => set({ currentProject: project }),
+      setProjects: (projects) => set({ projects }),
+      addProject: (project) =>
+        set((state) => ({ projects: [...state.projects, project] })),
+      removeProject: (id) =>
+        set((state) => ({
+          projects: state.projects.filter((p) => p.id !== id),
+          currentProject: state.currentProject?.id === id ? null : state.currentProject,
+        })),
+      updateProject: (id, updates) =>
+        set((state) => ({
+          projects: state.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)),
+          currentProject:
+            state.currentProject?.id === id
+              ? { ...state.currentProject, ...updates }
+              : state.currentProject,
+        })),
+
+      setSelectedCountry: (country) => set({ selectedCountry: country }),
+      setSelectedSearchEngine: (engine) => set({ selectedSearchEngine: engine }),
+      setAvailableCountries: (countries) => set({ availableCountries: countries }),
+      setAvailableSearchEngines: (engines) => set({ availableSearchEngines: engines }),
+
+      setDateRange: (range) => set({ dateRange: range }),
+
+      setTheme: (theme) => set({ theme }),
+      setApiUsage: (usage) => set((state) => ({ apiUsage: { ...state.apiUsage, ...usage } })),
+      setBranding: (branding) =>
+        set((state) => ({ branding: { ...state.branding, ...branding } })),
+
+      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+    }),
+    {
+      name: 'crane-seo-store',
+      partialize: (state) => ({
+        theme: state.theme,
+        selectedCountry: state.selectedCountry,
+        selectedSearchEngine: state.selectedSearchEngine,
+        sidebarCollapsed: state.sidebarCollapsed,
+        branding: state.branding,
+      }),
+    }
+  )
+);

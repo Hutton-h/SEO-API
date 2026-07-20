@@ -1,91 +1,120 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert,
-  Input, Form, Select, InputNumber, Progress, Tabs, Tooltip, Drawer, Badge, DatePicker,
+  Card, Table, Button, Tag, Typography, Row, Col, Space,
+  Input, Select, Popconfirm, message, Tabs, Drawer,
 } from 'antd';
 import {
-  ReloadOutlined, SearchOutlined, RiseOutlined, FallOutlined, MinusOutlined,
-  TrophyOutlined, GlobalOutlined, AimOutlined, ThunderboltOutlined,
-  ArrowUpOutlined, ArrowDownOutlined, LineChartOutlined, FilterOutlined,
-  PlusOutlined, DeleteOutlined, HistoryOutlined, MobileOutlined, DesktopOutlined,
+  ReloadOutlined, SearchOutlined, RiseOutlined, FallOutlined,
+  TrophyOutlined, ThunderboltOutlined, ArrowUpOutlined, ArrowDownOutlined,
+  MinusOutlined, AimOutlined, HistoryOutlined, LineChartOutlined,
+  PieChartOutlined, GlobalOutlined, EyeOutlined,
 } from '@ant-design/icons';
-import ReactEChartsCore from 'echarts-for-react/lib/core';
-import * as echarts from 'echarts/core';
-import { LineChart, BarChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, TitleComponent, LegendComponent, DataZoomComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-import PageHeader from '@/components/PageHeader';
+import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
+import { TrendChart, DistributionChart } from '@/components/charts';
 import { useStore } from '@/store';
 import { rankingAPI } from '@/services/rankings';
 
-echarts.use([LineChart, BarChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
-
 const { Text } = Typography;
+
+// ============================================================================
+// Component
+// ============================================================================
 
 const Rankings: React.FC = () => {
   const projectId = useStore((s) => s.currentProject?.id);
+  const projectName = useStore((s) => s.currentProject?.name || '');
+  const selectedEngine = useStore((s) => s.selectedSearchEngine);
+
+  // ---- State ----
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  // 排名数据
+  // Rankings data
   const [rankings, setRankings] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>({
-    totalKeywords: 0, top3: 0, top10: 0, top50: 0, improved: 0, declined: 0, unchanged: 0,
-  });
-  const [rankingTotal, setRankingTotal] = useState(0);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
-  // 筛选
+  // Summary
+  const [summary, setSummary] = useState<any>({
+    totalKeywords: 0, top3: 0, top10: 0, top50: 0,
+    improved: 0, declined: 0, unchanged: 0,
+  });
+
+  // Filters
   const [keywordFilter, setKeywordFilter] = useState('');
   const [sortBy, setSortBy] = useState<string>('position');
   const [sortOrder, setSortOrder] = useState<string>('asc');
-  const [sourceFilter, setSourceFilter] = useState<string>('all');
+  const [engineFilter, setEngineFilter] = useState<string>('');
 
-  // 关键词输入
-  const [newKeyword, setNewKeyword] = useState('');
-  const [newKeywords, setNewKeywords] = useState('');
-  const [locationCode, setLocationCode] = useState(2152); // 美国
-  const [includeGSC, setIncludeGSC] = useState(true);
-
-  // 历史
+  // History drawer
   const [historyDrawer, setHistoryDrawer] = useState(false);
   const [selectedKeyword, setSelectedKeyword] = useState<any>(null);
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Distribution
+  const [distribution, setDistribution] = useState<any[]>([]);
+
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const loadRankings = useCallback(async (p?: number, ps?: number, kw?: string, sb?: string, so?: string, src?: string) => {
+  // ---- KPI calculation ----
+  const avgPosition = rankings.length > 0
+    ? (rankings.reduce((s, r) => s + (r.position || 0), 0) / rankings.length).toFixed(1)
+    : '0';
+  const top10Count = summary?.top10 || 0;
+  const top3Count = summary?.top3 || 0;
+  const visibilityPercent = summary?.totalKeywords > 0
+    ? Math.round(((summary?.top50 || 0) / summary.totalKeywords) * 100)
+    : 0;
+
+  // ---- Data loading ----
+  const loadRankings = useCallback(async (p?: number, ps?: number, kw?: string, sb?: string, so?: string, eng?: string) => {
     if (!projectId) return;
     try {
-      const res = await rankingAPI.getRankings(projectId, {
-        page: p || page,
-        pageSize: ps || pageSize,
-        ...(kw ? { keyword: kw } : {}),
-        ...(sb ? { sortBy: sb } : {}),
-        ...(so ? { sortOrder: so } : {}),
-        ...(src && src !== 'all' ? { source: src } : {}),
+      const res: any = await rankingAPI.getRankings(projectId, {
+        page: p ?? page,
+        pageSize: ps ?? pageSize,
+        searchEngine: eng || engineFilter || undefined,
       });
-      const data = (res as any).data !== undefined ? (res as any).data : res;
-      setRankings(Array.isArray(data) ? data : (data?.data || data?.rankings || []));
-      setRankingTotal(data?.total || data?.pagination?.total || 0);
-    } catch (err: any) {
-      // silent
+      const list = Array.isArray(res) ? res : (res?.data || res?.rankings || []);
+      const t = res?.total || res?.pagination?.total || 0;
+      setRankings(list);
+      setTotal(t);
+    } catch {
+      // graceful degradation
     }
-  }, [projectId, page, pageSize]);
+  }, [projectId, page, pageSize, engineFilter]);
 
   const loadSummary = useCallback(async () => {
     if (!projectId) return;
     try {
-      const res = await rankingAPI.getRankingSummary(projectId);
-      const data = (res as any).data !== undefined ? (res as any).data : res;
-      setSummary(data || {});
+      const res: any = await rankingAPI.getRankingSummary(projectId);
+      const data = res?.data !== undefined ? res.data : res;
+      if (data && Object.keys(data).length > 0) setSummary(data);
     } catch {
-      // silent
+      // graceful
     }
   }, [projectId]);
+
+  const loadDistribution = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      // Compute distribution from rankings data
+      const posData = rankings.length > 0 ? rankings : [];
+      const dist = [
+        { name: '1-3位', value: posData.filter((r: any) => r.position <= 3).length, color: '#52c41a' },
+        { name: '4-10位', value: posData.filter((r: any) => r.position > 3 && r.position <= 10).length, color: '#1677ff' },
+        { name: '11-20位', value: posData.filter((r: any) => r.position > 10 && r.position <= 20).length, color: '#faad14' },
+        { name: '21-50位', value: posData.filter((r: any) => r.position > 20 && r.position <= 50).length, color: '#fa8c16' },
+        { name: '50+', value: posData.filter((r: any) => r.position > 50).length, color: '#ff4d4f' },
+      ].filter((d) => d.value > 0);
+      setDistribution(dist);
+    } catch {
+      setDistribution([]);
+    }
+  }, [rankings]);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -93,8 +122,7 @@ const Rankings: React.FC = () => {
     try {
       await Promise.all([loadRankings(), loadSummary()]);
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
-      setError(msg);
+      setError(err?.response?.data?.error?.message || err?.message || '加载失败');
     } finally {
       setLoading(false);
     }
@@ -106,17 +134,16 @@ const Rankings: React.FC = () => {
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [projectId]);
 
-  // 刷新排名
+  useEffect(() => {
+    if (rankings.length > 0) loadDistribution();
+  }, [rankings]);
+
+  // ---- Actions ----
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await rankingAPI.refreshRankings(projectId!, {
-        keywords: newKeywords ? newKeywords.split(',').map((s: string) => s.trim()).filter(Boolean) : undefined,
-        locationCode,
-        includeGSC,
-      });
+      await rankingAPI.refreshRankings(projectId!);
       message.success('排名刷新任务已启动，请稍后刷新页面查看结果');
-      // 轮询等待
       let count = 0;
       pollingRef.current = setInterval(async () => {
         count++;
@@ -129,38 +156,19 @@ const Rankings: React.FC = () => {
         }
       }, 3000);
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '刷新失败';
-      message.error(msg);
+      message.error(err?.response?.data?.error?.message || err?.message || '刷新失败');
       setRefreshing(false);
     }
   };
 
-  // 添加关键词
-  const handleAddKeyword = async () => {
-    if (!newKeyword.trim()) { message.warning('请输入关键词'); return; }
-    try {
-      await rankingAPI.refreshRankings(projectId!, {
-        keywords: [newKeyword.trim()],
-        locationCode,
-        includeGSC,
-      });
-      message.success(`关键词 "${newKeyword.trim()}" 已添加，正在获取排名`);
-      setNewKeyword('');
-      setTimeout(() => loadAll(), 2000);
-    } catch (err: any) {
-      message.error(err?.response?.data?.error?.message || '添加失败');
-    }
-  };
-
-  // 查看历史
   const handleViewHistory = async (record: any) => {
     setSelectedKeyword(record);
     setHistoryDrawer(true);
     setHistoryLoading(true);
     try {
-      const res = await rankingAPI.getRankingHistory(projectId!, record.keywordId || record.id);
-      const data = (res as any).data !== undefined ? (res as any).data : res;
-      setHistoryData(Array.isArray(data) ? data : (data?.data || data?.history || []));
+      const res: any = await rankingAPI.getRankingHistory(projectId!, record.keywordId || record.id);
+      const data = Array.isArray(res) ? res : (res?.data || res?.history || []);
+      setHistoryData(data);
     } catch {
       setHistoryData([]);
     } finally {
@@ -168,84 +176,54 @@ const Rankings: React.FC = () => {
     }
   };
 
-  // ====== 空/加载/错误 ======
-  if (!projectId) {
-    return (
-      <div className="page-container">
-        <PageHeader title="排名追踪" subtitle="关键词搜索引擎排名追踪与分析" />
-        <Empty description="请先选择一个项目" style={{ marginTop: 120 }} />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="page-container">
-        <PageHeader title="排名追踪" subtitle="关键词搜索引擎排名追踪与分析" />
-        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="page-container">
-        <PageHeader title="排名追踪" subtitle="关键词搜索引擎排名追踪与分析" />
-        <Alert type="error" message="加载失败" description={error} showIcon style={{ marginTop: 24 }}
-          action={<Button size="small" onClick={loadAll}>重试</Button>} />
-      </div>
-    );
-  }
-
-  // 排名变化箭头
+  // ---- Render helpers ----
   const renderChange = (change: number) => {
     if (change > 0) return <Tag color="green" icon={<ArrowUpOutlined />}>+{change}</Tag>;
     if (change < 0) return <Tag color="red" icon={<ArrowDownOutlined />}>{change}</Tag>;
     return <Tag icon={<MinusOutlined />}>0</Tag>;
   };
 
-  // 排名趋势图 - 只显示当前选中关键词的历史数据
-  const trendChartOption = {
-    tooltip: { trigger: 'axis' },
-    legend: { data: [selectedKeyword?.keyword || ''], top: 0 },
-    grid: { left: 50, right: 20, top: 40, bottom: 30 },
-    xAxis: { type: 'category', data: historyData.map((h: any) => h.date || h.checkedAt) },
-    yAxis: { type: 'value', inverse: true, name: '排名', min: 1 },
-    series: [{
-      name: selectedKeyword?.keyword || '',
-      type: 'line',
-      data: historyData.map((h: any) => h.position),
-      smooth: true,
-    }],
-  };
+  // ---- Trend chart data ----
+  const trendChartData = historyData.map((h: any) => ({
+    date: h.date || h.checkedAt || '',
+    value: h.position || 0,
+  }));
 
+  // ---- Columns ----
   const columns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword', width: 200, fixed: 'left' as const,
+    {
+      title: '关键词', dataIndex: 'keyword', key: 'keyword', width: 200, fixed: 'left' as const,
       render: (kw: string) => <Text strong>{kw}</Text>,
     },
-    { title: '当前位置', dataIndex: 'position', key: 'position', width: 100,
+    {
+      title: '当前位置', dataIndex: 'position', key: 'position', width: 100,
       render: (pos: number) => {
         const color = pos <= 3 ? '#52c41a' : pos <= 10 ? '#1677ff' : pos <= 50 ? '#faad14' : '#ff4d4f';
         return <Tag color={color} style={{ fontWeight: 'bold' }}>{pos}</Tag>;
       },
     },
-    { title: '变化', dataIndex: 'change', key: 'change', width: 80,
+    {
+      title: '上次排名', dataIndex: 'previousPosition', key: 'previousPosition', width: 100,
+      render: (val: number) => val ? <Text type="secondary">#{val}</Text> : <Text type="secondary">-</Text>,
+    },
+    {
+      title: '变化', dataIndex: 'change', key: 'change', width: 80,
       render: (change: number) => renderChange(change),
     },
-    { title: 'URL', dataIndex: 'url', key: 'url', width: 200, ellipsis: true,
-      render: (url: string) => url ? <Text code style={{ fontSize: 11 }}>{url}</Text> : <Text type="secondary">-</Text>,
-    },
-    { title: '搜索引擎', dataIndex: 'searchEngine', key: 'searchEngine', width: 90,
+    {
+      title: '搜索引擎', dataIndex: 'searchEngine', key: 'searchEngine', width: 100,
       render: (se: string) => <Tag>{se || 'Google'}</Tag>,
     },
-    { title: '设备', dataIndex: 'device', key: 'device', width: 80,
-      render: (d: string) => d === 'mobile' ? <><MobileOutlined /> 移动</> : <><DesktopOutlined /> 桌面</>,
-    },
-    { title: '地区', dataIndex: 'location', key: 'location', width: 100 },
-    { title: '检查时间', dataIndex: 'checkedAt', key: 'checkedAt', width: 150,
+    {
+      title: '检查时间', dataIndex: 'checkedAt', key: 'checkedAt', width: 150,
       render: (date: string) => date ? new Date(date).toLocaleString('zh-CN') : '-',
     },
-    { title: '操作', key: 'action', width: 100, fixed: 'right' as const,
+    {
+      title: 'URL', dataIndex: 'url', key: 'url', width: 200, ellipsis: true,
+      render: (url: string) => url ? <Text code style={{ fontSize: 11 }}>{url}</Text> : <Text type="secondary">-</Text>,
+    },
+    {
+      title: '操作', key: 'action', width: 100, fixed: 'right' as const,
       render: (_: any, record: any) => (
         <Button type="link" size="small" icon={<HistoryOutlined />} onClick={() => handleViewHistory(record)}>
           历史
@@ -254,134 +232,180 @@ const Rankings: React.FC = () => {
     },
   ];
 
+  // ---- State: no project ----
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader title="排名追踪" subtitle="请先选择项目" showCountrySelector showDateRange showSearchEngine />
+        <EmptyState scene="data" title="请先选择项目" description="请从顶部导航栏选择一个项目以开始排名追踪" />
+      </div>
+    );
+  }
+
+  // ---- State: loading ----
+  if (loading && rankings.length === 0) {
+    return (
+      <div className="page-container">
+        <PageHeader title="排名追踪" subtitle={`${projectName} - 搜索引擎排名追踪`} showCountrySelector showDateRange showSearchEngine />
+        <LoadingSkeleton type="page" />
+      </div>
+    );
+  }
+
+  // ---- State: error ----
+  if (error && rankings.length === 0) {
+    return (
+      <div className="page-container">
+        <PageHeader title="排名追踪" subtitle={`${projectName} - 搜索引擎排名追踪`} showCountrySelector showDateRange showSearchEngine />
+        <ErrorState message={error} onRetry={() => loadAll()} />
+      </div>
+    );
+  }
+
+  // ---- Render ----
   return (
     <div className="page-container">
-      <PageHeader title="排名追踪" subtitle="关键词搜索引擎排名追踪与实时刷新"
-        actions={[
-          { label: '刷新数据', icon: <ReloadOutlined />, onClick: loadAll, loading },
-          { label: '获取排名', type: 'primary', icon: <ThunderboltOutlined />, onClick: handleRefresh, loading: refreshing },
-        ]}
+      <PageHeader
+        title="排名追踪"
+        subtitle={`${projectName} - 追踪 ${total} 个关键词 · 搜索引擎: ${selectedEngine?.name || 'Google'}`}
+        showCountrySelector
+        showDateRange
+        showSearchEngine
+        actions={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadAll} loading={loading}>刷新</Button>
+            <Button type="primary" icon={<ThunderboltOutlined />} onClick={handleRefresh} loading={refreshing}>
+              获取排名
+            </Button>
+          </Space>
+        }
       />
 
-      {/* 操作面板 */}
-      <Card title={<><AimOutlined /> 排名操作</>} style={{ marginBottom: 24 }}>
-        <Row gutter={[16, 16]}>
-          <Col xs={24} md={8}>
-            <Form.Item label="添加关键词" style={{ marginBottom: 0 }}>
-              <Input.Search
-                placeholder="输入关键词，回车添加"
-                value={newKeyword}
-                onChange={(e) => setNewKeyword(e.target.value)}
-                onSearch={handleAddKeyword}
-                enterButton={<PlusOutlined />}
-              />
-            </Form.Item>
-          </Col>
-          <Col xs={24} md={8}>
-            <Form.Item label="批量关键词（逗号分隔）" style={{ marginBottom: 0 }}>
-              <Input
-                placeholder="关键词1, 关键词2, 关键词3..."
-                value={newKeywords}
-                onChange={(e) => setNewKeywords(e.target.value)}
-              />
-            </Form.Item>
-          </Col>
-          <Col xs={12} md={4}>
-            <Form.Item label="地区代码" style={{ marginBottom: 0 }}>
-              <InputNumber value={locationCode} onChange={(v) => setLocationCode(v || 2152)} style={{ width: '100%' }}
-                placeholder="2152=美国" />
-            </Form.Item>
-          </Col>
-          <Col xs={12} md={4}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Space><span>包含 GSC 数据</span><Badge status={includeGSC ? 'success' : 'default'} text={includeGSC ? '开' : '关'} /></Space>
-              <Button size="small" onClick={() => setIncludeGSC(!includeGSC)}>{includeGSC ? '关闭' : '开启'}</Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
-
-      {/* 统计概览 */}
+      {/* KPI StatCards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="追踪关键词" value={summary?.totalKeywords || 0} prefix={<AimOutlined />} /></Card>
+        <Col xs={12} sm={6}>
+          <StatCard title="平均排名" value={avgPosition} icon={<AimOutlined />} color="#1677ff" />
         </Col>
-        <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="TOP 3" value={summary?.top3 || 0} valueStyle={{ color: '#52c41a' }} prefix={<TrophyOutlined />} /></Card>
+        <Col xs={12} sm={6}>
+          <StatCard title="TOP 10 关键词" value={top10Count} icon={<RiseOutlined />} color="#52c41a" />
         </Col>
-        <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="TOP 10" value={summary?.top10 || 0} valueStyle={{ color: '#1677ff' }} /></Card>
+        <Col xs={12} sm={6}>
+          <StatCard title="TOP 3 关键词" value={top3Count} icon={<TrophyOutlined />} color="#faad14" />
         </Col>
-        <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="上升" value={summary?.improved || 0} valueStyle={{ color: '#52c41a' }}
-            prefix={<RiseOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="下降" value={summary?.declined || 0} valueStyle={{ color: '#ff4d4f' }}
-            prefix={<FallOutlined />} /></Card>
-        </Col>
-        <Col xs={12} sm={4}>
-          <Card size="small"><Statistic title="不变" value={summary?.unchanged || 0} prefix={<MinusOutlined />} /></Card>
+        <Col xs={12} sm={6}>
+          <StatCard title="可见度" value={`${visibilityPercent}%`} icon={<EyeOutlined />} color="#722ed1" suffix="" />
         </Col>
       </Row>
 
-      {/* 排名表格 */}
-      <Card title="排名详情"
+      {/* Charts row */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} md={14}>
+          <Card title={<><LineChartOutlined /> 排名趋势</>} loading={historyLoading}>
+            {historyData.length > 0 ? (
+              <TrendChart
+                data={trendChartData}
+                title={selectedKeyword?.keyword || ''}
+                height={350}
+                smooth
+                showArea
+              />
+            ) : (
+              <EmptyState scene="data" title="暂无趋势数据" description="点击关键词列表中的「历史」按钮查看排名趋势" />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} md={10}>
+          <Card title={<><PieChartOutlined /> 排名分布</>}>
+            {distribution.length > 0 ? (
+              <DistributionChart
+                data={distribution}
+                type="donut"
+                height={350}
+                centerLabel={{ label: '总计', value: String(total) }}
+              />
+            ) : (
+              <EmptyState scene="data" title="暂无分布数据" description="获取排名数据后将显示分布情况" />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Rankings table */}
+      <Card
+        title="排名详情"
         extra={
           <Space>
-            <Input
+            <Input.Search
               placeholder="搜索关键词..."
-              prefix={<SearchOutlined />}
-              allowClear
-              style={{ width: 180 }}
               value={keywordFilter}
-              onChange={(e) => { setKeywordFilter(e.target.value); loadRankings(1, pageSize, e.target.value, sortBy, sortOrder, sourceFilter); }}
+              onChange={(e) => setKeywordFilter(e.target.value)}
+              onSearch={() => { setPage(1); loadRankings(1, pageSize, keywordFilter, sortBy, sortOrder, engineFilter); }}
+              style={{ width: 220 }}
+              allowClear
             />
-            <Select value={sortBy} style={{ width: 100 }}
-              onChange={(v) => { setSortBy(v); loadRankings(page, pageSize, keywordFilter, v, sortOrder, sourceFilter); }}
+            <Select
+              value={sortBy}
+              style={{ width: 100 }}
+              onChange={(v) => { setSortBy(v); loadRankings(page, pageSize, keywordFilter, v, sortOrder, engineFilter); }}
               options={[
                 { value: 'position', label: '按排名' },
                 { value: 'check_date', label: '按时间' },
               ]}
             />
-            <Select value={sortOrder} style={{ width: 80 }}
-              onChange={(v) => { setSortOrder(v); loadRankings(page, pageSize, keywordFilter, sortBy, v, sourceFilter); }}
+            <Select
+              value={sortOrder}
+              style={{ width: 80 }}
+              onChange={(v) => { setSortOrder(v); loadRankings(page, pageSize, keywordFilter, sortBy, v, engineFilter); }}
               options={[
                 { value: 'asc', label: '升序' },
                 { value: 'desc', label: '降序' },
               ]}
             />
-            <Select value={sourceFilter} style={{ width: 120 }}
-              onChange={(v) => { setSourceFilter(v); loadRankings(page, pageSize, keywordFilter, sortBy, sortOrder, v); }}
-              options={[
-                { value: 'all', label: '全部来源' },
-                { value: 'dataforseo', label: 'DataForSEO' },
-                { value: 'gsc', label: 'GSC' },
-              ]}
-            />
           </Space>
         }
       >
-        <Table columns={columns} dataSource={rankings} rowKey="id"
-          pagination={{ current: page, pageSize, total: rankingTotal, showSizeChanger: true,
-            onChange: (p, ps) => { setPage(p); setPageSize(ps); loadRankings(p, ps, keywordFilter, sortBy, sortOrder, sourceFilter); },
-          }}
-          scroll={{ x: 1100 }} size="middle"
-        />
+        {rankings.length === 0 ? (
+          <EmptyState
+            scene="data"
+            title="暂无排名数据"
+            description="点击「获取排名」按钮开始追踪关键词排名"
+            action={{ text: '获取排名', icon: <ThunderboltOutlined />, onClick: handleRefresh, loading: refreshing }}
+          />
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={rankings}
+            rowKey="id"
+            pagination={{
+              current: page, pageSize, total, showSizeChanger: true,
+              showTotal: (t) => `共 ${t} 条记录`,
+              onChange: (p, ps) => { setPage(p); setPageSize(ps); loadRankings(p, ps, keywordFilter, sortBy, sortOrder, engineFilter); },
+            }}
+            size="middle"
+            scroll={{ x: 1100 }}
+          />
+        )}
       </Card>
 
-      {/* 排名历史 Drawer */}
-      <Drawer title={`排名历史 - ${selectedKeyword?.keyword || ''}`} placement="right" width={600}
-        open={historyDrawer} onClose={() => setHistoryDrawer(false)} loading={historyLoading}>
+      {/* History Drawer */}
+      <Drawer
+        title={`排名历史 - ${selectedKeyword?.keyword || ''}`}
+        placement="right"
+        width={600}
+        open={historyDrawer}
+        onClose={() => setHistoryDrawer(false)}
+        loading={historyLoading}
+      >
         {historyData.length > 0 ? (
           <>
-            <ReactEChartsCore echarts={echarts} option={trendChartOption} style={{ height: 350, marginBottom: 24 }} />
+            <TrendChart data={trendChartData} title="排名变化趋势" height={300} smooth />
             <Table
               dataSource={historyData}
               rowKey={(r: any, i?: number) => `${r.date}-${i}`}
               columns={[
                 { title: '日期', dataIndex: 'date', key: 'date', render: (d: string) => d || '-' },
-                { title: '排名', dataIndex: 'position', key: 'position',
+                {
+                  title: '排名', dataIndex: 'position', key: 'position',
                   render: (pos: number) => {
                     const color = pos <= 3 ? '#52c41a' : pos <= 10 ? '#1677ff' : '#ff4d4f';
                     return <Tag color={color}>{pos}</Tag>;
@@ -394,7 +418,7 @@ const Rankings: React.FC = () => {
             />
           </>
         ) : (
-          <Empty description="暂无历史数据" />
+          <EmptyState scene="data" title="暂无历史数据" />
         )}
       </Drawer>
     </div>

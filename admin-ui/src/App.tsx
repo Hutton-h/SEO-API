@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useMemo } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ConfigProvider, App as AntApp, theme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
@@ -21,8 +21,6 @@ const AIOptimization = lazy(() => import('@/pages/AIOptimization'));
 const Competitors = lazy(() => import('@/pages/Competitors'));
 const Report = lazy(() => import('@/pages/Report'));
 const Login = lazy(() => import('@/pages/Login'));
-
-// 新增页面
 const Alerting = lazy(() => import('@/pages/Alerting'));
 const Monitor = lazy(() => import('@/pages/Monitor'));
 const ROIAnalysis = lazy(() => import('@/pages/ROIAnalysis'));
@@ -48,20 +46,21 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 const App: React.FC = () => {
+  const appTheme = useStore((state) => state.theme);
+  const branding = useStore((state) => state.branding);
+
+  const themeConfig = useMemo(() => ({
+    token: {
+      colorPrimary: branding.primaryColor || '#1677ff',
+      borderRadius: 6,
+      fontFamily:
+        "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans CJK SC', sans-serif",
+    },
+    algorithm: appTheme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
+  }), [appTheme, branding.primaryColor]);
+
   return (
-    <ConfigProvider
-      locale={zhCN}
-      theme={{
-        token: {
-          colorPrimary: '#1677ff',
-          borderRadius: 6,
-          colorBgContainer: '#ffffff',
-          fontFamily:
-            "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-        },
-        algorithm: theme.defaultAlgorithm,
-      }}
-    >
+    <ConfigProvider locale={zhCN} theme={themeConfig}>
       <AntApp>
         <Suspense fallback={<PageLoading />}>
           <Routes>
@@ -88,7 +87,6 @@ const App: React.FC = () => {
               <Route path="ai-optimization" element={<AIOptimization />} />
               <Route path="competitors" element={<Competitors />} />
               <Route path="report" element={<Report />} />
-              {/* 新增路由 */}
               <Route path="alerting" element={<Alerting />} />
               <Route path="monitor" element={<Monitor />} />
               <Route path="roi-analysis" element={<ROIAnalysis />} />

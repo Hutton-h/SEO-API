@@ -1,68 +1,60 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Button, Modal, Form, Input, Select, Space, Tag, Dropdown, Typography, message, Popconfirm, Empty, Alert, Spin,
+  Card, Row, Col, Table, Button, Modal, Form, Input, Space, Typography,
+  message, Popconfirm, Tag,
 } from 'antd';
 import {
-  PlusOutlined, EditOutlined, DeleteOutlined, MoreOutlined,
-  GlobalOutlined, SettingOutlined, EllipsisOutlined, ReloadOutlined,
+  PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined,
+  GlobalOutlined, SettingOutlined, CheckCircleOutlined,
 } from '@ant-design/icons';
-import PageHeader from '@/components/PageHeader';
+import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton, StatusBadge } from '@/components/common';
 import { useStore } from '@/store';
+import { useProject } from '@/hooks';
 import { projectAPI } from '@/services/project';
 import dayjs from 'dayjs';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
+const { TextArea } = Input;
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface ProjectFormData {
   name: string;
   domain: string;
-  description?: string;
-  crawlFrequency?: 'daily' | 'weekly' | 'monthly';
+  competitors?: string;
+  keywords?: string;
 }
 
-interface Project {
-  id: string;
-  name: string;
-  domain: string;
-  status: 'active' | 'paused' | 'archived';
-  createdAt: string;
-  description?: string;
-  settings?: {
-    crawlFrequency?: string;
-  };
-}
-
-const statusColors: Record<string, string> = {
-  active: 'green',
-  paused: 'orange',
-  archived: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  active: '运行中',
-  paused: '已暂停',
-  archived: '已归档',
-};
+// ============================================================================
+// Component
+// ============================================================================
 
 const Projects: React.FC = () => {
-  const { projects, setProjects, addProject, removeProject, updateProject } = useStore();
+  const { projects, setProjects, setCurrentProject, currentProject } = useStore();
+  const { hasProject } = useProject();
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm<ProjectFormData>();
+
+  // ==========================================================================
+  // Data loading
+  // ==========================================================================
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await projectAPI.getProjects();
-      const result = (res as any).data || res;
-      const data = Array.isArray(result) ? result : result.data || [];
-      setProjects?.(data);
+      const res: any = await projectAPI.getProjects();
+      const data = Array.isArray(res) ? res : (res?.data || []);
+      setProjects(data);
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      const msg = err?.message || '加载项目列表失败';
       setError(msg);
     } finally {
       setLoading(false);
@@ -73,9 +65,9 @@ const Projects: React.FC = () => {
     loadProjects();
   }, [loadProjects]);
 
-  const handleRefresh = () => {
-    loadProjects();
-  };
+  // ==========================================================================
+  // Handlers
+  // ==========================================================================
 
   const handleAdd = () => {
     setEditingProject(null);
@@ -90,8 +82,8 @@ const Projects: React.FC = () => {
       form.setFieldsValue({
         name: project.name,
         domain: project.domain,
-        description: (project as any).description,
-        crawlFrequency: (project as any).settings?.crawlFrequency,
+        competitors: (project as any).competitors || '',
+        keywords: (project as any).keywords || '',
       });
       setModalOpen(true);
     }
@@ -102,37 +94,23 @@ const Projects: React.FC = () => {
       setSaving(true);
       const values = await form.validateFields();
       if (editingProject) {
-        const res = await projectAPI.updateProject(editingProject, {
+        await projectAPI.updateProject(editingProject, {
           name: values.name,
           domain: values.domain,
-          description: values.description,
-          settings: {
-            crawlFrequency: values.crawlFrequency || 'weekly',
-          },
         });
-        const updatedData = (res as any).data || res;
-        updateProject?.(editingProject, updatedData);
         message.success('项目已更新');
       } else {
-        const res = await projectAPI.createProject({
+        await projectAPI.createProject({
           name: values.name,
           domain: values.domain,
-          description: values.description,
-          settings: {
-            crawlFrequency: values.crawlFrequency || 'weekly',
-          },
         });
-        const newData = (res as any).data || res;
-        addProject?.(newData);
         message.success('项目创建成功');
       }
       setModalOpen(false);
+      await loadProjects();
     } catch (err: any) {
-      if (err?.errorFields) {
-        // form validation error - do nothing
-        return;
-      }
-      const msg = err?.response?.data?.error?.message || err?.message || '操作失败';
+      if (err?.errorFields) return;
+      const msg = err?.message || '操作失败';
       message.error(msg);
     } finally {
       setSaving(false);
@@ -142,27 +120,137 @@ const Projects: React.FC = () => {
   const handleDelete = async (id: string) => {
     try {
       await projectAPI.deleteProject(id);
-      removeProject?.(id);
       message.success('项目已删除');
+      await loadProjects();
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '删除失败';
+      const msg = err?.message || '删除失败';
       message.error(msg);
     }
   };
 
-  const handleStatusChange = async (id: string, status: 'active' | 'paused' | 'archived') => {
-    try {
-      const res = await projectAPI.updateProject(id, { status });
-      const updatedData = (res as any).data || res;
-      updateProject?.(id, updatedData);
-      message.success(`项目状态已更新 ${statusLabels[status]}`);
-    } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '状态更新失败';
-      message.error(msg);
+  const handleSetCurrent = (id: string) => {
+    const project = projects.find((p) => p.id === id);
+    if (project) {
+      setCurrentProject(project);
+      message.success(`已切换到项目: ${project.name}`);
     }
   };
 
-  // ---- Loading state ----
+  // ==========================================================================
+  // Table columns
+  // ==========================================================================
+
+  const columns = [
+    {
+      title: '项目名称',
+      dataIndex: 'name',
+      key: 'name',
+      render: (text: string, record: any) => (
+        <Space>
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: '#1677ff15',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#1677ff',
+              flexShrink: 0,
+            }}
+          >
+            <GlobalOutlined />
+          </div>
+          <div>
+            <Text strong style={{ display: 'block' }}>{text}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{record.domain}</Text>
+          </div>
+        </Space>
+      ),
+    },
+    {
+      title: '域名',
+      dataIndex: 'domain',
+      key: 'domain',
+      ellipsis: true,
+      render: (text: string) => (
+        <Text type="secondary" copyable>{text}</Text>
+      ),
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (status: string) => {
+        const statusMap: Record<string, { text: string; status: 'active' | 'paused' | 'archived' }> = {
+          active: { text: '运行中', status: 'active' },
+          paused: { text: '已暂停', status: 'paused' },
+          archived: { text: '已归档', status: 'archived' },
+        };
+        const info = statusMap[status] || { text: status, status: 'pending' as const };
+        return <StatusBadge status={info.status} text={info.text} />;
+      },
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 120,
+      render: (text: string) => (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {text ? dayjs(text).format('YYYY-MM-DD') : '-'}
+        </Text>
+      ),
+    },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 240,
+      render: (_: unknown, record: any) => (
+        <Space size="small">
+          {currentProject?.id !== record.id && (
+            <Button
+              type="link"
+              size="small"
+              icon={<CheckCircleOutlined />}
+              onClick={() => handleSetCurrent(record.id)}
+            >
+              设为当前
+            </Button>
+          )}
+          {currentProject?.id === record.id && (
+            <Tag color="blue" style={{ margin: 0 }}>当前项目</Tag>
+          )}
+          <Button
+            type="link"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={() => handleEdit(record.id)}
+          >
+            编辑
+          </Button>
+          <Popconfirm
+            title="确定删除此项目？"
+            description="删除后数据不可恢复"
+            onConfirm={() => handleDelete(record.id)}
+            okText="确定"
+            cancelText="取消"
+          >
+            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+              删除
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  // ==========================================================================
+  // Render: Loading
+  // ==========================================================================
+
   if (loading) {
     return (
       <div className="page-container">
@@ -170,12 +258,15 @@ const Projects: React.FC = () => {
           title="项目管理"
           subtitle="管理您的 SEO 项目"
         />
-        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+        <LoadingSkeleton type="table" />
       </div>
     );
   }
 
-  // ---- Error state ----
+  // ==========================================================================
+  // Render: Error
+  // ==========================================================================
+
   if (error) {
     return (
       <div className="page-container">
@@ -183,138 +274,101 @@ const Projects: React.FC = () => {
           title="项目管理"
           subtitle="管理您的 SEO 项目"
         />
-        <Alert
-          type="error"
-          message="加载失败"
-          description={error}
-          showIcon
-          action={
-            <Button onClick={handleRefresh} size="small">
-              重试
-            </Button>
-          }
+        <ErrorState
+          message={error}
+          onRetry={loadProjects}
         />
       </div>
     );
   }
+
+  // ==========================================================================
+  // Render: Main
+  // ==========================================================================
+
+  const activeCount = projects.filter((p) => p.status === 'active').length;
+  const pausedCount = projects.filter((p) => p.status === 'paused').length;
+  const archivedCount = projects.filter((p) => p.status === 'archived').length;
 
   return (
     <div className="page-container">
       <PageHeader
         title="项目管理"
         subtitle={`共 ${projects.length} 个项目`}
-        actions={[
-          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
-          { label: '新建项目', type: 'primary', icon: <PlusOutlined />, onClick: handleAdd },
-        ]}
+        actions={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadProjects}>
+              刷新
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+              新建项目
+            </Button>
+          </Space>
+        }
       />
 
-      <div className="project-grid">
-        {projects.length === 0 ? (
-          <div style={{ gridColumn: '1 / -1', padding: '80px 0' }}>
-            <Empty description="暂无项目">
-              <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-                创建第一个项目
-              </Button>
-            </Empty>
-          </div>
-        ) : (
-          projects.map((project) => (
-            <Card
-              key={project.id}
-              hoverable
-              style={{ borderTop: `3px solid ${project.status === 'active' ? '#1677ff' : project.status === 'paused' ? '#faad14' : '#d9d9d9'}` }}
-              actions={[
-                <EditOutlined key="edit" onClick={() => handleEdit(project.id)} />,
-                <Popconfirm
-                  key="delete"
-                  title="确定删除此项目？"
-                  description="删除后数据不可恢复"
-                  onConfirm={() => handleDelete(project.id)}
-                  okText="确定"
-                  cancelText="取消"
-                >
-                  <DeleteOutlined style={{ color: '#ff4d4f' }} />
-                </Popconfirm>,
-                <Dropdown
-                  key="more"
-                  menu={{
-                    items: [
-                      {
-                        key: 'active',
-                        label: '设为运行中',
-                        icon: <span style={{ color: '#52c41a' }}>&#9679;</span>,
-                        disabled: project.status === 'active',
-                        onClick: () => handleStatusChange(project.id, 'active'),
-                      },
-                      {
-                        key: 'paused',
-                        label: '设为暂停',
-                        icon: <span style={{ color: '#faad14' }}>&#9679;</span>,
-                        disabled: project.status === 'paused',
-                        onClick: () => handleStatusChange(project.id, 'paused'),
-                      },
-                      {
-                        key: 'archived',
-                        label: '设为归档',
-                        icon: <span style={{ color: '#d9d9d9' }}>&#9679;</span>,
-                        disabled: project.status === 'archived',
-                        onClick: () => handleStatusChange(project.id, 'archived'),
-                      },
-                    ],
-                  }}
-                  trigger={['click']}
-                >
-                  <EllipsisOutlined />
-                </Dropdown>,
-              ]}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                <div
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 8,
-                    background: '#1677ff15',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 20,
-                    color: '#1677ff',
-                    flexShrink: 0,
-                  }}
-                >
-                  <GlobalOutlined />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text strong style={{ fontSize: 16 }}>
-                      {project.name}
-                    </Text>
-                    <Tag color={statusColors[project.status]}>{statusLabels[project.status]}</Tag>
-                  </div>
-                  <Paragraph
-                    type="secondary"
-                    style={{ margin: '4px 0', fontSize: 13 }}
-                    ellipsis
-                  >
-                    {project.domain}
-                  </Paragraph>
-                  <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      <SettingOutlined /> {(project as any).settings?.crawlFrequency || 'weekly'} 爬取
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      创建于 {dayjs(project.createdAt).format('YYYY-MM-DD')}
-                    </Text>
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ))
-        )}
-      </div>
+      {/* KPI Cards */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="项目总数"
+            value={projects.length}
+            icon={<GlobalOutlined />}
+            color="#1677ff"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="运行中"
+            value={activeCount}
+            icon={<CheckCircleOutlined />}
+            color="#52c41a"
+            subtitle={`${projects.length > 0 ? Math.round((activeCount / projects.length) * 100) : 0}%`}
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="已暂停"
+            value={pausedCount}
+            color="#faad14"
+            subtitle="需要关注"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="已归档"
+            value={archivedCount}
+            color="#bfbfbf"
+            subtitle="历史项目"
+          />
+        </Col>
+      </Row>
 
+      {/* Project Table */}
+      <Card title="项目列表" style={{ borderRadius: 8 }}>
+        {projects.length === 0 ? (
+          <EmptyState
+            scene="data"
+            title="暂无项目"
+            description="创建您的第一个 SEO 项目开始追踪数据"
+            action={{
+              text: '创建项目',
+              onClick: handleAdd,
+              icon: <PlusOutlined />,
+            }}
+          />
+        ) : (
+          <Table
+            columns={columns}
+            dataSource={projects}
+            rowKey="id"
+            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 个项目` }}
+            size="middle"
+          />
+        )}
+      </Card>
+
+      {/* Create / Edit Modal */}
       <Modal
         title={editingProject ? '编辑项目' : '新建项目'}
         open={modalOpen}
@@ -323,7 +377,8 @@ const Projects: React.FC = () => {
         confirmLoading={saving}
         okText={editingProject ? '保存' : '创建'}
         cancelText="取消"
-        width={520}
+        width={560}
+        destroyOnClose
       >
         <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item
@@ -331,7 +386,7 @@ const Projects: React.FC = () => {
             label="项目名称"
             rules={[{ required: true, message: '请输入项目名称' }]}
           >
-            <Input placeholder="例如：主站优化" />
+            <Input placeholder="例如：主站SEO优化" />
           </Form.Item>
           <Form.Item
             name="domain"
@@ -343,15 +398,19 @@ const Projects: React.FC = () => {
           >
             <Input placeholder="https://example.com" prefix={<GlobalOutlined />} />
           </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={3} placeholder="项目描述（可选）" />
+          <Form.Item
+            name="competitors"
+            label="竞品域名（可选）"
+            extra="每行输入一个竞品域名"
+          >
+            <TextArea rows={3} placeholder="https://competitor1.com&#10;https://competitor2.com" />
           </Form.Item>
-          <Form.Item name="crawlFrequency" label="爬取频率">
-            <Select placeholder="选择爬取频率">
-              <Select.Option value="daily">每天</Select.Option>
-              <Select.Option value="weekly">每周</Select.Option>
-              <Select.Option value="monthly">每月</Select.Option>
-            </Select>
+          <Form.Item
+            name="keywords"
+            label="目标关键词（可选）"
+            extra="每行输入一个关键词"
+          >
+            <TextArea rows={3} placeholder="SEO工具&#10;关键词排名&#10;网站分析" />
           </Form.Item>
         </Form>
       </Modal>

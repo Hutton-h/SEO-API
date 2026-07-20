@@ -1,170 +1,195 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Row, Col, Form, Input, Button, ColorPicker, Switch, Typography,
-  Space, message, Upload, Divider, Descriptions, Tag, Alert, Spin, Empty,
+  Card, Row, Col, Form, Input, Button, ColorPicker, Typography,
+  Space, message, Upload, Divider, Descriptions, Tag,
 } from 'antd';
 import {
   UploadOutlined, SaveOutlined, GlobalOutlined, ReloadOutlined,
   PictureOutlined, CheckCircleOutlined, InfoCircleOutlined,
+  SettingOutlined, LinkOutlined,
 } from '@ant-design/icons';
+import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
 import { useStore } from '@/store';
 import { whitelabelAPI } from '@/services/whitelabel';
-import PageHeader from '@/components/PageHeader';
 
 const { Text, Title } = Typography;
 
-interface WhitelabelConfig {
+// ============================================================================
+// Types
+// ============================================================================
+
+interface WhiteLabelFormData {
   brandName: string;
   logoUrl: string;
+  faviconUrl: string;
   primaryColor: string;
   customDomain: string;
-  enabled?: boolean;
+  footerText: string;
 }
 
+// ============================================================================
+// Component
+// ============================================================================
+
 const WhiteLabel: React.FC = () => {
-  const { setBranding } = useStore();
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(true);
+  const { branding, setBranding } = useStore();
+  const [form] = Form.useForm<WhiteLabelFormData>();
+
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [verifyingDomain, setVerifyingDomain] = useState(false);
-  const [domainVerified, setDomainVerified] = useState<boolean | null>(null);
-  const [config, setConfig] = useState<WhitelabelConfig>({
-    brandName: '',
-    logoUrl: '',
-    primaryColor: '#1677ff',
-    customDomain: '',
-    enabled: false,
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingFavicon, setUploadingFavicon] = useState(false);
+
+  const [previewConfig, setPreviewConfig] = useState({
+    brandName: branding.brandName || 'Crane SEO Platform',
+    logoUrl: branding.logoUrl || '',
+    faviconUrl: '',
+    primaryColor: branding.primaryColor || '#1677ff',
+    customDomain: branding.customDomain || '',
+    footerText: 'Powered by Crane SEO Platform',
   });
-  const [previewConfig, setPreviewConfig] = useState<WhitelabelConfig>({
-    brandName: '',
-    logoUrl: '',
-    primaryColor: '#1677ff',
-    customDomain: '',
-  });
+
+  const [savedConfig, setSavedConfig] = useState<WhiteLabelFormData | null>(null);
+
+  // ==========================================================================
+  // Data loading
+  // ==========================================================================
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await whitelabelAPI.getConfig();
-      const data = (res as any).data || res;
-      const cfg: WhitelabelConfig = {
-        brandName: data.brandName || '',
-        logoUrl: data.logoUrl || '',
-        primaryColor: data.primaryColor || '#1677ff',
-        customDomain: data.customDomain || '',
-        enabled: data.enabled ?? false,
+      const res: any = await whitelabelAPI.getConfig();
+      const data = res || {};
+      const cfg: WhiteLabelFormData = {
+        brandName: data.brandName || branding.brandName || 'Crane SEO Platform',
+        logoUrl: data.logoUrl || branding.logoUrl || '',
+        faviconUrl: data.faviconUrl || '',
+        primaryColor: data.primaryColor || branding.primaryColor || '#1677ff',
+        customDomain: data.customDomain || branding.customDomain || '',
+        footerText: data.footerText || '',
       };
-      setConfig(cfg);
+      setSavedConfig(cfg);
       setPreviewConfig(cfg);
-      form.setFieldsValue({
+      form.setFieldsValue(cfg);
+      setBranding({
         brandName: cfg.brandName,
         logoUrl: cfg.logoUrl,
         primaryColor: cfg.primaryColor,
         customDomain: cfg.customDomain,
-        enabled: cfg.enabled,
       });
-      setBranding?.(cfg);
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '加载失败';
+      const msg = err?.message || '加载白标配置失败';
       setError(msg);
     } finally {
       setLoading(false);
     }
-  }, [form, setBranding]);
+  }, [form, setBranding, branding]);
 
   useEffect(() => {
     loadConfig();
   }, [loadConfig]);
 
-  const handleRefresh = () => {
-    loadConfig();
+  // ==========================================================================
+  // Handlers
+  // ==========================================================================
+
+  const handleFormChange = () => {
+    const values = form.getFieldsValue();
+    setPreviewConfig((prev) => ({
+      ...prev,
+      brandName: values.brandName ?? prev.brandName,
+      logoUrl: values.logoUrl ?? prev.logoUrl,
+      faviconUrl: values.faviconUrl ?? prev.faviconUrl,
+      primaryColor:
+        typeof values.primaryColor === 'string'
+          ? values.primaryColor
+          : (values.primaryColor as any)?.toHexString?.() ?? prev.primaryColor,
+      customDomain: values.customDomain ?? prev.customDomain,
+      footerText: values.footerText ?? prev.footerText,
+    }));
   };
 
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      const payload: WhitelabelConfig = {
+      const primaryColor =
+        typeof values.primaryColor === 'string'
+          ? values.primaryColor
+          : (values.primaryColor as any)?.toHexString?.() || '#1677ff';
+
+      const payload = {
         brandName: values.brandName,
         logoUrl: values.logoUrl,
-        primaryColor: typeof values.primaryColor === 'string' ? values.primaryColor : values.primaryColor?.toHexString?.() || '#1677ff',
+        faviconUrl: values.faviconUrl,
+        primaryColor,
         customDomain: values.customDomain,
-        enabled: values.enabled,
+        footerText: values.footerText,
       };
+
       await whitelabelAPI.updateConfig(payload);
-      setConfig(payload);
+      setSavedConfig(payload);
       setPreviewConfig(payload);
-      setBranding?.(payload);
+      setBranding({
+        brandName: payload.brandName,
+        logoUrl: payload.logoUrl,
+        primaryColor: payload.primaryColor,
+        customDomain: payload.customDomain,
+      });
       message.success('白标配置已保存');
     } catch (err: any) {
-      if (err?.errorFields) {
-        // form validation error - do nothing
-        return;
-      }
-      const msg = err?.response?.data?.error?.message || err?.message || '保存失败';
+      if (err?.errorFields) return;
+      const msg = err?.message || '保存失败';
       message.error(msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleFormChange = () => {
-    const values = form.getFieldsValue();
-    setPreviewConfig({
-      brandName: values.brandName || config.brandName,
-      logoUrl: values.logoUrl || config.logoUrl,
-      primaryColor: typeof values.primaryColor === 'string' ? values.primaryColor : values.primaryColor?.toHexString?.() || config.primaryColor,
-      customDomain: values.customDomain || config.customDomain,
-    });
-  };
-
   const handleUploadLogo = async (file: File) => {
+    setUploadingLogo(true);
     try {
-      const res = await whitelabelAPI.uploadLogo(file);
-      const data = (res as any).data || res;
-      const url = data.url || data.logoUrl || '';
+      const res: any = await whitelabelAPI.uploadLogo(file);
+      const url = res?.url || res?.logoUrl || '';
       if (url) {
         form.setFieldsValue({ logoUrl: url });
         setPreviewConfig((prev) => ({ ...prev, logoUrl: url }));
         message.success('Logo 上传成功');
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '上传失败';
+      const msg = err?.message || '上传失败';
       message.error(msg);
+    } finally {
+      setUploadingLogo(false);
     }
-    return false; // prevent default upload behavior
+    return false;
   };
 
-  const handleVerifyDomain = async () => {
-    const domain = form.getFieldValue('customDomain');
-    if (!domain) {
-      message.warning('请先输入自定义域名');
-      return;
-    }
-    setVerifyingDomain(true);
-    setDomainVerified(null);
+  const handleUploadFavicon = async (file: File) => {
+    setUploadingFavicon(true);
     try {
-      const res = await whitelabelAPI.verifyDomain(domain);
-      const data = (res as any).data || res;
-      const valid = data.valid ?? data.success ?? false;
-      setDomainVerified(valid);
-      if (valid) {
-        message.success('域名验证通过');
-      } else {
-        message.warning('域名验证未通过，请检查 DNS 配置');
+      const res: any = await whitelabelAPI.uploadLogo(file);
+      const url = res?.url || res?.logoUrl || '';
+      if (url) {
+        form.setFieldsValue({ faviconUrl: url });
+        setPreviewConfig((prev) => ({ ...prev, faviconUrl: url }));
+        message.success('Favicon 上传成功');
       }
     } catch (err: any) {
-      const msg = err?.response?.data?.error?.message || err?.message || '验证失败';
+      const msg = err?.message || '上传失败';
       message.error(msg);
-      setDomainVerified(false);
     } finally {
-      setVerifyingDomain(false);
+      setUploadingFavicon(false);
     }
+    return false;
   };
 
-  // ---- Loading state ----
+  // ==========================================================================
+  // Render: Loading
+  // ==========================================================================
+
   if (loading) {
     return (
       <div className="page-container">
@@ -172,12 +197,15 @@ const WhiteLabel: React.FC = () => {
           title="白标配置"
           subtitle="自定义品牌标识与外观"
         />
-        <Spin size="large" style={{ display: 'block', margin: '40vh auto' }} />
+        <LoadingSkeleton type="page" />
       </div>
     );
   }
 
-  // ---- Error state ----
+  // ==========================================================================
+  // Render: Error
+  // ==========================================================================
+
   if (error) {
     return (
       <div className="page-container">
@@ -185,46 +213,49 @@ const WhiteLabel: React.FC = () => {
           title="白标配置"
           subtitle="自定义品牌标识与外观"
         />
-        <Alert
-          type="error"
-          message="加载失败"
-          description={error}
-          showIcon
-          action={
-            <Button onClick={handleRefresh} size="small">
-              重试
-            </Button>
-          }
+        <ErrorState
+          message={error}
+          onRetry={loadConfig}
         />
       </div>
     );
   }
 
+  // ==========================================================================
+  // Render: Main
+  // ==========================================================================
+
   return (
     <div className="page-container">
       <PageHeader
         title="白标配置"
-        subtitle="自定义品牌标识与外观"
-        actions={[
-          { label: '刷新', icon: <ReloadOutlined />, onClick: handleRefresh, loading },
-          { label: '保存配置', type: 'primary', icon: <SaveOutlined />, onClick: handleSave, loading: saving },
-        ]}
+        subtitle="自定义品牌标识、域名与外观，打造专属 SEO 平台"
+        actions={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadConfig}>
+              刷新
+            </Button>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={saving}
+              onClick={handleSave}
+            >
+              保存配置
+            </Button>
+          </Space>
+        }
       />
 
       <Row gutter={[24, 24]}>
+        {/* Left: Form */}
         <Col xs={24} lg={14}>
-          <Card title="品牌配置">
+          <Card title="品牌配置" style={{ borderRadius: 8 }}>
             <Form
               form={form}
               layout="vertical"
-              initialValues={{
-                brandName: config.brandName,
-                logoUrl: config.logoUrl,
-                primaryColor: config.primaryColor,
-                customDomain: config.customDomain,
-                enabled: config.enabled,
-              }}
               onValuesChange={handleFormChange}
+              initialValues={savedConfig || {}}
               size="large"
             >
               <Form.Item
@@ -232,28 +263,81 @@ const WhiteLabel: React.FC = () => {
                 label="品牌名称"
                 rules={[{ required: true, message: '请输入品牌名称' }]}
               >
-                <Input placeholder="例如：我的SEO平台" prefix={<InfoCircleOutlined />} />
+                <Input
+                  placeholder="例如：我的 SEO 平台"
+                  prefix={<InfoCircleOutlined />}
+                />
               </Form.Item>
 
-              <Form.Item
-                name="logoUrl"
-                label="Logo URL"
-                rules={[{ type: 'url', message: '请输入有效的URL' }]}
-              >
-                <Input placeholder="https://example.com/logo.png" prefix={<PictureOutlined />} />
+              <Form.Item name="logoUrl" label="Logo 图片 URL">
+                <Input
+                  placeholder="https://example.com/logo.png"
+                  prefix={<PictureOutlined />}
+                />
               </Form.Item>
 
-              <Form.Item name="logoFile" label="上传 Logo">
+              <Form.Item label="上传 Logo">
                 <Upload
                   listType="picture-card"
                   maxCount={1}
                   beforeUpload={handleUploadLogo}
                   showUploadList={{ showPreviewIcon: true }}
                 >
-                  <div>
-                    <UploadOutlined />
-                    <div style={{ marginTop: 8 }}>上传</div>
+                  {uploadingLogo ? (
+                    '上传中...'
+                  ) : (
+                    <div>
+                      <UploadOutlined />
+                      <div style={{ marginTop: 8 }}>上传</div>
+                    </div>
+                  )}
+                </Upload>
+                {previewConfig.logoUrl && (
+                  <div style={{ marginTop: 8 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      当前 Logo 预览:
+                    </Text>
+                    <br />
+                    <img
+                      src={previewConfig.logoUrl}
+                      alt="logo"
+                      style={{
+                        marginTop: 4,
+                        maxHeight: 40,
+                        maxWidth: 200,
+                        borderRadius: 4,
+                        border: '1px solid #f0f0f0',
+                      }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
                   </div>
+                )}
+              </Form.Item>
+
+              <Form.Item name="faviconUrl" label="Favicon URL">
+                <Input
+                  placeholder="https://example.com/favicon.ico"
+                  prefix={<LinkOutlined />}
+                />
+              </Form.Item>
+
+              <Form.Item label="上传 Favicon">
+                <Upload
+                  listType="picture-card"
+                  maxCount={1}
+                  beforeUpload={handleUploadFavicon}
+                  showUploadList={{ showPreviewIcon: true }}
+                >
+                  {uploadingFavicon ? (
+                    '上传中...'
+                  ) : (
+                    <div>
+                      <UploadOutlined />
+                      <div style={{ marginTop: 8 }}>上传</div>
+                    </div>
+                  )}
                 </Upload>
               </Form.Item>
 
@@ -261,43 +345,29 @@ const WhiteLabel: React.FC = () => {
                 <ColorPicker showText format="hex" />
               </Form.Item>
 
-              <Form.Item
-                name="customDomain"
-                label="自定义域名"
-              >
-                <Space.Compact style={{ width: '100%' }}>
-                  <Input placeholder="app.yourcompany.com" prefix={<GlobalOutlined />} />
-                  <Button
-                    icon={<CheckCircleOutlined />}
-                    onClick={handleVerifyDomain}
-                    loading={verifyingDomain}
-                  >
-                    验证
-                  </Button>
-                </Space.Compact>
-                {domainVerified === true && (
-                  <Text type="success" style={{ fontSize: 12 }}>
-                    <CheckCircleOutlined /> 域名验证通过
-                  </Text>
-                )}
-                {domainVerified === false && (
-                  <Text type="danger" style={{ fontSize: 12 }}>
-                    域名验证失败，请检查配置
-                  </Text>
-                )}
+              <Form.Item name="customDomain" label="自定义域名">
+                <Input
+                  placeholder="app.yourcompany.com"
+                  prefix={<GlobalOutlined />}
+                />
               </Form.Item>
 
-              <Divider />
-
-              <Form.Item name="enabled" label="启用白标" valuePropName="checked">
-                <Switch />
+              <Form.Item name="footerText" label="页脚文本">
+                <Input.TextArea
+                  rows={2}
+                  placeholder="页脚自定义文本，例如：© 2024 Your Company"
+                />
               </Form.Item>
             </Form>
           </Card>
         </Col>
 
+        {/* Right: Preview */}
         <Col xs={24} lg={10}>
-          <Card title="实时预览" style={{ position: 'sticky', top: 80 }}>
+          <Card
+            title="实时预览"
+            style={{ borderRadius: 8, position: 'sticky', top: 80 }}
+          >
             <div
               style={{
                 border: '1px solid #e8e8e8',
@@ -306,11 +376,11 @@ const WhiteLabel: React.FC = () => {
                 boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
               }}
             >
-              {/* 预览 Header */}
+              {/* Preview Header */}
               <div
                 style={{
                   background: previewConfig.primaryColor,
-                  padding: '16px 20px',
+                  padding: '14px 20px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -321,74 +391,217 @@ const WhiteLabel: React.FC = () => {
                     <img
                       src={previewConfig.logoUrl}
                       alt="logo"
-                      style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover' }}
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 6,
+                        objectFit: 'cover',
+                      }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
                     />
                   ) : (
                     <div
                       style={{
-                        width: 32, height: 32, borderRadius: 6,
+                        width: 32,
+                        height: 32,
+                        borderRadius: 6,
                         background: 'rgba(255,255,255,0.2)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        color: '#fff', fontSize: 14, fontWeight: 'bold',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff',
+                        fontSize: 14,
+                        fontWeight: 'bold',
                       }}
                     >
-                      {previewConfig.brandName.charAt(0)}
+                      {(previewConfig.brandName || 'C')[0]}
                     </div>
                   )}
                   <Text style={{ color: '#fff', fontSize: 16, fontWeight: 600 }}>
-                    {previewConfig.brandName || '平台名称'}
+                    {previewConfig.brandName || 'Crane SEO Platform'}
                   </Text>
                 </div>
-                <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'rgba(255,255,255,0.3)' }} />
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    fontSize: 12,
+                  }}
+                >
+                  U
+                </div>
               </div>
 
-              {/* 预览 Sidebar */}
-              <div style={{ display: 'flex', minHeight: 200 }}>
-                <div style={{ width: 60, background: '#fafafa', borderRight: '1px solid #f0f0f0', padding: '12px 8px' }}>
+              {/* Preview Body */}
+              <div style={{ display: 'flex', minHeight: 220 }}>
+                {/* Sidebar */}
+                <div
+                  style={{
+                    width: 56,
+                    background: '#fafafa',
+                    borderRight: '1px solid #f0f0f0',
+                    padding: '12px 8px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
                   {[1, 2, 3, 4, 5].map((i) => (
                     <div
                       key={i}
                       style={{
-                        height: 8, borderRadius: 4, marginBottom: 12,
-                        background: i === 1 ? previewConfig.primaryColor : '#e8e8e8',
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        background: i === 1 ? `${previewConfig.primaryColor}20` : '#f0f0f0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: i === 1 ? previewConfig.primaryColor : '#bfbfbf',
+                        fontSize: 14,
                       }}
-                    />
+                    >
+                      {i === 1 ? <SettingOutlined /> : null}
+                    </div>
                   ))}
                 </div>
 
-                {/* 预览 Content */}
+                {/* Content */}
                 <div style={{ flex: 1, padding: 16 }}>
-                  <div style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, marginBottom: 12 }}>
-                    <div style={{ height: 8, width: '60%', background: '#e8e8e8', borderRadius: 4, marginBottom: 8 }} />
-                    <div style={{ height: 8, width: '40%', background: '#e8e8e8', borderRadius: 4 }} />
+                  <div
+                    style={{
+                      background: '#f5f5f5',
+                      borderRadius: 8,
+                      padding: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: 8,
+                        width: '60%',
+                        background: '#e8e8e8',
+                        borderRadius: 4,
+                        marginBottom: 8,
+                      }}
+                    />
+                    <div
+                      style={{
+                        height: 8,
+                        width: '40%',
+                        background: '#e8e8e8',
+                        borderRadius: 4,
+                      }}
+                    />
                   </div>
 
-                  {/* 预览卡片 */}
-                  <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #f0f0f0', padding: 12, marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ height: 6, width: 60, background: '#e8e8e8', borderRadius: 3, marginBottom: 6 }} />
-                        <div style={{ fontSize: 22, fontWeight: 700, color: previewConfig.primaryColor }}>87%</div>
-                      </div>
+                  {/* Stat Cards Preview */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 8,
+                      marginBottom: 12,
+                    }}
+                  >
+                    {[1, 2].map((i) => (
                       <div
+                        key={i}
                         style={{
-                          width: 36, height: 36, borderRadius: 8,
-                          background: `${previewConfig.primaryColor}15`,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: '#fff',
+                          borderRadius: 8,
+                          border: `1px solid #f0f0f0`,
+                          borderTop: `3px solid ${previewConfig.primaryColor}`,
+                          padding: 10,
                         }}
                       >
-                        <CheckCircleOutlined style={{ color: previewConfig.primaryColor, fontSize: 18 }} />
+                        <div
+                          style={{
+                            height: 5,
+                            width: 40,
+                            background: '#e8e8e8',
+                            borderRadius: 3,
+                            marginBottom: 8,
+                          }}
+                        />
+                        <div
+                          style={{
+                            fontSize: 20,
+                            fontWeight: 700,
+                            color: previewConfig.primaryColor,
+                          }}
+                        >
+                          {i === 1 ? '87%' : '1,234'}
+                        </div>
                       </div>
+                    ))}
+                  </div>
+
+                  {/* Table Row Preview */}
+                  <div
+                    style={{
+                      background: '#fff',
+                      borderRadius: 8,
+                      border: '1px solid #f0f0f0',
+                      padding: '8px 12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <div
+                        style={{
+                          height: 6,
+                          width: 80,
+                          background: '#e8e8e8',
+                          borderRadius: 3,
+                        }}
+                      />
+                      <div
+                        style={{
+                          height: 6,
+                          width: 60,
+                          background: '#e8e8e8',
+                          borderRadius: 3,
+                        }}
+                      />
+                      <div
+                        style={{
+                          height: 6,
+                          width: 40,
+                          background: `${previewConfig.primaryColor}40`,
+                          borderRadius: 3,
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* 预览 Footer */}
-              <div style={{ borderTop: '1px solid #f0f0f0', padding: '10px 16px', textAlign: 'center' }}>
+              {/* Preview Footer */}
+              <div
+                style={{
+                  borderTop: '1px solid #f0f0f0',
+                  padding: '10px 16px',
+                  textAlign: 'center',
+                  background: '#fafafa',
+                }}
+              >
                 <Text type="secondary" style={{ fontSize: 11 }}>
-                  {previewConfig.customDomain ? `https://${previewConfig.customDomain}` : 'app.example.com'}
+                  {previewConfig.footerText || 'Powered by Crane SEO Platform'}
+                </Text>
+                <br />
+                <Text type="secondary" style={{ fontSize: 10 }}>
+                  {previewConfig.customDomain
+                    ? `https://${previewConfig.customDomain}`
+                    : 'app.example.com'}
                 </Text>
               </div>
             </div>
@@ -396,12 +609,34 @@ const WhiteLabel: React.FC = () => {
             <Divider />
 
             <Descriptions column={1} size="small" title="配置摘要">
-              <Descriptions.Item label="品牌名称">{previewConfig.brandName}</Descriptions.Item>
+              <Descriptions.Item label="品牌名称">
+                <Text strong>{previewConfig.brandName || '-'}</Text>
+              </Descriptions.Item>
               <Descriptions.Item label="主色调">
-                <Tag color={previewConfig.primaryColor}>{previewConfig.primaryColor}</Tag>
+                <Tag color={previewConfig.primaryColor}>
+                  {previewConfig.primaryColor}
+                </Tag>
               </Descriptions.Item>
               <Descriptions.Item label="自定义域名">
                 {previewConfig.customDomain || '未设置'}
+              </Descriptions.Item>
+              <Descriptions.Item label="Logo">
+                {previewConfig.logoUrl ? (
+                  <Text type="success">
+                    <CheckCircleOutlined /> 已设置
+                  </Text>
+                ) : (
+                  <Text type="secondary">未设置</Text>
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="Favicon">
+                {previewConfig.faviconUrl ? (
+                  <Text type="success">
+                    <CheckCircleOutlined /> 已设置
+                  </Text>
+                ) : (
+                  <Text type="secondary">未设置</Text>
+                )}
               </Descriptions.Item>
             </Descriptions>
           </Card>

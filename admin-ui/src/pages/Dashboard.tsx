@@ -1,383 +1,661 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Row, Col, Statistic, Typography, Button, Space, Tag, Table, Spin, Empty, Alert,
-  Tooltip, Progress,
+  Card, Row, Col, Typography, Table, Tag, Button, Space, Tooltip,
 } from 'antd';
 import {
-  ArrowUpOutlined, ArrowDownOutlined, PlusOutlined, ProjectOutlined,
-  KeyOutlined, RiseOutlined, BugOutlined, TeamOutlined, ReloadOutlined,
-  ReadOutlined, LinkOutlined, FileTextOutlined, RightOutlined, DashboardOutlined,
+  MedicineBoxOutlined, KeyOutlined, RiseOutlined, LinkOutlined,
+  GlobalOutlined, BugOutlined, ThunderboltOutlined, RightOutlined,
+  PlusOutlined, ReloadOutlined, AlertOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
+import { TrendChart, DistributionChart } from '@/components/charts';
+import type { TrendDataPoint, DistributionDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
-import { projectAPI } from '@/services/project';
-import { keywordAPI } from '@/services/keywords';
+import { useProject } from '@/hooks';
 import { rankingAPI } from '@/services/rankings';
+import { keywordAPI } from '@/services/keywords';
 import { crawlAPI } from '@/services/crawl';
-import { competitorAPI } from '@/services/competitor';
-import PageHeader from '@/components/PageHeader';
+import { backlinkAPI } from '@/services/backlinks';
+import { alertingAPI } from '@/services/alerting';
+import { monitorAPI } from '@/services/monitor';
 
-const { Text, Title, Paragraph } = Typography;
+const { Text } = Typography;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface DashboardData {
+  rankingSummary: {
+    totalKeywords: number;
+    top3: number;
+    top10: number;
+    top50: number;
+    improved: number;
+    declined: number;
+    unchanged: number;
+  } | null;
+  keywords: Array<{ id: string; keyword: string; searchVolume: number; currentRank: number; trend: string }>;
+  crawlIssues: { issues: unknown[]; totalPages: number; errors: number; warnings: number } | null;
+  backlinkStats: { totalBacklinks: number; referringDomains: number; newBacklinks: number; lostBacklinks: number } | null;
+  rankings: Array<{ id: string; keyword: string; position: number; previousPosition: number; change: number; url: string }>;
+  alerts: Array<{ id: string; ruleName: string; severity: string; message: string; acknowledged: boolean; createdAt: string }>;
+  monitorStatus: Array<{ id: string; name: string; status: string; uptime: number; responseTime: number }>;
+  healthScore: number;
+  trendData: TrendDataPoint[];
+  distributionData: DistributionDataPoint[];
+}
+
+const INITIAL_DATA: DashboardData = {
+  rankingSummary: null,
+  keywords: [],
+  crawlIssues: null,
+  backlinkStats: null,
+  rankings: [],
+  alerts: [],
+  monitorStatus: [],
+  healthScore: 0,
+  trendData: [],
+  distributionData: [],
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+const getSeverityColor = (severity: string): string => {
+  switch (severity) {
+    case 'critical': return 'red';
+    case 'warning': return 'orange';
+    default: return 'blue';
+  }
+};
+
+const getSeverityLabel = (severity: string): string => {
+  switch (severity) {
+    case 'critical': return '严重';
+    case 'warning': return '警告';
+    default: return '信息';
+  }
+};
+
+const getStatusColor = (status: string): string => {
+  switch (status) {
+    case 'online': return 'green';
+    case 'offline': return 'red';
+    case 'degraded': return 'orange';
+    default: return 'default';
+  }
+};
+
+const getStatusLabel = (status: string): string => {
+  switch (status) {
+    case 'online': return '在线';
+    case 'offline': return '离线';
+    case 'degraded': return '降级';
+    default: return status;
+  }
+};
+
+const getHealthColor = (score: number): string => {
+  if (score >= 80) return '#52c41a';
+  if (score >= 60) return '#faad14';
+  return '#ff4d4f';
+};
+
+// ============================================================================
+// Component
+// ============================================================================
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { projects, currentProject, setCurrentProject, setProjects } = useStore();
-  const projectId = currentProject?.id;
+  const { project, projectId, hasProject } = useProject();
+  const { branding, setCurrentProject, projects } = useStore();
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<DashboardData>(INITIAL_DATA);
 
-  // 仪表盘数据
-  const [keywords, setKeywords] = useState<any[]>([]);
-  const [rankings, setRankings] = useState<any[]>([]);
-  const [crawlIssues, setCrawlIssues] = useState<any>(null);
-  const [competitors, setCompetitors] = useState<any[]>([]);
-
-  // 加载项目列表
-  useEffect(() => {
-    const loadProjects = async () => {
-      try {
-        const res = await projectAPI.getProjects();
-        const d = (res as any).data || res;
-        const list = Array.isArray(d) ? d : (d?.data || []);
-        setProjects(list);
-        if (!currentProject && list.length > 0) {
-          setCurrentProject(list[0]);
-        }
-      } catch {}
-    };
-    if (projects.length === 0) loadProjects();
-  }, []);
-
-  // 加载仪表盘数据
-  useEffect(() => {
+  const loadDashboardData = useCallback(async () => {
     if (!projectId) return;
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const results = await Promise.allSettled([
-          keywordAPI.getKeywords(projectId, { pageSize: 5 }),
-          rankingAPI.getRankings(projectId, { pageSize: 5 }),
-          crawlAPI.getAllIssues(projectId).catch(() => null),
-          competitorAPI.getOverview(projectId).catch(() => []),
-        ]);
 
-        const kwRes = results[0].status === 'fulfilled' ? results[0].value : null;
-        const rkRes = results[1].status === 'fulfilled' ? results[1].value : null;
-        const crawlRes = results[2].status === 'fulfilled' ? results[2].value : null;
-        const compRes = results[3].status === 'fulfilled' ? results[3].value : [];
+    setLoading(true);
+    setError(null);
 
-        const kwData = kwRes ? ((kwRes as any).data || kwRes) : null;
-        const rkData = rkRes ? ((rkRes as any).data || rkRes) : null;
-        const crawlData = crawlRes ? ((crawlRes as any).data || crawlRes) : null;
-        const compData = compRes ? ((compRes as any).data || compRes) : [];
+    const results = await Promise.allSettled([
+      // 排名概览
+      rankingAPI.getRankingSummary(projectId),
+      // 关键词列表 (用于趋势)
+      keywordAPI.getKeywords(projectId),
+      // 爬虫审计
+      crawlAPI.getAllIssues(projectId).catch(() => null),
+      // 外链统计
+      backlinkAPI.getBacklinkStats(projectId),
+      // 最新排名
+      rankingAPI.getRankings(projectId),
+      // 告警历史
+      alertingAPI.getAlertHistory({ projectId, pageSize: 5 }),
+      // 监控状态
+      monitorAPI.getStatusList({ projectId }),
+    ]);
 
-        setKeywords(Array.isArray(kwData) ? kwData : (kwData?.data || kwData?.items || []));
-        setRankings(Array.isArray(rkData) ? rkData : (rkData?.data || rkData?.items || []));
-        setCrawlIssues(crawlData);
-        setCompetitors(Array.isArray(compData) ? compData : (compData?.data || []));
-      } catch (err: any) {
-        setError(err?.message || '加载失败');
-      } finally {
-        setLoading(false);
+    const [
+      rankingSummaryResult,
+      keywordsResult,
+      crawlResult,
+      backlinkResult,
+      rankingsResult,
+      alertsResult,
+      monitorResult,
+    ] = results;
+
+    // 排名概览
+    const rankingSummary =
+      rankingSummaryResult.status === 'fulfilled' ? rankingSummaryResult.value : null;
+
+    // 关键词
+    let keywords: DashboardData['keywords'] = [];
+    if (keywordsResult.status === 'fulfilled') {
+      const kwData = (keywordsResult.value as any)?.data || keywordsResult.value;
+      keywords = Array.isArray(kwData) ? kwData.slice(0, 20) : (kwData?.data || kwData?.items || []);
+    }
+
+    // 爬虫
+    let crawlIssues: DashboardData['crawlIssues'] = null;
+    if (crawlResult.status === 'fulfilled' && crawlResult.value) {
+      const crawlData = crawlResult.value as any;
+      const issues = Array.isArray(crawlData) ? crawlData : (crawlData?.data || []);
+      crawlIssues = {
+        issues,
+        totalPages: (crawlData as any)?.totalPages || 0,
+        errors: issues.filter((i: any) => i.severity === 'critical').length,
+        warnings: issues.filter((i: any) => i.severity === 'major' || i.severity === 'warning').length,
+      };
+    }
+
+    // 外链
+    let backlinkStats: DashboardData['backlinkStats'] = null;
+    if (backlinkResult.status === 'fulfilled') {
+      const bl = backlinkResult.value;
+      backlinkStats = {
+        totalBacklinks: bl?.totalBacklinks || 0,
+        referringDomains: bl?.referringDomains || 0,
+        newBacklinks: bl?.newBacklinks || 0,
+        lostBacklinks: bl?.lostBacklinks || 0,
+      };
+    }
+
+    // 排名
+    let rankings: DashboardData['rankings'] = [];
+    if (rankingsResult.status === 'fulfilled') {
+      const rkData = (rankingsResult.value as any)?.data || rankingsResult.value;
+      rankings = Array.isArray(rkData) ? rkData : (rkData?.data || rkData?.items || []);
+    }
+
+    // 告警
+    let alerts: DashboardData['alerts'] = [];
+    if (alertsResult.status === 'fulfilled') {
+      const alData = (alertsResult.value as any)?.data || alertsResult.value;
+      alerts = Array.isArray(alData) ? alData : (alData?.data || alData?.items || []);
+    }
+
+    // 监控
+    let monitorStatus: DashboardData['monitorStatus'] = [];
+    if (monitorResult.status === 'fulfilled') {
+      const ms = monitorResult.value as any;
+      monitorStatus = Array.isArray(ms) ? ms : (ms?.data || ms?.items || []);
+    }
+
+    // 计算健康分
+    let healthScore = 85;
+    if (crawlIssues) {
+      const totalIssues = crawlIssues.errors + crawlIssues.warnings;
+      healthScore = Math.max(0, 100 - (crawlIssues.errors * 5 + crawlIssues.warnings * 2));
+      healthScore = Math.min(100, healthScore);
+    }
+
+    // 构建趋势数据 (从关键词搜索量近似)
+    const trendData: TrendDataPoint[] = keywords.slice(0, 14).map((kw: any, i: number) => ({
+      date: `Day ${i + 1}`,
+      value: kw.searchVolume || 0,
+    }));
+
+    // 构建排名分布数据
+    const distributionData: DistributionDataPoint[] = [];
+    if (rankingSummary) {
+      distributionData.push({ name: 'Top 3', value: rankingSummary.top3 || 0, color: '#52c41a' });
+      distributionData.push({ name: 'Top 4-10', value: Math.max(0, (rankingSummary.top10 || 0) - (rankingSummary.top3 || 0)), color: '#1677ff' });
+      distributionData.push({ name: 'Top 11-50', value: Math.max(0, (rankingSummary.top50 || 0) - (rankingSummary.top10 || 0)), color: '#faad14' });
+      const remaining = Math.max(0, (rankingSummary.totalKeywords || 0) - (rankingSummary.top50 || 0));
+      if (remaining > 0) {
+        distributionData.push({ name: '50+', value: remaining, color: '#ff4d4f' });
       }
-    };
-    loadData();
+    }
+
+    const hasAnyError = results.some((r) => r.status === 'rejected');
+    if (hasAnyError) {
+      const firstError = results.find((r) => r.status === 'rejected');
+      if (firstError && firstError.status === 'rejected') {
+        console.warn('部分数据加载失败:', firstError.reason);
+      }
+    }
+
+    setData({
+      rankingSummary,
+      keywords,
+      crawlIssues,
+      backlinkStats,
+      rankings,
+      alerts,
+      monitorStatus,
+      healthScore,
+      trendData,
+      distributionData,
+    });
+    setLoading(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  // 快捷操作卡片
-  const quickActions = [
-    { title: '关键词管理', desc: '添加和追踪关键词', icon: <KeyOutlined />, path: '/keywords', color: '#1677ff' },
-    { title: '排名追踪', desc: '查看搜索排名变化', icon: <RiseOutlined />, path: '/rankings', color: '#52c41a' },
-    { title: '网站审计', desc: '扫描网站 SEO 问题', icon: <BugOutlined />, path: '/crawl-audit', color: '#fa8c16' },
-    { title: '竞品分析', desc: '监控竞争对手动态', icon: <TeamOutlined />, path: '/competitors', color: '#722ed1' },
-    { title: '内容优化', desc: '分析和优化内容', icon: <ReadOutlined />, path: '/content-analysis', color: '#eb2f96' },
-    { title: '外链分析', desc: '查看外链质量', icon: <LinkOutlined />, path: '/backlinks', color: '#13c2c2' },
-    { title: 'SEO 报告', desc: '生成专业报告', icon: <FileTextOutlined />, path: '/report', color: '#faad14' },
-    { title: '项目管理', desc: '管理你的 SEO 项目', icon: <ProjectOutlined />, path: '/projects', color: '#2f54eb' },
-  ];
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
-  // 无项目时的欢迎页
-  if (!projectId) {
+  // ==========================================================================
+  // No project selected
+  // ==========================================================================
+  if (!hasProject) {
     return (
       <div className="page-container">
-        <PageHeader title="仪表盘" subtitle="欢迎使用 Crane SEO Platform" />
-
-        <div style={{ textAlign: 'center', padding: '60px 0 40px' }}>
-          <DashboardOutlined style={{ fontSize: 64, color: '#d9d9d9', marginBottom: 24 }} />
-          <Title level={3}>开始你的 SEO 优化之旅</Title>
-          <Paragraph type="secondary" style={{ maxWidth: 500, margin: '0 auto 32px' }}>
-            选择一个项目或创建新项目，开始追踪关键词排名、审计网站、分析竞争对手
-          </Paragraph>
-
-          {projects.length > 0 ? (
-            <div style={{ maxWidth: 700, margin: '0 auto', textAlign: 'left' }}>
-              <Title level={5} style={{ marginBottom: 16 }}>选择项目</Title>
-              <Row gutter={[16, 16]}>
-                {projects.map((p) => (
-                  <Col xs={24} sm={12} key={p.id}>
-                    <Card
-                      hoverable
-                      onClick={() => { setCurrentProject(p); }}
-                      size="small"
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <Text strong style={{ fontSize: 15 }}>{p.name}</Text>
-                          <br />
-                          <Text type="secondary">{p.domain}</Text>
-                        </div>
-                        <Tag color={p.status === 'active' ? 'green' : 'orange'}>
-                          {p.status === 'active' ? '运行中' : p.status === 'paused' ? '已暂停' : '已归档'}
-                        </Tag>
-                      </div>
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            </div>
-          ) : (
-            <div>
-              <Empty description="还没有项目" style={{ marginBottom: 24 }} />
-              <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => navigate('/projects')}>
-                创建第一个项目
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* 快捷操作 */}
-        <div style={{ maxWidth: 900, margin: '40px auto 0' }}>
-          <Title level={5} style={{ marginBottom: 16 }}>快速导航</Title>
-          <Row gutter={[16, 16]}>
-            {quickActions.map((action) => (
-              <Col xs={12} sm={8} md={6} key={action.path}>
-                <Card
-                  hoverable
-                  onClick={() => navigate(action.path)}
-                  size="small"
-                  style={{ textAlign: 'center' }}
-                >
-                  <div style={{ fontSize: 28, color: action.color, marginBottom: 8 }}>
-                    {action.icon}
-                  </div>
-                  <Text strong>{action.title}</Text>
-                  <br />
-                  <Text type="secondary" style={{ fontSize: 12 }}>{action.desc}</Text>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-        </div>
+        <PageHeader
+          title="仪表盘"
+          subtitle={`欢迎使用 ${branding.brandName}`}
+        />
+        <EmptyState
+          scene="data"
+          title="请选择一个项目"
+          description="选择一个项目或创建新项目，开始追踪 SEO 数据与排名表现"
+          action={{
+            text: projects.length > 0 ? '选择项目' : '创建项目',
+            onClick: () => navigate('/projects'),
+            icon: <PlusOutlined />,
+          }}
+        />
       </div>
     );
   }
 
-  // 有项目时的仪表盘
-  const stats = {
-    keywordCount: keywords.length,
-    top10Count: rankings.filter((r: any) => (r.currentRank || r.position || 999) <= 10).length,
-    issuesCount: crawlIssues?.totalIssues || crawlIssues?.issues?.length || 0,
-    competitorCount: competitors.length,
-    healthScore: crawlIssues?.healthScore || crawlIssues?.score || 85,
-    avgRank: rankings.length > 0
-      ? Math.round(rankings.reduce((s: number, r: any) => s + (r.currentRank || r.position || 50), 0) / rankings.length)
-      : 0,
-  };
+  // ==========================================================================
+  // Error state
+  // ==========================================================================
+  if (error && !loading && !data.rankingSummary) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="仪表盘"
+          subtitle={`项目: ${project?.name || ''}`}
+        />
+        <ErrorState
+          message={error}
+          onRetry={loadDashboardData}
+        />
+      </div>
+    );
+  }
 
-  const keywordColumns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword', ellipsis: true, render: (t: string) => <Text strong>{t}</Text> },
+  // ==========================================================================
+  // Loading state
+  // ==========================================================================
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="仪表盘"
+          subtitle={`项目: ${project?.name || ''}`}
+          actions={
+            <Button icon={<ReloadOutlined />} loading disabled>刷新</Button>
+          }
+        />
+        <LoadingSkeleton type="page" />
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // Dashboard content
+  // ==========================================================================
+
+  const healthColor = getHealthColor(data.healthScore);
+  const avgPosition = data.rankings.length > 0
+    ? Math.round(data.rankings.reduce((s, r) => s + (r.position || 50), 0) / data.rankings.length)
+    : 0;
+
+  const alertColumns = [
     {
-      title: '搜索量', dataIndex: 'searchVolume', key: 'searchVolume', width: 80,
-      render: (v: number) => (v ?? 0).toLocaleString(),
+      title: '类型',
+      dataIndex: 'severity',
+      key: 'severity',
+      width: 80,
+      render: (s: string) => (
+        <Tag color={getSeverityColor(s)}>{getSeverityLabel(s)}</Tag>
+      ),
     },
     {
-      title: '排名', dataIndex: 'currentRank', key: 'currentRank', width: 70,
-      render: (v: number, r: any) => {
-        const rank = v || r.position || 0;
-        if (!rank) return <Tag>未收录</Tag>;
-        return <Tag color={rank <= 3 ? 'green' : rank <= 10 ? 'blue' : 'orange'}>#{rank}</Tag>;
-      },
+      title: '告警信息',
+      dataIndex: 'message',
+      key: 'message',
+      ellipsis: true,
+      render: (msg: string, record: any) => (
+        <Space>
+          <Text style={{ maxWidth: 260 }} ellipsis>{msg}</Text>
+          {!record.acknowledged && <Tag color="red" style={{ fontSize: 10 }}>NEW</Tag>}
+        </Space>
+      ),
     },
     {
-      title: '趋势', dataIndex: 'trend', key: 'trend', width: 60,
-      render: (t: string) => {
-        if (t === 'up') return <ArrowUpOutlined style={{ color: '#52c41a' }} />;
-        if (t === 'down') return <ArrowDownOutlined style={{ color: '#ff4d4f' }} />;
-        return <span style={{ color: '#999' }}>—</span>;
-      },
+      title: '时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 120,
+      render: (t: string) => (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {t ? new Date(t).toLocaleString('zh-CN') : '-'}
+        </Text>
+      ),
     },
   ];
 
   const rankingColumns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword', ellipsis: true },
     {
-      title: '当前排名', dataIndex: 'currentRank', key: 'currentRank', width: 80,
-      render: (v: number, r: any) => {
-        const rank = v || r.position || 0;
-        if (!rank) return <Tag>未收录</Tag>;
-        return <Tag color={rank <= 3 ? 'green' : rank <= 10 ? 'blue' : 'orange'}>#{rank}</Tag>;
+      title: '关键词',
+      dataIndex: 'keyword',
+      key: 'keyword',
+      ellipsis: true,
+      render: (t: string) => <Text strong>{t}</Text>,
+    },
+    {
+      title: '排名',
+      dataIndex: 'position',
+      key: 'position',
+      width: 70,
+      render: (v: number) => {
+        if (!v || v === 0) return <Tag>--</Tag>;
+        return <Tag color={v <= 3 ? 'green' : v <= 10 ? 'blue' : 'orange'}>#{v}</Tag>;
       },
     },
     {
-      title: '变化', key: 'change', width: 60,
-      render: (_: any, r: any) => {
-        const change = r.change || (r.currentRank - r.previousRank) || 0;
-        if (change > 0) return <Text type="danger"><ArrowDownOutlined /> {change}</Text>;
-        if (change < 0) return <Text type="success"><ArrowUpOutlined /> {Math.abs(change)}</Text>;
-        return <Text type="secondary">—</Text>;
+      title: '变化',
+      key: 'change',
+      width: 60,
+      render: (_: unknown, r: any) => {
+        const change = r.change || 0;
+        if (change > 0) return <Text type="danger" style={{ fontSize: 12 }}>+{change}</Text>;
+        if (change < 0) return <Text type="success" style={{ fontSize: 12 }}>{change}</Text>;
+        return <Text type="secondary" style={{ fontSize: 12 }}>--</Text>;
       },
     },
-    { title: 'URL', dataIndex: 'url', key: 'url', ellipsis: true, width: 150, render: (v: string) => v ? <Text type="secondary" style={{ fontSize: 12 }}>{v}</Text> : '-' },
+    {
+      title: 'URL',
+      dataIndex: 'url',
+      key: 'url',
+      ellipsis: true,
+      width: 150,
+      render: (v: string) => v ? <Text type="secondary" style={{ fontSize: 12 }}>{v}</Text> : '-',
+    },
+  ];
+
+  const quickActions = [
+    { title: '关键词管理', desc: '添加和追踪关键词', icon: <KeyOutlined />, path: '/keywords', color: '#1677ff' },
+    { title: '排名追踪', desc: '查看搜索排名变化', icon: <RiseOutlined />, path: '/rankings', color: '#52c41a' },
+    { title: '网站审计', desc: '扫描网站 SEO 问题', icon: <BugOutlined />, path: '/crawl-audit', color: '#fa8c16' },
+    { title: '外链分析', desc: '查看外链质量', icon: <LinkOutlined />, path: '/backlinks', color: '#13c2c2' },
+    { title: '告警中心', desc: '查看系统告警', icon: <AlertOutlined />, path: '/alerting', color: '#ff4d4f' },
+    { title: '监控状态', desc: '查看服务监控', icon: <ThunderboltOutlined />, path: '/monitor', color: '#722ed1' },
   ];
 
   return (
     <div className="page-container">
       <PageHeader
         title="仪表盘"
-        subtitle={`项目: ${currentProject.name} (${currentProject.domain})`}
-        actions={[
-          { label: '刷新', icon: <ReloadOutlined />, onClick: () => window.location.reload(), loading },
-        ]}
+        subtitle={`项目: ${project?.name || ''} (${project?.domain || ''})`}
+        showDateRange
+        showCountrySelector
+        actions={
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={loadDashboardData}
+          >
+            刷新
+          </Button>
+        }
       />
 
-      {error && (
-        <Alert type="warning" message="部分数据加载失败" description={error} showIcon closable style={{ marginBottom: 16 }} />
-      )}
-
-      {/* 统计卡片 */}
+      {/* Row 1: KPI StatCards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={12} sm={8} md={4}>
-          <Card hoverable onClick={() => navigate('/keywords')}>
-            <Statistic title="关键词" value={stats.keywordCount} prefix={<KeyOutlined />} valueStyle={{ color: '#1677ff' }} />
-          </Card>
+          <StatCard
+            title="健康分"
+            value={data.healthScore}
+            suffix="/100"
+            icon={<MedicineBoxOutlined />}
+            color={healthColor}
+            onClick={() => navigate('/crawl-audit')}
+            subtitle={data.healthScore >= 80 ? '状态良好' : data.healthScore >= 60 ? '需要关注' : '需要修复'}
+          />
         </Col>
         <Col xs={12} sm={8} md={4}>
-          <Card hoverable onClick={() => navigate('/rankings')}>
-            <Statistic title="TOP 10" value={stats.top10Count} prefix={<RiseOutlined />} valueStyle={{ color: '#52c41a' }} />
-          </Card>
+          <StatCard
+            title="关键词追踪"
+            value={data.rankingSummary?.totalKeywords ?? 0}
+            icon={<KeyOutlined />}
+            color="#1677ff"
+            onClick={() => navigate('/keywords')}
+            subtitle={`Top 10: ${data.rankingSummary?.top10 ?? 0}`}
+          />
         </Col>
         <Col xs={12} sm={8} md={4}>
-          <Card hoverable onClick={() => navigate('/crawl-audit')}>
-            <Statistic title="SEO 问题" value={stats.issuesCount} prefix={<BugOutlined />} valueStyle={{ color: stats.issuesCount > 0 ? '#ff4d4f' : '#52c41a' }} />
-          </Card>
+          <StatCard
+            title="平均排名"
+            value={avgPosition || '--'}
+            icon={<RiseOutlined />}
+            color="#52c41a"
+            onClick={() => navigate('/rankings')}
+            trend={
+              data.rankingSummary?.improved !== undefined
+                ? { value: data.rankingSummary.improved, isUpGood: true }
+                : undefined
+            }
+            subtitle={`Top 3: ${data.rankingSummary?.top3 ?? 0} 个`}
+          />
         </Col>
         <Col xs={12} sm={8} md={4}>
-          <Card hoverable onClick={() => navigate('/competitors')}>
-            <Statistic title="竞品数" value={stats.competitorCount} prefix={<TeamOutlined />} valueStyle={{ color: '#722ed1' }} />
-          </Card>
+          <StatCard
+            title="外链总数"
+            value={data.backlinkStats?.totalBacklinks ?? 0}
+            icon={<LinkOutlined />}
+            color="#13c2c2"
+            onClick={() => navigate('/backlinks')}
+            subtitle={`${data.backlinkStats?.referringDomains ?? 0} 个域名`}
+            trend={
+              data.backlinkStats?.newBacklinks !== undefined
+                ? { value: data.backlinkStats.newBacklinks, isUpGood: true }
+                : undefined
+            }
+          />
         </Col>
         <Col xs={12} sm={8} md={4}>
-          <Card>
-            <Statistic
-              title="健康分"
-              value={stats.healthScore}
-              suffix="/100"
-              valueStyle={{ color: stats.healthScore >= 80 ? '#52c41a' : stats.healthScore >= 60 ? '#faad14' : '#ff4d4f' }}
-            />
-            <Progress percent={stats.healthScore} size="small" showInfo={false} strokeColor={stats.healthScore >= 80 ? '#52c41a' : '#faad14'} />
-          </Card>
+          <StatCard
+            title="页面数"
+            value={data.crawlIssues?.totalPages ?? 0}
+            icon={<GlobalOutlined />}
+            color="#fa8c16"
+            onClick={() => navigate('/crawl-audit')}
+            subtitle={`已爬取 ${data.crawlIssues?.totalPages ?? 0} 页`}
+          />
         </Col>
         <Col xs={12} sm={8} md={4}>
-          <Card>
-            <Statistic title="平均排名" value={stats.avgRank || '—'} prefix={<RiseOutlined />} valueStyle={{ color: stats.avgRank <= 10 ? '#52c41a' : '#faad14' }} />
+          <StatCard
+            title="问题数"
+            value={(data.crawlIssues?.errors ?? 0) + (data.crawlIssues?.warnings ?? 0)}
+            icon={<BugOutlined />}
+            color={((data.crawlIssues?.errors ?? 0) + (data.crawlIssues?.warnings ?? 0)) > 0 ? '#ff4d4f' : '#52c41a'}
+            onClick={() => navigate('/crawl-audit')}
+            subtitle={`错误 ${data.crawlIssues?.errors ?? 0} / 警告 ${data.crawlIssues?.warnings ?? 0}`}
+          />
+        </Col>
+      </Row>
+
+      {/* Row 2: Charts */}
+      <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={16}>
+          <Card
+            title="排名趋势"
+            extra={
+              <Button type="link" size="small" onClick={() => navigate('/rankings')}>
+                查看详情 <RightOutlined />
+              </Button>
+            }
+            style={{ borderRadius: 8 }}
+          >
+            {data.trendData.length > 0 ? (
+              <TrendChart
+                data={data.trendData}
+                height={300}
+                showArea
+                smooth
+                color="#1677ff"
+                unit=" 次"
+              />
+            ) : (
+              <EmptyState scene="data" description="暂无趋势数据" />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card
+            title="排名分布"
+            extra={
+              <Button type="link" size="small" onClick={() => navigate('/rankings')}>
+                详情 <RightOutlined />
+              </Button>
+            }
+            style={{ borderRadius: 8 }}
+          >
+            {data.distributionData.length > 0 ? (
+              <DistributionChart
+                data={data.distributionData}
+                type="donut"
+                height={300}
+                centerLabel={{
+                  label: '关键词',
+                  value: `${data.rankingSummary?.totalKeywords ?? 0}`,
+                }}
+              />
+            ) : (
+              <EmptyState scene="data" description="暂无分布数据" />
+            )}
           </Card>
         </Col>
       </Row>
 
-      <Spin spinning={loading}>
-        <Row gutter={[24, 24]}>
-          {/* 关键词概览 */}
-          <Col xs={24} lg={12}>
-            <Card
-              title="关键词概览"
-              extra={<Button type="link" size="small" onClick={() => navigate('/keywords')}>查看全部 <RightOutlined /></Button>}
-            >
-              {keywords.length > 0 ? (
-                <Table columns={keywordColumns} dataSource={keywords.slice(0, 5)} rowKey="id" size="small" pagination={false} />
-              ) : (
-                <div style={{ textAlign: 'center', padding: 40 }}>
-                  <Empty description="还没有关键词" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                    <Button type="primary" onClick={() => navigate('/keywords')}>添加关键词</Button>
-                  </Empty>
-                </div>
-              )}
-            </Card>
-          </Col>
+      {/* Row 3: Alerts + Quick Actions */}
+      <Row gutter={[24, 24]}>
+        <Col xs={24} lg={14}>
+          <Card
+            title="最近告警"
+            extra={
+              <Space>
+                {data.alerts.filter((a) => !a.acknowledged).length > 0 && (
+                  <Tag color="red">{data.alerts.filter((a) => !a.acknowledged).length} 条未处理</Tag>
+                )}
+                <Button type="link" size="small" onClick={() => navigate('/alerting')}>
+                  查看全部 <RightOutlined />
+                </Button>
+              </Space>
+            }
+            style={{ borderRadius: 8 }}
+          >
+            {data.alerts.length > 0 ? (
+              <Table
+                columns={alertColumns}
+                dataSource={data.alerts.slice(0, 5)}
+                rowKey="id"
+                size="small"
+                pagination={false}
+              />
+            ) : (
+              <EmptyState scene="notification" description="暂无告警，系统运行正常" />
+            )}
+          </Card>
+        </Col>
 
-          {/* 排名追踪 */}
-          <Col xs={24} lg={12}>
-            <Card
-              title="最新排名"
-              extra={<Button type="link" size="small" onClick={() => navigate('/rankings')}>查看全部 <RightOutlined /></Button>}
-            >
-              {rankings.length > 0 ? (
-                <Table columns={rankingColumns} dataSource={rankings.slice(0, 5)} rowKey="id" size="small" pagination={false} />
-              ) : (
-                <div style={{ textAlign: 'center', padding: 40 }}>
-                  <Empty description="还没有排名数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                </div>
-              )}
-            </Card>
-          </Col>
-
-          {/* 网站审计 */}
-          <Col xs={24} lg={12}>
-            <Card
-              title="网站审计"
-              extra={<Button type="link" size="small" onClick={() => navigate('/crawl-audit')}>查看详情 <RightOutlined /></Button>}
-            >
-              {crawlIssues ? (
-                <div style={{ padding: 8 }}>
-                  <Row gutter={[16, 16]}>
-                    <Col span={8}><Statistic title="页面数" value={crawlIssues.totalPages || crawlIssues.pagesCount || 0} /></Col>
-                    <Col span={8}><Statistic title="错误" value={crawlIssues.errors || crawlIssues.errorCount || 0} valueStyle={{ color: '#ff4d4f' }} /></Col>
-                    <Col span={8}><Statistic title="警告" value={crawlIssues.warnings || crawlIssues.warningCount || 0} valueStyle={{ color: '#faad14' }} /></Col>
-                  </Row>
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: 40 }}>
-                  <Empty description="还没有审计数据" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                    <Button type="primary" onClick={() => navigate('/crawl-audit')}>开始审计</Button>
-                  </Empty>
-                </div>
-              )}
-            </Card>
-          </Col>
-
-          {/* 竞品概览 */}
-          <Col xs={24} lg={12}>
-            <Card
-              title="竞品概览"
-              extra={<Button type="link" size="small" onClick={() => navigate('/competitors')}>查看全部 <RightOutlined /></Button>}
-            >
-              {competitors.length > 0 ? (
-                <div>
-                  {competitors.map((c: any) => (
-                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
-                      <div>
-                        <Text strong>{c.name || c.domain || c.url}</Text>
-                        <br />
-                        <Text type="secondary" style={{ fontSize: 12 }}>{c.domain || c.url}</Text>
-                      </div>
-                      <Space>
-                        <Tag>{c.keywordCount || c.overlapCount || 0} 个共同关键词</Tag>
-                      </Space>
+        <Col xs={24} lg={10}>
+          <Card
+            title="快捷操作"
+            style={{ borderRadius: 8 }}
+            extra={
+              <Tooltip title="自定义快捷操作">
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => navigate('/projects')}
+                >
+                  管理项目 <RightOutlined />
+                </Button>
+              </Tooltip>
+            }
+          >
+            <Row gutter={[12, 12]}>
+              {quickActions.map((action) => (
+                <Col xs={12} sm={8} key={action.path}>
+                  <Card
+                    hoverable
+                    size="small"
+                    onClick={() => navigate(action.path)}
+                    style={{
+                      textAlign: 'center',
+                      borderRadius: 8,
+                      borderTop: `3px solid ${action.color}`,
+                    }}
+                    bodyStyle={{ padding: '16px 12px' }}
+                  >
+                    <div style={{ fontSize: 24, color: action.color, marginBottom: 8 }}>
+                      {action.icon}
                     </div>
+                    <Text strong style={{ fontSize: 13, display: 'block' }}>
+                      {action.title}
+                    </Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      {action.desc}
+                    </Text>
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+
+            {/* 监控状态摘要 */}
+            {data.monitorStatus.length > 0 && (
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #f0f0f0' }}>
+                <Text type="secondary" style={{ fontSize: 12, marginBottom: 8, display: 'block' }}>
+                  服务监控状态
+                </Text>
+                <Space wrap size={[8, 8]}>
+                  {data.monitorStatus.slice(0, 4).map((m) => (
+                    <Tooltip
+                      key={m.id}
+                      title={`${m.name}: ${m.uptime}% 可用率 / ${m.responseTime}ms 响应`}
+                    >
+                      <Tag color={getStatusColor(m.status)}>
+                        {m.name} {getStatusLabel(m.status)}
+                      </Tag>
+                    </Tooltip>
                   ))}
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: 40 }}>
-                  <Empty description="还没有添加竞品" image={Empty.PRESENTED_IMAGE_SIMPLE}>
-                    <Button type="primary" onClick={() => navigate('/competitors')}>添加竞品</Button>
-                  </Empty>
-                </div>
-              )}
-            </Card>
-          </Col>
-        </Row>
-      </Spin>
+                </Space>
+              </div>
+            )}
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };

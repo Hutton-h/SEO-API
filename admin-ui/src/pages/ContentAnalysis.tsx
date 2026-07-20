@@ -1,387 +1,577 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Card, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert,
-  Input, Form, Progress, Table, List, Divider, Descriptions, Tabs, Collapse,
+  Card, Row, Col, Table, Button, Tag, Typography, Space, Input, Tabs,
+  Descriptions, List, Progress, message, Form, Select, Divider,
 } from 'antd';
 import {
   ReloadOutlined, SearchOutlined, ThunderboltOutlined, FileTextOutlined,
-  ReadOutlined, TagsOutlined, RobotOutlined, BulbOutlined, StarOutlined,
-  GlobalOutlined, LinkOutlined, CheckCircleOutlined, WarningOutlined,
-  CloseCircleOutlined, InfoCircleOutlined, HistoryOutlined, AimOutlined,
+  ReadOutlined, StarOutlined, BulbOutlined, RobotOutlined,
+  GlobalOutlined, LinkOutlined, PlusOutlined, CheckCircleOutlined,
+  AimOutlined, EditOutlined,
 } from '@ant-design/icons';
-import ReactEChartsCore from 'echarts-for-react/lib/core';
-import * as echarts from 'echarts/core';
-import { BarChart, PieChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-import PageHeader from '@/components/PageHeader';
+import { useNavigate } from 'react-router-dom';
+import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
+import { GaugeChart, ComparisonChart } from '@/components/charts';
+import type { ComparisonDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
+import { useProject } from '@/hooks';
 import { contentAPI } from '@/services/content';
-
-echarts.use([BarChart, PieChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
 
 const { Text, Paragraph, Title } = Typography;
 
+// ============================================================================
+// Types
+// ============================================================================
+
+interface ContentAnalysisResult {
+  id: string;
+  url: string;
+  qualityScore: number;
+  readabilityScore: number;
+  keywordDensity: { keyword: string; density: number; count: number }[];
+  entityCoverage: { name: string; type: string; importance: number }[];
+  structureScore: number;
+  sentiment: { positive: number; negative: number; neutral: number };
+  suggestions: { title: string; description: string; priority: 'high' | 'medium' | 'low' }[];
+  analyzedAt: string;
+}
+
+interface QualityScore {
+  overallScore: number;
+  readabilityScore: number;
+  structureScore: number;
+  seoScore: number;
+}
+
+interface PageData {
+  history: ContentAnalysisResult[];
+  historyTotal: number;
+  qualityScore: QualityScore | null;
+  analysisResult: ContentAnalysisResult | null;
+}
+
+const INITIAL_DATA: PageData = {
+  history: [],
+  historyTotal: 0,
+  qualityScore: null,
+  analysisResult: null,
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+const getScoreColor = (score: number): string => {
+  if (score >= 80) return '#52c41a';
+  if (score >= 60) return '#faad14';
+  return '#ff4d4f';
+};
+
+const getPriorityConfig = (priority: string) => {
+  switch (priority) {
+    case 'high': return { color: '#ff4d4f', label: '高优' };
+    case 'medium': return { color: '#faad14', label: '中优' };
+    default: return { color: '#1677ff', label: '低优' };
+  }
+};
+
+// ============================================================================
+// Component
+// ============================================================================
+
 const ContentAnalysis: React.FC = () => {
-  const projectId = useStore((s) => s.currentProject?.id);
+  const navigate = useNavigate();
+  const { project, projectId, hasProject } = useProject();
+  const { projects } = useStore();
+
   const [loading, setLoading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<PageData>(INITIAL_DATA);
+  const [activeTab, setActiveTab] = useState('analysis');
 
-  // 分析
-  const [url, setUrl] = useState('');
-  const [result, setResult] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState('analyze');
-
-  // 历史
-  const [history, setHistory] = useState<any[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [analyzeUrl, setAnalyzeUrl] = useState('');
+  const [analyzing, setAnalyzing] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
-  const [historyTotal, setHistoryTotal] = useState(0);
 
-  // 质量评分
-  const [qualityScore, setQualityScore] = useState<any>(null);
-
-  const loadHistory = async (p = 1) => {
+  const loadData = useCallback(async () => {
     if (!projectId) return;
-    setHistoryLoading(true);
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const res = await contentAPI.getAnalysisHistory({ page: p, pageSize: 10, projectId });
-      const data = (res as any).data !== undefined ? (res as any).data : res;
-      const arr = Array.isArray(data) ? data : (data?.data || data?.history || []);
-      setHistory(arr);
-      setHistoryTotal(data?.total || data?.pagination?.total || arr.length);
-    } catch {
-      // silent
+      const results = await Promise.allSettled([
+        contentAPI.getAnalysisHistory({ projectId, page: historyPage, pageSize: 10 }),
+        contentAPI.getQualityScore(projectId),
+      ]);
+
+      let history: ContentAnalysisResult[] = [];
+      let historyTotal = 0;
+      if (results[0].status === 'fulfilled') {
+        const res = results[0].value as any;
+        const d = res?.data ?? res;
+        history = Array.isArray(d) ? d : (d?.data || d?.history || []);
+        historyTotal = d?.total || d?.pagination?.total || history.length;
+      }
+
+      let qualityScore: QualityScore | null = null;
+      if (results[1].status === 'fulfilled') {
+        const res = results[1].value as any;
+        const qs = res?.data ?? res;
+        if (qs) {
+          qualityScore = {
+            overallScore: qs.overallScore || qs.qualityScore || 0,
+            readabilityScore: qs.readabilityScore || 0,
+            structureScore: qs.structureScore || 0,
+            seoScore: qs.seoScore || 0,
+          };
+        }
+      }
+
+      const hasError = results.some((r) => r.status === 'rejected');
+      if (hasError) {
+        const firstErr = results.find((r) => r.status === 'rejected');
+        if (firstErr && firstErr.status === 'rejected') {
+          console.warn('Partial data load failed:', firstErr.reason);
+        }
+      }
+
+      setData((prev) => ({ ...prev, history, historyTotal, qualityScore }));
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err?.message || '加载内容分析数据失败';
+      setError(msg);
     } finally {
-      setHistoryLoading(false);
+      setLoading(false);
     }
-  };
-
-  const loadQualityScore = async () => {
-    if (!projectId) return;
-    try {
-      const res = await contentAPI.getQualityScore(projectId);
-      const data = (res as any).data !== undefined ? (res as any).data : res;
-      setQualityScore(data || {});
-    } catch {
-      // silent
-    }
-  };
+  }, [projectId, historyPage]);
 
   useEffect(() => {
-    if (!projectId) return;
-    loadHistory();
-    loadQualityScore();
-  }, [projectId]);
+    loadData();
+  }, [loadData]);
 
-  // 分析URL
   const handleAnalyze = async () => {
-    if (!url.trim()) { message.warning('请输入要分析的页面URL'); return; }
+    if (!analyzeUrl.trim()) {
+      message.warning('请输入要分析的页面 URL');
+      return;
+    }
     setAnalyzing(true);
-    setResult(null);
     setError(null);
     try {
-      const res = await contentAPI.analyzeUrl(url.trim(), projectId);
-      const data = (res as any).data !== undefined ? (res as any).data : res;
-      setResult(data);
+      const res: any = await contentAPI.analyzeUrl(analyzeUrl.trim(), projectId || undefined);
+      const result = res?.data ?? res;
+      setData((prev) => ({ ...prev, analysisResult: result }));
       message.success('内容分析完成');
-      loadHistory(); // 刷新历史
+      loadData();
     } catch (err: any) {
       const msg = err?.response?.data?.error?.message || err?.message || '分析失败';
       setError(msg);
+      message.error(msg);
     } finally {
       setAnalyzing(false);
     }
   };
 
-  // 质量评分颜色
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return '#52c41a';
-    if (score >= 60) return '#faad14';
-    return '#ff4d4f';
+  const handleHistoryPageChange = (p: number) => {
+    setHistoryPage(p);
   };
 
-  // 关键词密度图
-  const densityChartOption = result?.keywordDensity ? {
-    tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: result.keywordDensity.slice(0, 15).map((k: any) => k.keyword || k.term) },
-    yAxis: { type: 'value', name: '密度 %' },
-    series: [{
-      type: 'bar',
-      data: result.keywordDensity.slice(0, 15).map((k: any) => ({
-        value: parseFloat((k.density || k.percentage || 0).toFixed(2)),
-        itemStyle: { color: (k.density || k.percentage || 0) > 3 ? '#ff4d4f' : '#1677ff' },
-      })),
-    }],
-  } : null;
+  // ==========================================================================
+  // No project selected
+  // ==========================================================================
+  if (!hasProject) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="内容分析"
+          subtitle="AI 驱动的页面内容质量分析与优化建议"
+          showCountrySelector
+        />
+        <EmptyState
+          scene="data"
+          title="请先选择项目"
+          description="选择一个项目或创建新项目，开始分析页面内容"
+          action={{
+            text: projects.length > 0 ? '选择项目' : '创建项目',
+            onClick: () => navigate('/projects'),
+            icon: <PlusOutlined />,
+          }}
+        />
+      </div>
+    );
+  }
 
-  // 情感分布图
-  const sentimentChartOption = result?.sentiment ? {
-    tooltip: { trigger: 'item' },
-    series: [{
-      type: 'pie',
-      radius: ['50%', '75%'],
-      data: [
-        { value: result.sentiment?.positive || 0, name: '正面', itemStyle: { color: '#52c41a' } },
-        { value: result.sentiment?.neutral || 0, name: '中性', itemStyle: { color: '#1677ff' } },
-        { value: result.sentiment?.negative || 0, name: '负面', itemStyle: { color: '#ff4d4f' } },
-      ].filter((d) => d.value > 0),
-    }],
-  } : null;
+  // ==========================================================================
+  // Error state
+  // ==========================================================================
+  if (error && !loading && !data.analysisResult && data.history.length === 0) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="内容分析"
+          subtitle={`项目: ${project?.name || ''}`}
+          showCountrySelector
+        />
+        <ErrorState
+          message={error}
+          onRetry={loadData}
+        />
+      </div>
+    );
+  }
 
+  // ==========================================================================
+  // Loading state
+  // ==========================================================================
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="内容分析"
+          subtitle={`项目: ${project?.name || ''}`}
+          showCountrySelector
+          actions={
+            <Button icon={<ReloadOutlined />} loading disabled>刷新</Button>
+          }
+        />
+        <LoadingSkeleton type="page" />
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // Computed values
+  // ==========================================================================
+  const { history, historyTotal, qualityScore, analysisResult } = data;
+  const pagesAnalyzed = historyTotal;
+  const avgContentScore = qualityScore?.overallScore || 0;
+  const avgReadability = qualityScore?.readabilityScore || 0;
+  const seoScore = qualityScore?.seoScore || 0;
+
+  // SEO score vs readability comparison data
+  const seoReadabilityComparison: ComparisonDataPoint[] = [];
+  if (history.length > 0) {
+    history.slice(0, 10).forEach((item) => {
+      const shortUrl = item.url.replace(/^https?:\/\//, '').substring(0, 30);
+      seoReadabilityComparison.push({
+        name: shortUrl,
+        value: item.qualityScore || 0,
+      });
+    });
+  }
+
+  // History table columns
   const historyColumns = [
-    { title: 'URL', dataIndex: 'url', key: 'url', width: 300, ellipsis: true,
+    {
+      title: 'URL', dataIndex: 'url', key: 'url', width: 280, ellipsis: true,
       render: (u: string) => <Text code style={{ fontSize: 11 }}>{u}</Text>,
     },
-    { title: '质量评分', dataIndex: 'qualityScore', key: 'qualityScore', width: 120,
+    {
+      title: '质量评分', dataIndex: 'qualityScore', key: 'qualityScore', width: 130,
       render: (score: number) => (
-        <Progress percent={score} size="small" strokeColor={getScoreColor(score)} format={() => `${score}分`} />
+        <Progress
+          percent={score}
+          size="small"
+          strokeColor={getScoreColor(score)}
+          format={() => `${score}分`}
+        />
       ),
     },
-    { title: '可读性', dataIndex: 'readabilityScore', key: 'readabilityScore', width: 100,
+    {
+      title: '可读性', dataIndex: 'readabilityScore', key: 'readabilityScore', width: 100,
       render: (s: number) => <Tag color={s >= 70 ? 'green' : 'orange'}>{s || '-'}</Tag>,
     },
-    { title: '分析时间', dataIndex: 'analyzedAt', key: 'analyzedAt', width: 160,
+    {
+      title: '结构分', dataIndex: 'structureScore', key: 'structureScore', width: 100,
+      render: (s: number) => <Tag color={s >= 70 ? 'green' : 'orange'}>{s || '-'}</Tag>,
+    },
+    {
+      title: '分析时间', dataIndex: 'analyzedAt', key: 'analyzedAt', width: 160,
       render: (d: string) => d ? new Date(d).toLocaleString('zh-CN') : '-',
     },
-    { title: '操作', key: 'action', width: 80,
-      render: (_: any, record: any) => (
-        <Button type="link" size="small" onClick={() => { setUrl(record.url); setActiveTab('analyze'); }}>
+    {
+      title: '操作', key: 'action', width: 80,
+      render: (_: unknown, record: ContentAnalysisResult) => (
+        <Button
+          type="link"
+          size="small"
+          onClick={() => {
+            setAnalyzeUrl(record.url);
+            setActiveTab('analysis');
+          }}
+        >
           分析
         </Button>
       ),
     },
   ];
 
-  return (
-    <div className="page-container">
-      <PageHeader title="内容分析" subtitle="AI 驱动的页面内容质量分析与优化建议"
-        actions={[
-          { label: '刷新', icon: <ReloadOutlined />, onClick: () => { loadHistory(); loadQualityScore(); } },
-        ]}
-      />
+  const tabItems = [
+    {
+      key: 'analysis',
+      label: <span><SearchOutlined /> 内容分析</span>,
+      children: (
+        <>
+          {/* URL input */}
+          <Card title={<><FileTextOutlined /> 页面内容分析</>} style={{ marginBottom: 24, borderRadius: 8 }}>
+            <Row gutter={[16, 16]} align="middle">
+              <Col xs={24} md={18}>
+                <Input.Search
+                  placeholder="输入要分析的页面 URL，如 https://example.com/blog/seo-guide"
+                  prefix={<LinkOutlined />}
+                  value={analyzeUrl}
+                  onChange={(e) => setAnalyzeUrl(e.target.value)}
+                  onSearch={handleAnalyze}
+                  enterButton={
+                    <Button type="primary" icon={<ThunderboltOutlined />} loading={analyzing}>
+                      开始分析
+                    </Button>
+                  }
+                  size="large"
+                  disabled={analyzing}
+                />
+              </Col>
+              <Col xs={24} md={6}>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  支持分析标题、描述、关键词密度、实体识别、AI 优化建议
+                </Text>
+              </Col>
+            </Row>
+          </Card>
 
-      <Tabs activeKey={activeTab} onChange={setActiveTab} size="large"
-        items={[
-          {
-            key: 'analyze',
-            label: <span><SearchOutlined /> 内容分析</span>,
-            children: (
-              <>
-                {/* 分析输入 */}
-                <Card title={<><FileTextOutlined /> 页面内容分析</>} style={{ marginBottom: 24 }}>
-                  <Row gutter={[16, 16]} align="middle">
-                    <Col xs={24} md={18}>
-                      <Input.Search
-                        placeholder="输入要分析的页面 URL，如 https://example.com/blog/seo-guide"
-                        prefix={<LinkOutlined />}
-                        value={url}
-                        onChange={(e) => setUrl(e.target.value)}
-                        onSearch={handleAnalyze}
-                        enterButton={
-                          <Button type="primary" icon={<ThunderboltOutlined />} loading={analyzing}>
-                            开始分析
-                          </Button>
-                        }
-                        size="large"
-                        disabled={analyzing}
-                      />
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Text type="secondary">支持分析页面标题、描述、关键词密度、实体识别、情感分析、AI优化建议</Text>
-                    </Col>
-                  </Row>
+          {/* Analyzing */}
+          {analyzing && (
+            <Card style={{ marginBottom: 24, borderColor: '#1677ff', borderRadius: 8 }}>
+              <div style={{ textAlign: 'center', padding: 40 }}>
+                <Progress type="circle" percent={70} status="active" />
+                <Paragraph style={{ marginTop: 16 }}>
+                  <Text strong>AI 正在分析页面内容...</Text>
+                </Paragraph>
+              </div>
+            </Card>
+          )}
+
+          {/* Analysis result */}
+          {analysisResult && !analyzing && (
+            <>
+              <Card title="页面分析结果" style={{ marginBottom: 24, borderRadius: 8 }}>
+                <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+                  <Descriptions.Item label="URL">
+                    <Text code>{analysisResult.url}</Text>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="分析时间">
+                    {analysisResult.analyzedAt ? new Date(analysisResult.analyzedAt).toLocaleString('zh-CN') : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="质量评分">
+                    <Tag color={getScoreColor(analysisResult.qualityScore)}>
+                      {analysisResult.qualityScore}/100
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="可读性评分">
+                    <Tag color={getScoreColor(analysisResult.readabilityScore)}>
+                      {analysisResult.readabilityScore}/100
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="结构完整性">
+                    <Tag color={getScoreColor(analysisResult.structureScore)}>
+                      {analysisResult.structureScore}/100
+                    </Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="关键词密度项">
+                    {analysisResult.keywordDensity?.length || 0} 个
+                  </Descriptions.Item>
+                  <Descriptions.Item label="实体覆盖">
+                    {analysisResult.entityCoverage?.length || 0} 个
+                  </Descriptions.Item>
+                  <Descriptions.Item label="情感分析">
+                    <Space>
+                      <Tag color="green">正面 {analysisResult.sentiment?.positive || 0}%</Tag>
+                      <Tag color="blue">中性 {analysisResult.sentiment?.neutral || 0}%</Tag>
+                      <Tag color="red">负面 {analysisResult.sentiment?.negative || 0}%</Tag>
+                    </Space>
+                  </Descriptions.Item>
+                </Descriptions>
+              </Card>
+
+              {/* Suggestions */}
+              {analysisResult.suggestions && analysisResult.suggestions.length > 0 && (
+                <Card title={<><BulbOutlined /> AI 优化建议</>} style={{ borderRadius: 8 }}>
+                  <List
+                    dataSource={analysisResult.suggestions}
+                    renderItem={(item) => {
+                      const cfg = getPriorityConfig(item.priority);
+                      return (
+                        <List.Item>
+                          <List.Item.Meta
+                            avatar={<Tag color={cfg.color}>{cfg.label}</Tag>}
+                            title={item.title}
+                            description={item.description}
+                          />
+                        </List.Item>
+                      );
+                    }}
+                  />
                 </Card>
+              )}
+            </>
+          )}
 
-                {/* 分析中 */}
-                {analyzing && (
-                  <Card style={{ marginBottom: 24, borderColor: '#1677ff' }}>
-                    <Spin tip="正在分析页面内容，调用 AI 模型进行深度分析...">
-                      <div style={{ padding: 40 }} />
-                    </Spin>
-                  </Card>
+          {!analysisResult && !analyzing && (
+            <EmptyState
+              scene="search"
+              description="输入页面 URL，点击「开始分析」获取 AI 内容分析报告"
+            />
+          )}
+        </>
+      ),
+    },
+    {
+      key: 'suggestions',
+      label: <span><BulbOutlined /> 优化建议</span>,
+      children: (
+        <Card title="历史优化建议汇总" style={{ borderRadius: 8 }}>
+          {history.length > 0 ? (
+            <List
+              dataSource={history
+                .filter((h) => h.suggestions && h.suggestions.length > 0)
+                .flatMap((h) =>
+                  h.suggestions.map((s) => ({ ...s, url: h.url }))
+                )
+                .slice(0, 20)}
+              renderItem={(item: any) => {
+                const cfg = getPriorityConfig(item.priority);
+                return (
+                  <List.Item>
+                    <List.Item.Meta
+                      avatar={<Tag color={cfg.color}>{cfg.label}</Tag>}
+                      title={item.title}
+                      description={
+                        <Space direction="vertical" size={2}>
+                          <Text>{item.description}</Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            来源: {item.url}
+                          </Text>
+                        </Space>
+                      }
+                    />
+                  </List.Item>
+                );
+              }}
+            />
+          ) : (
+            <EmptyState scene="data" description="暂无优化建议，请先分析内容" />
+          )}
+        </Card>
+      ),
+    },
+    {
+      key: 'optimization',
+      label: <span><RobotOutlined /> 内容优化</span>,
+      children: (
+        <Card title="AI 内容优化" style={{ borderRadius: 8 }}>
+          <Row gutter={[24, 24]}>
+            <Col xs={24} md={12}>
+              <Card title="SEO 评分 vs 可读性" size="small" style={{ borderRadius: 8 }}>
+                {seoReadabilityComparison.length > 0 ? (
+                  <ComparisonChart
+                    data={seoReadabilityComparison}
+                    horizontal
+                    height={340}
+                    unit=" 分"
+                    showLabel
+                  />
+                ) : (
+                  <EmptyState scene="data" description="暂无对比数据" />
                 )}
-
-                {/* 错误 */}
-                {error && (
-                  <Alert type="error" message="分析失败" description={error} showIcon closable style={{ marginBottom: 24 }}
-                    onClose={() => setError(null)} />
-                )}
-
-                {/* 分析结果 */}
-                {result && (
-                  <>
-                    {/* 评分卡片 */}
-                    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                      <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic title="内容质量" value={result?.qualityScore || 0} suffix="/ 100"
-                            valueStyle={{ color: getScoreColor(result?.qualityScore || 0) }} />
-                        </Card>
-                      </Col>
-                      <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic title="可读性" value={result?.readabilityScore || 0} suffix="/ 100"
-                            valueStyle={{ color: getScoreColor(result?.readabilityScore || 0) }} />
-                        </Card>
-                      </Col>
-                      <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic title="结构完整性" value={result?.structureScore || 0} suffix="/ 100"
-                            valueStyle={{ color: getScoreColor(result?.structureScore || 0) }} />
-                        </Card>
-                      </Col>
-                      <Col xs={12} sm={6}>
-                        <Card size="small">
-                          <Statistic title="实体覆盖" value={result?.entityCoverage?.length || 0} suffix="个"
-                            prefix={<TagsOutlined />} />
-                        </Card>
-                      </Col>
-                    </Row>
-
-                    {/* 图表区 */}
-                    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                      {densityChartOption && (
-                        <Col xs={24} md={12}>
-                          <Card title="关键词密度分析" size="small">
-                            <ReactEChartsCore echarts={echarts} option={densityChartOption} style={{ height: 300 }} />
-                          </Card>
-                        </Col>
-                      )}
-                      {sentimentChartOption && (
-                        <Col xs={24} md={12}>
-                          <Card title="情感分析" size="small">
-                            <ReactEChartsCore echarts={echarts} option={sentimentChartOption} style={{ height: 300 }} />
-                          </Card>
-                        </Col>
-                      )}
-                    </Row>
-
-                    {/* 关键词密度表 */}
-                    {result?.keywordDensity && result.keywordDensity.length > 0 && (
-                      <Card title="关键词密度详情" size="small" style={{ marginBottom: 24 }}>
-                        <Table
-                          dataSource={result.keywordDensity}
-                          rowKey={(r: any, i?: number) => `${r.keyword || r.term}-${i}`}
-                          columns={[
-                            { title: '关键词/短语', dataIndex: 'keyword', key: 'keyword',
-                              render: (v: any, r: any) => <Text strong>{v || r.term}</Text>,
-                            },
-                            { title: '密度', dataIndex: 'density', key: 'density', width: 120,
-                              render: (v: any, r: any) => {
-                                const val = parseFloat((v || r.percentage || 0).toFixed(2));
-                                return <Progress percent={val * 10} size="small" strokeColor={val > 3 ? '#ff4d4f' : '#1677ff'} format={() => `${val}%`} />;
-                              },
-                            },
-                            { title: '出现次数', dataIndex: 'count', key: 'count', width: 80 },
-                            { title: '状态', key: 'status', width: 80,
-                              render: (_: any, r: any) => {
-                                const val = parseFloat((r.density || r.percentage || 0).toFixed(2));
-                                if (val > 5) return <Tag color="red">过度</Tag>;
-                                if (val < 1) return <Tag color="orange">不足</Tag>;
-                                return <Tag color="green">正常</Tag>;
-                              },
-                            },
-                          ]}
-                          size="small"
-                          pagination={{ pageSize: 10 }}
-                        />
-                      </Card>
-                    )}
-
-                    {/* 实体识别 */}
-                    {result?.entityCoverage && result.entityCoverage.length > 0 && (
-                      <Card title={<><RobotOutlined /> NLP 实体识别</>} size="small" style={{ marginBottom: 24 }}>
-                        <List
-                          dataSource={result.entityCoverage}
-                          renderItem={(item: any) => (
-                            <List.Item>
-                              <Space>
-                                <Tag color="blue">{item.type || item.entity}</Tag>
-                                <Text strong>{item.name || item.entity}</Text>
-                                {item.importance !== undefined && (
-                                  <Progress percent={item.importance * 100} size="small" style={{ width: 100 }} />
-                                )}
-                              </Space>
-                            </List.Item>
-                          )}
-                        />
-                      </Card>
-                    )}
-
-                    {/* AI 优化建议 */}
-                    {result?.suggestions && result.suggestions.length > 0 && (
-                      <Card title={<><BulbOutlined /> AI 优化建议</>} style={{ marginBottom: 24 }}>
-                        <List
-                          dataSource={result.suggestions}
-                          renderItem={(item: any, i: number) => (
-                            <List.Item>
-                              <List.Item.Meta
-                                avatar={
-                                  <Tag color={item.priority === 'high' ? 'red' : item.priority === 'medium' ? 'orange' : 'blue'}>
-                                    {item.priority === 'high' ? '高优' : item.priority === 'medium' ? '中优' : '低优'}
-                                  </Tag>
-                                }
-                                title={item.title || item.suggestion}
-                                description={item.description || item.detail}
-                              />
-                            </List.Item>
-                          )}
-                        />
-                      </Card>
-                    )}
-                  </>
-                )}
-
-                {!result && !analyzing && !error && (
-                  <Empty description="输入页面URL，点击「开始分析」获取AI内容分析报告" style={{ marginTop: 60 }} />
-                )}
-              </>
-            ),
-          },
-          {
-            key: 'history',
-            label: <span><HistoryOutlined /> 分析历史</span>,
-            children: (
-              <Card title="历史分析记录">
-                <Table columns={historyColumns} dataSource={history} rowKey="id"
-                  loading={historyLoading}
-                  pagination={{
-                    current: historyPage, pageSize: 10, total: historyTotal,
-                    onChange: (p) => { setHistoryPage(p); loadHistory(p); },
-                  }}
-                  size="middle"
+              </Card>
+            </Col>
+            <Col xs={24} md={12}>
+              <Card title="内容质量仪表盘" size="small" style={{ borderRadius: 8 }}>
+                <GaugeChart
+                  value={avgContentScore}
+                  title="平均内容质量"
+                  height={340}
+                  max={100}
+                  unit="分"
+                  thresholds={[
+                    { value: 50, color: '#ff4d4f' },
+                    { value: 75, color: '#faad14' },
+                    { value: 100, color: '#52c41a' },
+                  ]}
                 />
               </Card>
-            ),
-          },
-          {
-            key: 'quality',
-            label: <span><StarOutlined /> 质量概览</span>,
-            children: (
-              qualityScore ? (
-                <Card title="内容质量总览">
-                  <Row gutter={[16, 16]}>
-                    <Col span={8}>
-                      <Statistic title="平均质量评分" value={qualityScore?.average || 0} suffix="/ 100"
-                        valueStyle={{ color: getScoreColor(qualityScore?.average || 0) }} />
-                    </Col>
-                    <Col span={8}>
-                      <Statistic title="已分析页面" value={qualityScore?.totalPages || 0} />
-                    </Col>
-                    <Col span={8}>
-                      <Statistic title="需优化页面" value={qualityScore?.needsOptimization || 0}
-                        valueStyle={{ color: '#ff4d4f' }} />
-                    </Col>
-                  </Row>
-                </Card>
-              ) : (
-                <Empty description="暂无质量数据" style={{ marginTop: 60 }} />
-              )
-            ),
-          },
-        ]}
+            </Col>
+          </Row>
+          <Divider />
+          <Text type="secondary">
+            上传内容或粘贴文本，让 AI 生成优化后的版本。包含关键词优化、可读性提升、结构改进等。
+          </Text>
+        </Card>
+      ),
+    },
+  ];
+
+  return (
+    <div className="page-container">
+      <PageHeader
+        title="内容分析"
+        subtitle={`项目: ${project?.name || ''} (${project?.domain || ''})`}
+        showCountrySelector
+        actions={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
+          </Space>
+        }
+      />
+
+      {/* KPI StatCards */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="已分析页面"
+            value={pagesAnalyzed}
+            icon={<FileTextOutlined />}
+            color="#1677ff"
+            subtitle={`共 ${pagesAnalyzed} 个页面`}
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="平均内容评分"
+            value={avgContentScore}
+            suffix="/100"
+            icon={<StarOutlined />}
+            color={getScoreColor(avgContentScore)}
+            subtitle={avgContentScore >= 80 ? '状态良好' : avgContentScore >= 60 ? '需要关注' : '需要优化'}
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="平均可读性"
+            value={avgReadability}
+            suffix="/100"
+            icon={<ReadOutlined />}
+            color={getScoreColor(avgReadability)}
+            subtitle="内容可读性评分"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="SEO 评分"
+            value={seoScore}
+            suffix="/100"
+            icon={<AimOutlined />}
+            color={getScoreColor(seoScore)}
+            subtitle="综合 SEO 评分"
+          />
+        </Col>
+      </Row>
+
+      {/* Tabs */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        size="large"
+        items={tabItems}
       />
     </div>
   );

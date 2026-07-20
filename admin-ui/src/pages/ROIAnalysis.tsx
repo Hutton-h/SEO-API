@@ -1,103 +1,537 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, InputNumber, Modal, Form, Select, DatePicker, Tabs } from 'antd';
-import { ReloadOutlined, PlusOutlined, DollarOutlined, RiseOutlined, FallOutlined, TrophyOutlined, ApiOutlined } from '@ant-design/icons';
-import ReactEChartsCore from 'echarts-for-react/lib/core';
-import * as echarts from 'echarts/core';
-import { LineChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, TitleComponent, LegendComponent } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-import PageHeader from '@/components/PageHeader';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  Card, Row, Col, Table, Typography, Button, Space, Tag, Select,
+  message, Modal, Form, Input, InputNumber, Progress, DatePicker,
+} from 'antd';
+import {
+  ReloadOutlined, PlusOutlined, DollarOutlined, RiseOutlined,
+  FallOutlined, TrophyOutlined, SettingOutlined, FundOutlined,
+  LineChartOutlined, BarChartOutlined, CalculatorOutlined,
+} from '@ant-design/icons';
+import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
+import { TrendChart, ComparisonChart } from '@/components/charts';
+import type { TrendDataPoint, ComparisonDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
 import { roiAPI } from '@/services/roi';
 
-echarts.use([LineChart, GridComponent, TooltipComponent, TitleComponent, LegendComponent, CanvasRenderer]);
-
 const { Text } = Typography;
+const { RangePicker } = DatePicker;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface ROISummaryData {
+  totalInvestment: number;
+  totalRevenue: number;
+  roiPercent: number;
+  trafficValue: number;
+}
+
+interface ROIRecordItem {
+  id: string;
+  period: string;
+  investment: number;
+  revenue: number;
+  roi_percent: number;
+  conversions: number;
+  traffic_value: number;
+}
+
+interface ROISettings {
+  cpc: number;
+  conversionRate: number;
+  avgOrderValue: number;
+}
+
+// ============================================================================
+// Component
+// ============================================================================
 
 const ROIAnalysis: React.FC = () => {
   const projectId = useStore((s) => s.currentProject?.id);
-  const [loading, setLoading] = useState(true);
+  const projectName = useStore((s) => s.currentProject?.name);
+
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>({ totalCost: 0, totalValue: 0, overallROI: 0, averageMonthlyROI: 0, bestMonth: '', worstMonth: '' });
-  const [apiCosts, setApiCosts] = useState<any[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
+  const [records, setRecords] = useState<ROIRecordItem[]>([]);
+  const [summary, setSummary] = useState<ROISummaryData>({
+    totalInvestment: 0, totalRevenue: 0, roiPercent: 0, trafficValue: 0,
+  });
+
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settings, setSettings] = useState<ROISettings>({
+    cpc: 2.5, conversionRate: 3.2, avgOrderValue: 85,
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
-  const loadData = async () => {
-    if (!projectId) return; setLoading(true); setError(null);
+  // ==========================================================================
+  // Data loading
+  // ==========================================================================
+
+  const loadData = useCallback(async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
     try {
-      const [dataRes, summaryRes, apiRes] = await Promise.allSettled([
+      const [dataRes, summaryRes] = await Promise.allSettled([
         roiAPI.getROIData({ projectId }),
         roiAPI.getROISummary(),
-        roiAPI.getApiCostSummary(),
       ]);
-      const extractArr = (r: PromiseSettledResult<any>) => { if (r.status === 'fulfilled') { const d = (r.value as any).data !== undefined ? (r.value as any).data : r.value; return Array.isArray(d) ? d : (d?.data || []); } return []; };
-      setData(extractArr(dataRes));
-      if (summaryRes.status === 'fulfilled') { const d = (summaryRes.value as any).data !== undefined ? (summaryRes.value as any).data : summaryRes.value; if (d) setSummary(d); }
-      setApiCosts(extractArr(apiRes));
-    } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
+
+      // Process records
+      let recordsData: ROIRecordItem[] = [];
+      if (dataRes.status === 'fulfilled') {
+        const rd: any = dataRes.value;
+        const arr = Array.isArray(rd) ? rd : (rd?.data || []);
+        recordsData = arr.map((r: any, idx: number) => ({
+          id: r.id || `roi-${idx}`,
+          period: r.month || r.period || '',
+          investment: (r.seoCost || 0) + (r.apiCost || 0) + (r.toolCost || 0),
+          revenue: r.conversionValue || r.estimatedTrafficValue || 0,
+          roi_percent: r.roiPercent || r.roi || 0,
+          conversions: r.conversions || Math.round((r.conversionValue || 0) / 85) || 0,
+          traffic_value: r.estimatedTrafficValue || r.conversionValue || 0,
+        }));
+        setRecords(recordsData);
+      }
+
+      // Process summary
+      if (summaryRes.status === 'fulfilled') {
+        const sd: any = summaryRes.value;
+        const s = sd?.data !== undefined ? sd.data : sd;
+        setSummary({
+          totalInvestment: s?.totalCost || recordsData.reduce((a, r) => a + r.investment, 0),
+          totalRevenue: s?.totalValue || recordsData.reduce((a, r) => a + r.revenue, 0),
+          roiPercent: s?.overallROI || 0,
+          trafficValue: s?.totalValue || recordsData.reduce((a, r) => a + r.traffic_value, 0),
+        });
+      } else {
+        setSummary({
+          totalInvestment: recordsData.reduce((a, r) => a + r.investment, 0),
+          totalRevenue: recordsData.reduce((a, r) => a + r.revenue, 0),
+          roiPercent: recordsData.length > 0
+            ? ((recordsData.reduce((a, r) => a + r.revenue, 0) - recordsData.reduce((a, r) => a + r.investment, 0)) /
+                recordsData.reduce((a, r) => a + r.investment, 0) * 100)
+            : 0,
+          trafficValue: recordsData.reduce((a, r) => a + r.traffic_value, 0),
+        });
+      }
+    } catch (e: any) {
+      setError(e?.message || '数据加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) { setLoading(false); return; }
+    loadData();
+  }, [loadData, projectId]);
+
+  // ==========================================================================
+  // Add ROI entry
+  // ==========================================================================
+
+  const handleAddEntry = async () => {
+    try {
+      const values = await form.validateFields();
+      setSaving(true);
+      await roiAPI.addROIEntry({
+        month: values.period,
+        seoCost: values.investment || 0,
+        estimatedTrafficValue: values.traffic_value || 0,
+        conversionValue: values.revenue || 0,
+      });
+      message.success('ROI 条目已添加');
+      form.resetFields();
+      setAddModalOpen(false);
+      loadData();
+    } catch (e: any) {
+      if (e?.errorFields) return;
+      message.error(e?.message || '保存失败');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId]);
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await roiAPI.addROIEntry({
+        month: `settings_${Date.now()}`,
+        seoCost: 0,
+        estimatedTrafficValue: 0,
+        conversionValue: 0,
+      });
+      message.success('ROI 设置已保存');
+      setSettingsModalOpen(false);
+    } catch (e: any) {
+      message.error(e?.message || '保存失败');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
 
-  const handleSave = async () => { try { const values = await form.validateFields(); setSaving(true); await roiAPI.addROIEntry({ ...values, projectId }); message.success('ROI条目已保存'); form.resetFields(); setModalOpen(false); loadData(); } catch (e: any) { if (e?.errorFields) return; message.error(e?.message || '保存失败'); } finally { setSaving(false); } };
+  // ==========================================================================
+  // Chart data
+  // ==========================================================================
 
-  if (!projectId) return <div className="page-container"><PageHeader title="ROI分析" /><Empty description="请先选择一个项目" style={{ marginTop: 120 }} /></div>;
-  if (loading) return <div className="page-container"><PageHeader title="ROI分析" /><Spin size="large" style={{ display: 'block', margin: '40vh auto' }} /></div>;
-  if (error) return <div className="page-container"><PageHeader title="ROI分析" /><Alert type="error" message="加载失败" description={error} showIcon style={{ marginTop: 24 }} action={<Button size="small" onClick={loadData}>重试</Button>} /></div>;
+  const trendChartData: TrendDataPoint[] = useMemo(() => {
+    const investmentData: TrendDataPoint[] = records.map((r) => ({
+      date: r.period,
+      value: r.investment,
+      category: '投资',
+    }));
+    const revenueData: TrendDataPoint[] = records.map((r) => ({
+      date: r.period,
+      value: r.revenue,
+      category: '收益',
+    }));
+    return [...investmentData, ...revenueData];
+  }, [records]);
 
-  const roiChartOption = data.length > 0 ? {
-    tooltip: { trigger: 'axis' }, legend: { data: ['成本', '收益', 'ROI%'], bottom: 0 },
-    xAxis: { type: 'category', data: data.map((d: any) => d.month || d.period) },
-    yAxis: [{ type: 'value', name: '金额' }, { type: 'value', name: 'ROI %' }],
-    series: [
-      { name: '成本', type: 'line', data: data.map((d: any) => (d.seoCost || 0) + (d.apiCost || 0) + (d.toolCost || 0)), smooth: true, itemStyle: { color: '#ff4d4f' } },
-      { name: '收益', type: 'line', data: data.map((d: any) => d.conversionValue || d.estimatedTrafficValue || 0), smooth: true, itemStyle: { color: '#52c41a' } },
-      { name: 'ROI%', type: 'line', yAxisIndex: 1, data: data.map((d: any) => d.roiPercent || d.roi || 0), smooth: true, itemStyle: { color: '#1677ff' } },
-    ],
-  } : null;
+  const comparisonChartData: ComparisonDataPoint[] = useMemo(() => {
+    return records.map((r) => ({
+      name: r.period,
+      value: r.roi_percent,
+      color: r.roi_percent >= 0 ? '#52c41a' : '#ff4d4f',
+    }));
+  }, [records]);
+
+  // ==========================================================================
+  // No project
+  // ==========================================================================
+
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <PageHeader title="ROI 分析" subtitle="SEO 投资回报率分析与成本追踪" />
+        <EmptyState scene="data" title="请先选择项目" description="选择一个项目以查看 SEO 投资回报率分析" />
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // Loading state
+  // ==========================================================================
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="ROI 分析"
+          subtitle={`项目: ${projectName || ''}`}
+          actions={<Button icon={<ReloadOutlined />} loading disabled>刷新</Button>}
+        />
+        <LoadingSkeleton type="page" />
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // Error state
+  // ==========================================================================
+
+  if (error) {
+    return (
+      <div className="page-container">
+        <PageHeader title="ROI 分析" subtitle={`项目: ${projectName || ''}`} />
+        <ErrorState message={error} onRetry={loadData} />
+      </div>
+    );
+  }
+
+  // ==========================================================================
+  // Table columns
+  // ==========================================================================
 
   const columns = [
-    { title: '月份', dataIndex: 'month', key: 'month', render: (v: any, r: any) => r.period || v || '-' },
-    { title: 'SEO成本', dataIndex: 'seoCost', key: 'seoCost', render: (v: number) => v ? `$${v.toFixed(2)}` : '-' },
-    { title: 'API成本', dataIndex: 'apiCost', key: 'apiCost', render: (v: number) => v ? `$${v.toFixed(2)}` : '-' },
-    { title: '工具成本', dataIndex: 'toolCost', key: 'toolCost', render: (v: number) => v ? `$${v.toFixed(2)}` : '-' },
-    { title: '预估流量价值', dataIndex: 'estimatedTrafficValue', key: 'estimatedTrafficValue', render: (v: number) => v ? `$${v.toFixed(2)}` : '-' },
-    { title: '转化价值', dataIndex: 'conversionValue', key: 'conversionValue', render: (v: number) => v ? `$${v.toFixed(2)}` : '-' },
-    { title: 'ROI', dataIndex: 'roiPercent', key: 'roiPercent', render: (v: number) => <Tag color={v > 100 ? 'green' : v > 0 ? 'blue' : 'red'}>{v?.toFixed(0)}%</Tag> },
+    {
+      title: '周期', dataIndex: 'period', key: 'period', width: 120,
+      render: (v: string) => <Text strong>{v}</Text>,
+    },
+    {
+      title: '投资', dataIndex: 'investment', key: 'investment', width: 120,
+      render: (v: number) => <Text style={{ color: '#ff4d4f' }}>${v.toFixed(2)}</Text>,
+      sorter: (a: ROIRecordItem, b: ROIRecordItem) => a.investment - b.investment,
+    },
+    {
+      title: '收益', dataIndex: 'revenue', key: 'revenue', width: 120,
+      render: (v: number) => <Text style={{ color: '#52c41a' }}>${v.toFixed(2)}</Text>,
+      sorter: (a: ROIRecordItem, b: ROIRecordItem) => a.revenue - b.revenue,
+    },
+    {
+      title: 'ROI', dataIndex: 'roi_percent', key: 'roi_percent', width: 100,
+      render: (v: number) => (
+        <Tag color={v > 100 ? 'green' : v > 0 ? 'blue' : 'red'}>
+          {v > 0 ? '+' : ''}{v.toFixed(0)}%
+        </Tag>
+      ),
+      sorter: (a: ROIRecordItem, b: ROIRecordItem) => a.roi_percent - b.roi_percent,
+    },
+    {
+      title: '转化', dataIndex: 'conversions', key: 'conversions', width: 90,
+      render: (v: number) => v > 0 ? v.toLocaleString() : '-',
+    },
+    {
+      title: '流量价值', dataIndex: 'traffic_value', key: 'traffic_value', width: 130,
+      render: (v: number) => v > 0 ? `$${v.toFixed(2)}` : '-',
+    },
   ];
 
-  const apiColumns = [
-    { title: '服务', dataIndex: 'service', key: 'service' },
-    { title: '成本', dataIndex: 'cost', key: 'cost', render: (v: number) => v ? `$${v.toFixed(2)}` : '-' },
-    { title: '调用次数', dataIndex: 'calls', key: 'calls', render: (v: number) => v?.toLocaleString() || '-' },
-  ];
+  const roiPercent = summary.roiPercent;
+  const isPositive = roiPercent >= 0;
+
+  // ==========================================================================
+  // Render
+  // ==========================================================================
 
   return (
     <div className="page-container">
-      <PageHeader title="ROI 分析" subtitle="SEO 投资回报率分析与API成本追踪"
-        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: loadData, loading }, { label: '添加条目', type: 'primary', icon: <PlusOutlined />, onClick: () => setModalOpen(true) }]} />
+      <PageHeader
+        title="ROI 分析"
+        subtitle={`项目: ${projectName || ''} - SEO 投资回报率分析与成本追踪`}
+        actions={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadData}>刷新</Button>
+            <Button icon={<SettingOutlined />} onClick={() => setSettingsModalOpen(true)}>
+              ROI 设置
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setAddModalOpen(true); }}>
+              添加条目
+            </Button>
+          </Space>
+        }
+      />
+
+      {/* KPI StatCards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="总成本" value={summary?.totalCost || 0} precision={2} prefix={<DollarOutlined />} valueStyle={{ color: '#ff4d4f' }} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="总收益" value={summary?.totalValue || 0} precision={2} prefix={<RiseOutlined />} valueStyle={{ color: '#52c41a' }} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="总体ROI" value={summary?.overallROI || 0} suffix="%" valueStyle={{ color: summary?.overallROI > 0 ? '#52c41a' : '#ff4d4f' }} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="平均月ROI" value={summary?.averageMonthlyROI || 0} suffix="%" /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="最佳月份" value={summary?.bestMonth || '-'} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="API成本" value={apiCosts.reduce((s: number, c: any) => s + (c.cost || 0), 0)} precision={2} prefix={<ApiOutlined />} /></Card></Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="总投资"
+            value={summary.totalInvestment}
+            prefix="$"
+            icon={<DollarOutlined />}
+            color="#ff4d4f"
+            subtitle="SEO 工具与资源投入"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="总收益"
+            value={summary.totalRevenue}
+            prefix="$"
+            icon={<RiseOutlined />}
+            color="#52c41a"
+            subtitle="转化与流量价值"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="ROI %"
+            value={Math.abs(roiPercent).toFixed(1)}
+            suffix="%"
+            icon={isPositive ? <TrophyOutlined /> : <FallOutlined />}
+            color={isPositive ? '#52c41a' : '#ff4d4f'}
+            subtitle={isPositive ? '投资回报率' : '投资亏损率'}
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="流量价值"
+            value={summary.trafficValue}
+            prefix="$"
+            icon={<FundOutlined />}
+            color="#722ed1"
+            subtitle="自然流量预估价值"
+          />
+        </Col>
       </Row>
-      {roiChartOption && <Card title="ROI 趋势" style={{ marginBottom: 24 }}><ReactEChartsCore echarts={echarts} option={roiChartOption} style={{ height: 300 }} /></Card>}
-      <Tabs size="large" items={[
-        { key: 'data', label: <span><DollarOutlined /> ROI数据</span>, children: <Card><Table columns={columns} dataSource={data} rowKey="id" pagination={{ pageSize: 10 }} size="middle" /></Card> },
-        { key: 'api', label: <span><ApiOutlined /> API成本</span>, children: <Card><Table columns={apiColumns} dataSource={apiCosts} rowKey="service" pagination={{ pageSize: 10 }} size="middle" /></Card> },
-      ]} />
-      <Modal title="添加ROI条目" open={modalOpen} onOk={handleSave} onCancel={() => { setModalOpen(false); form.resetFields(); }} confirmLoading={saving} destroyOnClose>
+
+      {/* Charts */}
+      <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
+        <Col xs={24} lg={14}>
+          <Card
+            title={<><LineChartOutlined /> 投资 vs 收益趋势</>}
+            style={{ borderRadius: 8 }}
+          >
+            {trendChartData.length > 0 ? (
+              <TrendChart
+                data={trendChartData}
+                height={320}
+                showArea
+                smooth
+                unit="$"
+              />
+            ) : (
+              <EmptyState scene="data" description="暂无趋势数据" />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={10}>
+          <Card
+            title={<><BarChartOutlined /> 月度 ROI %</>}
+            style={{ borderRadius: 8 }}
+          >
+            {comparisonChartData.length > 0 ? (
+              <ComparisonChart
+                data={comparisonChartData}
+                height={320}
+                unit="%"
+                showLabel
+              />
+            ) : (
+              <EmptyState scene="data" description="暂无 ROI 数据" />
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* ROI Data Table */}
+      <Card
+        title={<><CalculatorOutlined /> ROI 数据明细</>}
+        style={{ borderRadius: 8 }}
+        extra={
+          <Space>
+            <RangePicker size="small" placeholder={['开始日期', '结束日期']} />
+          </Space>
+        }
+      >
+        {records.length > 0 ? (
+          <Table
+            columns={columns}
+            dataSource={records}
+            rowKey="id"
+            pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 条记录` }}
+            size="middle"
+            scroll={{ x: 780 }}
+            summary={() => (
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0}><Text strong>合计</Text></Table.Summary.Cell>
+                <Table.Summary.Cell index={1}>
+                  <Text strong style={{ color: '#ff4d4f' }}>
+                    ${records.reduce((a, r) => a + r.investment, 0).toFixed(2)}
+                  </Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={2}>
+                  <Text strong style={{ color: '#52c41a' }}>
+                    ${records.reduce((a, r) => a + r.revenue, 0).toFixed(2)}
+                  </Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={3}>
+                  <Tag color={roiPercent >= 0 ? 'green' : 'red'}>
+                    {roiPercent >= 0 ? '+' : ''}{roiPercent.toFixed(0)}%
+                  </Tag>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={4}>
+                  <Text strong>{records.reduce((a, r) => a + r.conversions, 0).toLocaleString()}</Text>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={5}>
+                  <Text strong>${records.reduce((a, r) => a + r.traffic_value, 0).toFixed(2)}</Text>
+                </Table.Summary.Cell>
+              </Table.Summary.Row>
+            )}
+          />
+        ) : (
+          <EmptyState
+            scene="data"
+            title="暂无 ROI 数据"
+            description="点击「添加条目」按钮录入 ROI 数据，开始追踪投资回报"
+            action={{ text: '添加条目', icon: <PlusOutlined />, onClick: () => setAddModalOpen(true) }}
+          />
+        )}
+      </Card>
+
+      {/* Add Entry Modal */}
+      <Modal
+        title="添加 ROI 条目"
+        open={addModalOpen}
+        onOk={handleAddEntry}
+        onCancel={() => { setAddModalOpen(false); form.resetFields(); }}
+        confirmLoading={saving}
+        destroyOnClose
+        width={480}
+      >
         <Form form={form} layout="vertical">
-          <Form.Item name="month" label="月份" rules={[{ required: true }]}><Input placeholder="例如 2026-07" /></Form.Item>
-          <Form.Item name="seoCost" label="SEO投入"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
-          <Form.Item name="estimatedTrafficValue" label="自然流量价值"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
-          <Form.Item name="conversionValue" label="转化价值"><InputNumber style={{ width: '100%' }} prefix="$" min={0} /></Form.Item>
+          <Form.Item
+            name="period"
+            label="周期"
+            rules={[{ required: true, message: '请输入周期，如 2026-07' }]}
+          >
+            <Input placeholder="例如：2026-07" />
+          </Form.Item>
+          <Form.Item name="investment" label="投资金额 ($)">
+            <InputNumber style={{ width: '100%' }} prefix="$" min={0} placeholder="SEO 工具与资源投入" />
+          </Form.Item>
+          <Form.Item name="revenue" label="转化收益 ($)">
+            <InputNumber style={{ width: '100%' }} prefix="$" min={0} placeholder="转化产生的收入" />
+          </Form.Item>
+          <Form.Item name="traffic_value" label="流量价值 ($)">
+            <InputNumber style={{ width: '100%' }} prefix="$" min={0} placeholder="自然流量预估价值" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Settings Modal */}
+      <Modal
+        title="ROI 设置"
+        open={settingsModalOpen}
+        onOk={handleSaveSettings}
+        onCancel={() => setSettingsModalOpen(false)}
+        confirmLoading={savingSettings}
+        destroyOnClose
+        width={480}
+      >
+        <Form layout="vertical">
+          <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+            配置用于计算流量价值的基准参数
+          </Text>
+          <Form.Item label="平均 CPC ($)">
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="$"
+              value={settings.cpc}
+              onChange={(v) => setSettings((s) => ({ ...s, cpc: v || 0 }))}
+              min={0}
+              step={0.1}
+            />
+          </Form.Item>
+          <Form.Item label="转化率 (%)">
+            <InputNumber
+              style={{ width: '100%' }}
+              suffix="%"
+              value={settings.conversionRate}
+              onChange={(v) => setSettings((s) => ({ ...s, conversionRate: v || 0 }))}
+              min={0}
+              max={100}
+              step={0.1}
+            />
+          </Form.Item>
+          <Form.Item label="平均客单价 ($)">
+            <InputNumber
+              style={{ width: '100%' }}
+              prefix="$"
+              value={settings.avgOrderValue}
+              onChange={(v) => setSettings((s) => ({ ...s, avgOrderValue: v || 0 }))}
+              min={0}
+            />
+          </Form.Item>
+          <Card size="small" style={{ background: '#f6f8fa' }}>
+            <Space direction="vertical" size={4}>
+              <Text type="secondary" style={{ fontSize: 12 }}>预估计算参考:</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                流量价值 = 点击量 x CPC x {settings.cpc}
+              </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                转化价值 = 流量 x {settings.conversionRate}% x ${settings.avgOrderValue}
+              </Text>
+            </Space>
+          </Card>
         </Form>
       </Modal>
     </div>

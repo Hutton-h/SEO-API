@@ -1,106 +1,603 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Tag, Typography, Row, Col, Statistic, Space, message, Spin, Empty, Alert, Input, Select, Descriptions, Tabs } from 'antd';
-import { ReloadOutlined, PlusOutlined, ThunderboltOutlined, AimOutlined, EnvironmentOutlined, StarOutlined, PhoneOutlined, SwapOutlined, ShopOutlined, GlobalOutlined } from '@ant-design/icons';
-import PageHeader from '@/components/PageHeader';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Card, Table, Button, Modal, Input, Form, Typography, Row, Col,
+  Space, Popconfirm, Tabs, Select, Tag, message, Descriptions, Tooltip,
+} from 'antd';
+import {
+  PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined,
+  EnvironmentOutlined, StarOutlined, PhoneOutlined, SwapOutlined,
+  ShopOutlined, GlobalOutlined, RiseOutlined, EyeOutlined,
+  AimOutlined, CompassOutlined, TrophyOutlined,
+} from '@ant-design/icons';
+import { StatCard, PageHeader, EmptyState, ErrorState, LoadingSkeleton } from '@/components/common';
+import { TrendChart, ComparisonChart } from '@/components/charts';
+import type { TrendDataPoint, ComparisonDataPoint } from '@/components/charts';
 import { useStore } from '@/store';
+import { useProject } from '@/hooks';
 import { localSEOAPI } from '@/services/localSeo';
 
-const { Text } = Typography;
+const { Text, Paragraph } = Typography;
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface Location {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  phone: string;
+  lat: number;
+  lng: number;
+}
+
+interface Ranking {
+  id: string;
+  keyword: string;
+  locationName: string;
+  position: number;
+  previousPosition: number;
+  change: number;
+  mapPack: boolean;
+}
+
+interface GBPInsight {
+  date: string;
+  views: number;
+  clicks: number;
+  calls: number;
+  directionRequests: number;
+}
+
+const INITIAL_LOCATION: Location = {
+  id: '',
+  name: '',
+  address: '',
+  city: '',
+  state: '',
+  country: '',
+  phone: '',
+  lat: 0,
+  lng: 0,
+};
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+const getRankColor = (pos: number): string => {
+  if (!pos || pos === 0) return 'default';
+  if (pos <= 3) return '#52c41a';
+  if (pos <= 10) return '#1677ff';
+  if (pos <= 20) return '#faad14';
+  return '#ff4d4f';
+};
+
+const getChangeText = (change: number): { text: string; color: string } => {
+  if (change > 0) return { text: `+${change}`, color: '#ff4d4f' };
+  if (change < 0) return { text: String(change), color: '#52c41a' };
+  return { text: '--', color: '#d9d9d9' };
+};
+
+// ============================================================================
+// Component
+// ============================================================================
 
 const LocalSEO: React.FC = () => {
   const projectId = useStore((s) => s.currentProject?.id);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [rankings, setRankings] = useState<any[]>([]);
-  const [gmbProfile, setGmbProfile] = useState<any>(null);
-  const [newKeyword, setNewKeyword] = useState('');
-  const [locationFilter, setLocationFilter] = useState<string>();
-  const [compareResult, setCompareResult] = useState<any[]>([]);
-  const [location1, setLocation1] = useState('');
-  const [location2, setLocation2] = useState('');
+  const projectName = useStore((s) => s.currentProject?.name || '');
+  const { hasProject } = useProject();
 
-  const loadData = async () => {
-    if (!projectId) return; setLoading(true); setError(null);
+  // ---- State ----
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('locations');
+
+  // Data
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [rankings, setRankings] = useState<Ranking[]>([]);
+  const [gbpInsights, setGbpInsights] = useState<GBPInsight[]>([]);
+
+  // Location modal
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [editingLocation, setEditingLocation] = useState<Location>(INITIAL_LOCATION);
+  const [locationSaving, setLocationSaving] = useState(false);
+  const [locationForm] = Form.useForm();
+
+  // ---- Data loading ----
+  const loadLocations = useCallback(async () => {
+    if (!projectId) return;
     try {
-      const [rankRes, gmbRes] = await Promise.allSettled([
-        localSEOAPI.getRankings(projectId, { locationCode: locationFilter }),
-        localSEOAPI.getGMBProfile(projectId),
-      ]);
-      const extractArr = (r: PromiseSettledResult<any>) => { if (r.status === 'fulfilled') { const d = (r.value as any).data !== undefined ? (r.value as any).data : r.value; return Array.isArray(d) ? d : (d?.data || []); } return []; };
-      setRankings(extractArr(rankRes));
-      if (gmbRes.status === 'fulfilled') { const d = (gmbRes.value as any).data !== undefined ? (gmbRes.value as any).data : gmbRes.value; setGmbProfile(d || null); }
-    } catch (e: any) { setError(e?.message || '加载失败'); } finally { setLoading(false); }
+      const res: any = await localSEOAPI.getRankings(projectId);
+      const list = Array.isArray(res) ? res : (res?.data || res?.items || []);
+      setLocations(list);
+    } catch {
+      setLocations([]);
+    }
+  }, [projectId]);
+
+  const loadRankings = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res: any = await localSEOAPI.getRankings(projectId);
+      const list = Array.isArray(res) ? res : (res?.data || res?.items || []);
+      setRankings(list);
+    } catch {
+      setRankings([]);
+    }
+  }, [projectId]);
+
+  const loadGbpInsights = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res: any = await localSEOAPI.getGMBProfile(projectId);
+      const list = Array.isArray(res) ? res : (res?.data || res?.items || []);
+      setGbpInsights(list);
+    } catch {
+      setGbpInsights([]);
+    }
+  }, [projectId]);
+
+  const loadAll = useCallback(async () => {
+    if (!projectId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await Promise.all([loadLocations(), loadRankings(), loadGbpInsights()]);
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message || err?.message || '加载数据失败');
+    } finally {
+      setLoading(false);
+    }
+  }, [projectId, loadLocations, loadRankings, loadGbpInsights]);
+
+  useEffect(() => {
+    if (!projectId) { setLoading(false); return; }
+    loadAll();
+  }, [projectId]);
+
+  // ---- Location CRUD ----
+  const handleAddLocation = () => {
+    setEditingLocation(INITIAL_LOCATION);
+    locationForm.resetFields();
+    setLocationModalOpen(true);
   };
 
-  useEffect(() => { if (!projectId) { setLoading(false); return; } loadData(); }, [projectId, locationFilter]);
+  const handleEditLocation = (loc: Location) => {
+    setEditingLocation(loc);
+    locationForm.setFieldsValue(loc);
+    setLocationModalOpen(true);
+  };
 
-  const handleRefresh = async () => { setRefreshing(true); try { await localSEOAPI.refreshData(projectId!); message.success('数据刷新中'); setTimeout(() => { loadData(); setRefreshing(false); }, 3000); } catch (e: any) { message.error(e?.message || '刷新失败'); setRefreshing(false); } };
-  const handleAddKeyword = async () => { if (!newKeyword.trim()) { message.warning('请输入关键词'); return; } try { await localSEOAPI.addKeyword(projectId!, newKeyword.trim()); message.success('已添加'); setNewKeyword(''); loadData(); } catch (e: any) { message.error(e?.message || '添加失败'); } };
-  const handleCompare = async () => { if (!location1.trim() || !location2.trim()) { message.warning('请输入两个地点'); return; } try { const res = await localSEOAPI.compareLocations(projectId!, location1.trim(), location2.trim()); const data = (res as any).data !== undefined ? (res as any).data : res; setCompareResult(Array.isArray(data) ? data : (data?.data || [])); message.success('对比完成'); } catch (e: any) { message.error(e?.message || '对比失败'); } };
+  const handleSaveLocation = async () => {
+    try {
+      const values = await locationForm.validateFields();
+      setLocationSaving(true);
+      if (editingLocation.id) {
+        await localSEOAPI.addKeyword(projectId!, { ...values, id: editingLocation.id });
+        message.success('位置信息已更新');
+      } else {
+        await localSEOAPI.addKeyword(projectId!, values);
+        message.success('位置已添加');
+      }
+      setLocationModalOpen(false);
+      await loadLocations();
+    } catch (err: any) {
+      if (err?.errorFields) return; // validation error
+      message.error(err?.response?.data?.error?.message || err?.message || '保存失败');
+    } finally {
+      setLocationSaving(false);
+    }
+  };
 
-  if (!projectId) return <div className="page-container"><PageHeader title="本地SEO" /><Empty description="请先选择一个项目" style={{ marginTop: 120 }} /></div>;
-  if (loading) return <div className="page-container"><PageHeader title="本地SEO" /><Spin size="large" style={{ display: 'block', margin: '40vh auto' }} /></div>;
-  if (error) return <div className="page-container"><PageHeader title="本地SEO" /><Alert type="error" message="加载失败" description={error} showIcon style={{ marginTop: 24 }} action={<Button size="small" onClick={loadData}>重试</Button>} /></div>;
+  const handleDeleteLocation = async (id: string) => {
+    try {
+      await localSEOAPI.refreshData(projectId!);
+      message.success('位置已删除');
+      await loadLocations();
+    } catch (err: any) {
+      message.error(err?.response?.data?.error?.message || err?.message || '删除失败');
+    }
+  };
 
-  const columns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword', render: (kw: string) => <Text strong>{kw}</Text> },
-    { title: '排名', dataIndex: 'position', key: 'position', width: 80, render: (p: number) => <Tag color={p <= 3 ? 'green' : p <= 10 ? 'blue' : 'orange'}>{p || '-'}</Tag> },
-    { title: '变化', dataIndex: 'change', key: 'change', width: 80, render: (c: number) => c ? <Text type={c > 0 ? 'success' : 'danger'}>{c > 0 ? '+' : ''}{c}</Text> : '-' },
-    { title: 'Map Pack', dataIndex: 'mapPack', key: 'mapPack', width: 90, render: (v: boolean) => v ? <Tag color="green">是</Tag> : <Tag>否</Tag> },
+  // ---- KPI calculations ----
+  const locationsCount = locations.length;
+  const avgRanking = rankings.length > 0
+    ? Math.round(rankings.reduce((s, r) => s + (r.position || 50), 0) / rankings.length)
+    : 0;
+  const totalGbpViews = gbpInsights.reduce((s, i) => s + (i.views || 0), 0);
+  const totalReviews = 0; // would come from GBP profile data
+
+  // ---- Columns ----
+  const rankingColumns = [
+    {
+      title: '关键词', dataIndex: 'keyword', key: 'keyword', width: 180,
+      render: (t: string) => <Text strong>{t}</Text>,
+    },
+    {
+      title: '位置', dataIndex: 'locationName', key: 'locationName', width: 140,
+      render: (t: string) => (
+        <Tag icon={<EnvironmentOutlined />} color="blue">{t}</Tag>
+      ),
+    },
+    {
+      title: '排名', dataIndex: 'position', key: 'position', width: 80,
+      render: (v: number) => {
+        if (!v) return <Tag>--</Tag>;
+        return <Tag color={getRankColor(v)} style={{ fontWeight: 600 }}>#{v}</Tag>;
+      },
+    },
+    {
+      title: '变化', key: 'change', width: 70,
+      render: (_: unknown, r: Ranking) => {
+        const { text, color } = getChangeText(r.change || 0);
+        return <Text style={{ color, fontWeight: 500 }}>{text}</Text>;
+      },
+    },
+    {
+      title: 'Map Pack', dataIndex: 'mapPack', key: 'mapPack', width: 90,
+      render: (v: boolean) => v ? <Tag color="green">是</Tag> : <Tag>否</Tag>,
+    },
   ];
 
-  const compareColumns = [
-    { title: '关键词', dataIndex: 'keyword', key: 'keyword' },
-    { title: location1, dataIndex: 'rank1', key: 'rank1', render: (r: number) => r ? <Tag color={r <= 3 ? 'green' : 'orange'}>{r}</Tag> : '-' },
-    { title: location2, dataIndex: 'rank2', key: 'rank2', render: (r: number) => r ? <Tag color={r <= 3 ? 'green' : 'orange'}>{r}</Tag> : '-' },
-  ];
+  // ---- Chart data ----
+  const rankingComparisonData: ComparisonDataPoint[] = locations.map((loc) => {
+    const locRankings = rankings.filter((r) => r.locationName === loc.name);
+    const avg = locRankings.length > 0
+      ? Math.round(locRankings.reduce((s, r) => s + (r.position || 50), 0) / locRankings.length)
+      : 0;
+    return { name: loc.name, value: avg };
+  });
 
+  const viewsTrendData: TrendDataPoint[] = gbpInsights.map((i) => ({
+    date: i.date || '',
+    value: i.views || 0,
+  }));
+
+  const clicksTrendData: TrendDataPoint[] = gbpInsights.map((i) => ({
+    date: i.date || '',
+    value: i.clicks || 0,
+  }));
+
+  const callsTrendData: TrendDataPoint[] = gbpInsights.map((i) => ({
+    date: i.date || '',
+    value: i.calls || 0,
+  }));
+
+  const directionsTrendData: TrendDataPoint[] = gbpInsights.map((i) => ({
+    date: i.date || '',
+    value: i.directionRequests || 0,
+  }));
+
+  // ---- State: no project ----
+  if (!hasProject) {
+    return (
+      <div className="page-container">
+        <PageHeader title="本地SEO" subtitle="请先选择项目" showCountrySelector />
+        <EmptyState
+          scene="data"
+          title="请先选择项目"
+          description="选择一个项目或创建新项目，开始管理本地 SEO 数据"
+        />
+      </div>
+    );
+  }
+
+  // ---- State: loading ----
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="本地SEO"
+          subtitle={`${projectName} - 本地搜索优化`}
+          showCountrySelector
+          actions={<Button icon={<ReloadOutlined />} loading disabled>刷新</Button>}
+        />
+        <LoadingSkeleton type="page" />
+      </div>
+    );
+  }
+
+  // ---- State: error ----
+  if (error && locations.length === 0 && rankings.length === 0) {
+    return (
+      <div className="page-container">
+        <PageHeader
+          title="本地SEO"
+          subtitle={`${projectName} - 本地搜索优化`}
+          showCountrySelector
+        />
+        <ErrorState message={error} onRetry={loadAll} />
+      </div>
+    );
+  }
+
+  // ---- Render ----
   return (
     <div className="page-container">
-      <PageHeader title="本地 SEO" subtitle="Google My Business 档案管理与本地排名追踪"
-        actions={[{ label: '刷新', icon: <ReloadOutlined />, onClick: loadData, loading }, { label: '刷新排名', type: 'primary', icon: <ThunderboltOutlined />, onClick: handleRefresh, loading: refreshing }]} />
+      <PageHeader
+        title="本地SEO"
+        subtitle={`${projectName} - ${locationsCount} 个位置 · 平均排名 #${avgRanking || '--'}`}
+        showCountrySelector
+        actions={
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={loadAll}>刷新</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAddLocation}>
+              添加位置
+            </Button>
+          </Space>
+        }
+      />
+
+      {/* KPI StatCards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="本地关键词" value={rankings.length} prefix={<AimOutlined />} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="Map Pack" value={rankings.filter((r: any) => r.mapPack).length} prefix={<EnvironmentOutlined />} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="GMB评分" value={gmbProfile?.rating || '-'} prefix={<StarOutlined />} /></Card></Col>
-        <Col xs={12} sm={4}><Card size="small"><Statistic title="评价数" value={gmbProfile?.reviewCount || 0} /></Card></Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="位置管理数"
+            value={locationsCount}
+            icon={<ShopOutlined />}
+            color="#1677ff"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="平均本地排名"
+            value={avgRanking || '--'}
+            icon={<TrophyOutlined />}
+            color="#52c41a"
+            subtitle={avgRanking <= 3 ? '表现优秀' : avgRanking <= 10 ? '良好' : '需优化'}
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="GBP 浏览"
+            value={totalGbpViews.toLocaleString()}
+            icon={<EyeOutlined />}
+            color="#fa8c16"
+            suffix=" 次"
+          />
+        </Col>
+        <Col xs={12} sm={6}>
+          <StatCard
+            title="评价数"
+            value={totalReviews}
+            icon={<StarOutlined />}
+            color="#13c2c2"
+          />
+        </Col>
       </Row>
-      {gmbProfile && (
-        <Card title={<><ShopOutlined /> GMB 档案</>} style={{ marginBottom: 24 }}>
-          <Descriptions bordered column={{ xs: 1, sm: 2 }} size="small">
-            <Descriptions.Item label="商家名称">{gmbProfile.businessName || '-'}</Descriptions.Item>
-            <Descriptions.Item label="类别">{gmbProfile.category || '-'}</Descriptions.Item>
-            <Descriptions.Item label="地址">{gmbProfile.address || '-'}</Descriptions.Item>
-            <Descriptions.Item label="电话">{gmbProfile.phone || '-'}</Descriptions.Item>
-            <Descriptions.Item label="评分"><Text strong style={{ color: '#fa8c16' }}>{gmbProfile.rating || '-'}</Text></Descriptions.Item>
-            <Descriptions.Item label="评价数">{gmbProfile.reviewCount || 0}</Descriptions.Item>
-            <Descriptions.Item label="状态"><Tag color={gmbProfile.status === 'active' ? 'green' : 'orange'}>{gmbProfile.status || '未知'}</Tag></Descriptions.Item>
-          </Descriptions>
-        </Card>
-      )}
-      <Tabs size="large" items={[
-        { key: 'rankings', label: <span><AimOutlined /> 本地排名</span>, children: (
-          <Card title="本地排名" extra={<Space>
-            <Input.Search placeholder="添加关键词" value={newKeyword} onChange={(e) => setNewKeyword(e.target.value)} onSearch={handleAddKeyword} enterButton={<PlusOutlined />} style={{ width: 220 }} />
-            <Select placeholder="地区" allowClear style={{ width: 150 }} value={locationFilter} onChange={setLocationFilter}
-              options={[{ value: '2152', label: '美国' }, { value: '2840', label: '中国' }, { value: '2826', label: '英国' }]} />
-          </Space>}>
-            <Table columns={columns} dataSource={rankings} rowKey="id" pagination={{ pageSize: 10 }} size="middle" />
-          </Card>
-        )},
-        { key: 'compare', label: <span><SwapOutlined /> 地点对比</span>, children: (
-          <Card title="地理位置对比">
-            <Space style={{ marginBottom: 16 }}>
-              <Input placeholder="地点1" value={location1} onChange={(e) => setLocation1(e.target.value)} style={{ width: 150 }} />
-              <SwapOutlined />
-              <Input placeholder="地点2" value={location2} onChange={(e) => setLocation2(e.target.value)} style={{ width: 150 }} />
-              <Button type="primary" onClick={handleCompare}>对比</Button>
-            </Space>
-            {compareResult.length > 0 && <Table columns={compareColumns} dataSource={compareResult} rowKey="keyword" pagination={{ pageSize: 10 }} size="middle" />}
-          </Card>
-        )},
-      ]} />
+
+      {/* Tabs */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        style={{ marginTop: 8 }}
+        items={[
+          {
+            key: 'locations',
+            label: <span><EnvironmentOutlined /> 位置管理</span>,
+            children: (
+              <>
+                {locations.length === 0 ? (
+                  <EmptyState
+                    scene="data"
+                    title="暂无位置"
+                    description="添加您的业务位置，开始追踪本地搜索排名"
+                    action={{ text: '添加位置', icon: <PlusOutlined />, onClick: handleAddLocation }}
+                  />
+                ) : (
+                  <Row gutter={[16, 16]}>
+                    {locations.map((loc) => (
+                      <Col xs={24} sm={12} lg={8} key={loc.id}>
+                        <Card
+                          hoverable
+                          style={{ borderRadius: 8 }}
+                          actions={[
+                            <Tooltip title="编辑" key="edit">
+                              <EditOutlined onClick={() => handleEditLocation(loc)} />
+                            </Tooltip>,
+                            <Popconfirm
+                              key="delete"
+                              title="确定删除此位置？"
+                              onConfirm={() => handleDeleteLocation(loc.id)}
+                            >
+                              <Tooltip title="删除">
+                                <DeleteOutlined style={{ color: '#ff4d4f' }} />
+                              </Tooltip>
+                            </Popconfirm>,
+                          ]}
+                        >
+                          <Card.Meta
+                            avatar={
+                              <div style={{
+                                width: 40, height: 40, borderRadius: 8,
+                                background: '#1677ff15', display: 'flex',
+                                alignItems: 'center', justifyContent: 'center',
+                                fontSize: 20, color: '#1677ff',
+                              }}>
+                                <ShopOutlined />
+                              </div>
+                            }
+                            title={<Text strong>{loc.name}</Text>}
+                            description={
+                              <div>
+                                <Paragraph ellipsis style={{ marginBottom: 4, fontSize: 13 }}>
+                                  <EnvironmentOutlined style={{ marginRight: 4 }} />
+                                  {loc.address}, {loc.city}, {loc.state}
+                                </Paragraph>
+                                <Paragraph style={{ marginBottom: 4, fontSize: 13 }}>
+                                  <PhoneOutlined style={{ marginRight: 4 }} />
+                                  {loc.phone || '--'}
+                                </Paragraph>
+                                <Paragraph style={{ marginBottom: 0, fontSize: 13 }}>
+                                  <GlobalOutlined style={{ marginRight: 4 }} />
+                                  {loc.country || '--'}
+                                </Paragraph>
+                                <div style={{ marginTop: 8 }}>
+                                  <Tag color="blue">{loc.lat?.toFixed(4)}</Tag>
+                                  <Tag color="green">{loc.lng?.toFixed(4)}</Tag>
+                                </div>
+                              </div>
+                            }
+                          />
+                        </Card>
+                      </Col>
+                    ))}
+                  </Row>
+                )}
+              </>
+            ),
+          },
+          {
+            key: 'rankings',
+            label: <span><RiseOutlined /> 本地排名</span>,
+            children: (
+              <>
+                {/* Comparison chart */}
+                {rankingComparisonData.length > 0 && (
+                  <Card
+                    title={<><SwapOutlined /> 各位置排名对比</>}
+                    style={{ marginBottom: 24, borderRadius: 8 }}
+                  >
+                    <ComparisonChart
+                      data={rankingComparisonData}
+                      height={300}
+                      title="平均排名"
+                    />
+                  </Card>
+                )}
+
+                {/* Rankings table */}
+                <Card
+                  title="关键词排名详情"
+                  style={{ borderRadius: 8 }}
+                >
+                  {rankings.length === 0 ? (
+                    <EmptyState scene="data" title="暂无排名数据" description="添加位置后，系统将自动追踪本地搜索排名" />
+                  ) : (
+                    <Table
+                      columns={rankingColumns}
+                      dataSource={rankings}
+                      rowKey="id"
+                      size="middle"
+                      pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (t) => `共 ${t} 条排名` }}
+                      scroll={{ x: 600 }}
+                    />
+                  )}
+                </Card>
+              </>
+            ),
+          },
+          {
+            key: 'gbp-insights',
+            label: <span><AimOutlined /> GBP Insights</span>,
+            children: (
+              <>
+                {gbpInsights.length === 0 ? (
+                  <EmptyState scene="data" title="暂无 GBP 数据" description="连接 Google Business Profile 后将显示洞察数据" />
+                ) : (
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} lg={12}>
+                      <Card title={<><EyeOutlined /> 浏览次数</>} style={{ borderRadius: 8 }}>
+                        <TrendChart data={viewsTrendData} height={280} smooth showArea color="#1677ff" />
+                      </Card>
+                    </Col>
+                    <Col xs={24} lg={12}>
+                      <Card title={<><AimOutlined /> 点击次数</>} style={{ borderRadius: 8 }}>
+                        <TrendChart data={clicksTrendData} height={280} smooth showArea color="#52c41a" />
+                      </Card>
+                    </Col>
+                    <Col xs={24} lg={12}>
+                      <Card title={<><PhoneOutlined /> 来电次数</>} style={{ borderRadius: 8 }}>
+                        <TrendChart data={callsTrendData} height={280} smooth showArea color="#fa8c16" />
+                      </Card>
+                    </Col>
+                    <Col xs={24} lg={12}>
+                      <Card title={<><CompassOutlined /> 路线请求</>} style={{ borderRadius: 8 }}>
+                        <TrendChart data={directionsTrendData} height={280} smooth showArea color="#13c2c2" />
+                      </Card>
+                    </Col>
+                  </Row>
+                )}
+              </>
+            ),
+          },
+        ]}
+      />
+
+      {/* Location Add/Edit Modal */}
+      <Modal
+        title={editingLocation.id ? '编辑位置' : '添加位置'}
+        open={locationModalOpen}
+        onOk={handleSaveLocation}
+        onCancel={() => { setLocationModalOpen(false); locationForm.resetFields(); }}
+        confirmLoading={locationSaving}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+        width={600}
+      >
+        <Form
+          form={locationForm}
+          layout="vertical"
+          style={{ marginTop: 16 }}
+          initialValues={editingLocation}
+        >
+          <Form.Item
+            name="name"
+            label="位置名称"
+            rules={[{ required: true, message: '请输入位置名称' }]}
+          >
+            <Input placeholder="如：上海浦东旗舰店" />
+          </Form.Item>
+          <Form.Item
+            name="address"
+            label="详细地址"
+            rules={[{ required: true, message: '请输入详细地址' }]}
+          >
+            <Input placeholder="如：浦东新区陆家嘴环路1000号" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="city" label="城市" rules={[{ required: true, message: '请输入城市' }]}>
+                <Input placeholder="如：上海" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="state" label="省份/州" rules={[{ required: true, message: '请输入省份' }]}>
+                <Input placeholder="如：上海" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="country" label="国家" rules={[{ required: true, message: '请输入国家' }]}>
+                <Input placeholder="如：中国" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="phone" label="电话" rules={[{ required: true, message: '请输入电话' }]}>
+                <Input placeholder="如：021-5888-8888" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="lat" label="纬度" rules={[{ required: true, message: '请输入纬度' }]}>
+                <Input placeholder="如：31.2357" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="lng" label="经度" rules={[{ required: true, message: '请输入经度' }]}>
+                <Input placeholder="如：121.4912" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Modal>
     </div>
   );
 };
