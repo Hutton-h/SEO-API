@@ -74,7 +74,9 @@ export async function triggerCrawl(
     const task = await crawlService.triggerCrawl(projectId, { url, maxPages, concurrency });
     created(res, task, 'Crawl task created successfully');
   } catch (err) {
-    badRequest(res, 'Failed to trigger crawl', { error: (err as Error).message });
+    console.error('[CrawlController] triggerCrawl error:', err);
+    const msg = (err as Error)?.message || String(err);
+    badRequest(res, `Failed to trigger crawl: ${msg}`);
   }
 }
 
@@ -94,7 +96,8 @@ export async function getCrawlStatus(
 
     success(res, task);
   } catch (err) {
-    badRequest(res, 'Failed to get crawl status', { error: (err as Error).message });
+    console.error('[CrawlController] getCrawlStatus error:', err);
+    badRequest(res, 'Failed to get crawl status');
   }
 }
 
@@ -119,7 +122,8 @@ export async function getPages(
 
     paginated(res, result.items, { page, pageSize, total: result.total });
   } catch (err) {
-    badRequest(res, 'Failed to fetch pages', { error: (err as Error).message });
+    console.error('[CrawlController] getPages error:', err);
+    badRequest(res, 'Failed to fetch pages');
   }
 }
 
@@ -144,40 +148,45 @@ export async function getIssues(
 
     // If Lighthouse/PSI sources are requested, also fetch from those tables
     if (source === 'lighthouse' || source === 'psi' || source === 'all') {
-      const psiIssues = await db('psi_issues')
-        .where('project_id', projectId)
-        .select('*');
+      try {
+        const psiIssues = await db('psi_issues')
+          .where('project_id', projectId)
+          .select('*');
 
-      // Convert PSI issues to crawl_issues format
-      const psiFormatted = (psiIssues as Array<Record<string, unknown>>).map((psi) => ({
-        id: psi['id'],
-        project_id: psi['project_id'],
-        rule_id: `psi-${psi['rule_id'] ?? 'perf'}`,
-        severity: psi['severity'] ?? 'warning',
-        category: 'Performance',
-        message: psi['message'] ?? 'PSI issue',
-        url: psi['url'] ?? '',
-        status: 'open',
-        source: 'psi',
-        page_id: null,
-        element: null,
-        resolved_at: null,
-        created_at: psi['created_at'],
-      }));
+        // Convert PSI issues to crawl_issues format
+        const psiFormatted = (psiIssues as Array<Record<string, unknown>>).map((psi) => ({
+          id: psi['id'],
+          project_id: psi['project_id'],
+          rule_id: `psi-${psi['rule_id'] ?? 'perf'}`,
+          severity: psi['severity'] ?? 'warning',
+          category: 'Performance',
+          message: psi['message'] ?? 'PSI issue',
+          url: psi['url'] ?? '',
+          status: 'open',
+          source: 'psi',
+          page_id: null,
+          element: null,
+          resolved_at: null,
+          created_at: psi['created_at'],
+        }));
 
-      if (source !== 'psi') {
-        result.items = [...result.items, ...psiFormatted] as any;
-      }
+        if (source !== 'psi') {
+          result.items = [...result.items, ...psiFormatted] as any;
+        }
 
-      if (source === 'psi') {
-        result.items = psiFormatted as any;
-        result.total = psiFormatted.length;
+        if (source === 'psi') {
+          result.items = psiFormatted as any;
+          result.total = psiFormatted.length;
+        }
+      } catch {
+        // psi_issues table may not exist yet, skip PSI data
       }
     }
 
     paginated(res, result.items, { page, pageSize, total: result.total });
   } catch (err) {
-    badRequest(res, 'Failed to fetch issues', { error: (err as Error).message });
+    console.error('[CrawlController] getIssues error:', err);
+    badRequest(res, 'Failed to fetch issues');
   }
 }
 
@@ -295,7 +304,9 @@ export async function triggerAudit(
 
     created(res, task, `Audit task created successfully${includePSI ? ' (with PSI analysis)' : ''}`);
   } catch (err) {
-    badRequest(res, 'Failed to trigger audit', { error: (err as Error).message });
+    console.error('[CrawlController] triggerAudit error:', err);
+    const msg = (err as Error)?.message || String(err);
+    badRequest(res, `Failed to trigger audit: ${msg}`);
   }
 }
 
@@ -315,7 +326,8 @@ export async function getAuditStatus(
 
     success(res, task);
   } catch (err) {
-    badRequest(res, 'Failed to get audit status', { error: (err as Error).message });
+    console.error('[CrawlController] getAuditStatus error:', err);
+    badRequest(res, 'Failed to get audit status');
   }
 }
 

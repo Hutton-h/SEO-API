@@ -48,7 +48,7 @@ export async function register(
       email: data.email,
       password_hash: hashedPassword,
       name: data.name,
-      role: 'user',
+      role: 'member',
     })
     .returning(['id', 'email', 'name', 'role', 'avatar_url', 'created_at', 'updated_at']);
 

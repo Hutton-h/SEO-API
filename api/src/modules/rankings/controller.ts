@@ -95,7 +95,8 @@ export async function getRankings(
 
     paginated(res, result.items, { page, pageSize, total: result.total });
   } catch (err) {
-    badRequest(res, 'Failed to fetch rankings', { error: (err as Error).message });
+    console.error('[RankingsController] getRankings error:', err);
+    badRequest(res, 'Failed to fetch rankings');
   }
 }
 

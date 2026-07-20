@@ -133,7 +133,9 @@ api.interceptors.response.use(
         if (data?.message) {
           message.error(data.message);
         } else if (data?.error) {
-          message.error(data.error);
+          // data.error 可能是对象 {code, message, details} 或字符串
+          const errMsg = typeof data.error === 'string' ? data.error : (data.error?.message || JSON.stringify(data.error));
+          message.error(errMsg);
         } else if (error.message === 'Network Error') {
           message.error('网络连接失败，请检查网络');
         } else {

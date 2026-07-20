@@ -75,6 +75,7 @@ export async function getRankings(
 
   const [{ count }] = await query.clone()
     .clearSelect()
+    .clearOrder()
     .count<{ count: string }[]>();
 
   const total = parseInt(count, 10);
