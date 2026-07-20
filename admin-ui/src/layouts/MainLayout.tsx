@@ -16,7 +16,9 @@ import {
 import { useStore } from '@/store';
 import { CountrySelector } from '@/components/common';
 import { projectAPI } from '@/services/project';
+import { keywordAPI } from '@/services/keywords';
 import { apiUsageAPI } from '@/services/apiUsage';
+import type { Country } from '@/store';
 
 const { Header, Sider, Content, Footer } = Layout;
 const { Text } = Typography;
@@ -30,6 +32,8 @@ const MainLayout: React.FC = () => {
     user, projects, currentProject, setCurrentProject, setProjects,
     branding, apiUsage, setApiUsage, logout,
     sidebarCollapsed, toggleSidebar, theme: appTheme, setTheme,
+    availableCountries, setAvailableCountries, countriesLoaded, setCountriesLoaded,
+    selectedCountry, setSelectedCountry,
   } = useStore();
 
   // 加载项目列表
@@ -66,6 +70,49 @@ const MainLayout: React.FC = () => {
     const timer = setInterval(loadUsage, 60000);
     return () => clearInterval(timer);
   }, []);
+
+  // 加载全部可用国家/地区（从 DataForSEO API）
+  useEffect(() => {
+    if (!currentProject?.id || countriesLoaded) return;
+    const loadCountries = async () => {
+      try {
+        const res: any = await keywordAPI.getLocations(currentProject.id);
+        const rawList = Array.isArray(res) ? res : (res?.data || []);
+        if (rawList.length === 0) return;
+
+        // 去重：按 country_iso_code 取每个国家的第一个 location
+        const seen = new Map<string, Country>();
+        for (const item of rawList) {
+          const iso = (item.country_iso_code || '').toUpperCase();
+          if (!iso || iso.length !== 2) continue; // 跳过低级区域（城市等）
+          if (!seen.has(iso)) {
+            seen.set(iso, {
+              code: String(item.location_code),
+              name: item.location_name || iso,
+              isoCode: iso,
+              language: (item.language_code || 'en').toLowerCase(),
+            });
+          }
+        }
+        const countries = Array.from(seen.values()).sort((a, b) =>
+          a.name.localeCompare(b.name)
+        );
+
+        setAvailableCountries(countries);
+        setCountriesLoaded(true);
+
+        // 保持当前选择（如果当前选中国家仍在列表中则保留）
+        const stillExists = countries.find((c) => c.code === selectedCountry.code);
+        if (!stillExists && countries.length > 0) {
+          setSelectedCountry(countries[0]);
+        }
+      } catch {
+        // API 不可用时保留后备列表
+        setCountriesLoaded(true);
+      }
+    };
+    loadCountries();
+  }, [currentProject?.id]);
 
   const selectedKey = '/' + location.pathname.split('/').filter(Boolean)[0] || '/dashboard';
 

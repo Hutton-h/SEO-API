@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDelete } from './api';
+import type { Country } from '@/store';
 
 export interface Keyword {
   id: string;
@@ -82,4 +83,14 @@ export const keywordAPI = {
   // 批量设置标签
   batchTag: (projectId: string, keywordIds: string[], tags: string[]) =>
     apiPut<{ updated: number; tags: string[] }>(`/v1/projects/${projectId}/keywords/batch-tag`, { keywordIds, tags }),
+
+  // 获取 DataForSEO 全部可用国家/地区
+  getLocations: (projectId: string) =>
+    apiGet<Array<{
+      location_code: number;
+      location_name: string;
+      country_iso_code: string;
+      language_code: string;
+      language_name: string;
+    }>>(`/v1/projects/${projectId}/locations`),
 };

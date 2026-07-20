@@ -37,9 +37,10 @@ export interface Branding {
 }
 
 export interface Country {
-  code: string;
-  name: string;
-  language: string;
+  code: string;       // DataForSEO location_code (e.g. "2840")
+  name: string;       // Country name (e.g. "United States")
+  isoCode: string;    // ISO 2-letter country code (e.g. "US") — used for flag emoji
+  language: string;   // Primary language code (e.g. "en")
 }
 
 export interface SearchEngine {
@@ -51,7 +52,7 @@ export interface SearchEngine {
 export interface DateRange {
   start: string;
   end: string;
-  label: string; // '7d' | '30d' | '90d' | 'custom'
+  label: string;
 }
 
 // ============================================================================
@@ -73,6 +74,7 @@ interface AppState {
   selectedSearchEngine: SearchEngine;
   availableCountries: Country[];
   availableSearchEngines: SearchEngine[];
+  countriesLoaded: boolean; // 是否已从API加载全部国家
 
   // 时间范围
   dateRange: DateRange;
@@ -111,6 +113,7 @@ interface AppState {
   setSelectedSearchEngine: (engine: SearchEngine) => void;
   setAvailableCountries: (countries: Country[]) => void;
   setAvailableSearchEngines: (engines: SearchEngine[]) => void;
+  setCountriesLoaded: (loaded: boolean) => void;
 
   // 时间
   setDateRange: (range: DateRange) => void;
@@ -134,8 +137,9 @@ interface AppState {
 // ============================================================================
 
 const DEFAULT_COUNTRY: Country = {
-  code: '2840', // 美国
+  code: '2840',
   name: 'United States',
+  isoCode: 'US',
   language: 'en',
 };
 
@@ -151,26 +155,9 @@ const getDefaultDateRange = (): DateRange => {
   return { start, end, label: '30d' };
 };
 
-// ============================================================================
-// Country / Search Engine data
-// ============================================================================
-
-const DEFAULT_COUNTRIES: Country[] = [
-  { code: '2840', name: 'United States', language: 'en' },
-  { code: '2826', name: 'United Kingdom', language: 'en' },
-  { code: '2276', name: 'Germany', language: 'de' },
-  { code: '2250', name: 'France', language: 'fr' },
-  { code: '2724', name: 'Japan', language: 'ja' },
-  { code: '2356', name: 'Canada', language: 'en' },
-  { code: '2036', name: 'Australia', language: 'en' },
-  { code: '2152', name: 'China', language: 'zh' },
-  { code: '2720', name: 'South Korea', language: 'ko' },
-  { code: '2359', name: 'Brazil', language: 'pt' },
-  { code: '2484', name: 'India', language: 'hi' },
-  { code: '2528', name: 'Italy', language: 'it' },
-  { code: '2723', name: 'Spain', language: 'es' },
-  { code: '2529', name: 'Netherlands', language: 'nl' },
-  { code: '2756', name: 'Singapore', language: 'en' },
+// 精简默认列表 — 仅作为API加载前的后备
+const FALLBACK_COUNTRIES: Country[] = [
+  { code: '2840', name: 'United States', isoCode: 'US', language: 'en' },
 ];
 
 const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
@@ -202,8 +189,9 @@ export const useStore = create<AppState>()(
       // 地区
       selectedCountry: DEFAULT_COUNTRY,
       selectedSearchEngine: DEFAULT_SEARCH_ENGINE,
-      availableCountries: DEFAULT_COUNTRIES,
+      availableCountries: FALLBACK_COUNTRIES,
       availableSearchEngines: DEFAULT_SEARCH_ENGINES,
+      countriesLoaded: false,
 
       // 时间
       dateRange: getDefaultDateRange(),
@@ -272,6 +260,7 @@ export const useStore = create<AppState>()(
       setSelectedSearchEngine: (engine) => set({ selectedSearchEngine: engine }),
       setAvailableCountries: (countries) => set({ availableCountries: countries }),
       setAvailableSearchEngines: (engines) => set({ availableSearchEngines: engines }),
+      setCountriesLoaded: (loaded) => set({ countriesLoaded: loaded }),
 
       setDateRange: (range) => set({ dateRange: range }),
 
