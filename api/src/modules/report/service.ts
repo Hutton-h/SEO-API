@@ -558,18 +558,18 @@ export async function generateReport(
     },
     keywords: {
       total: parseInt(totalKeywords, 10),
-      topKeywords: topKeywords as Array<{ keyword: string; searchVolume: number }>,
+      topKeywords: topKeywords.map((k) => ({ keyword: k.keyword, searchVolume: k.search_volume })),
     },
     rankings: {
       averagePosition: avgPosition,
       top10Count: parseInt(top10Count, 10),
       top3Count: parseInt(top3Count, 10),
-      recentRankings: recentRankings as Array<{
-        keyword: string;
-        position: number | null;
-        previousPosition: number | null;
-        checkDate: string;
-      }>,
+      recentRankings: recentRankings.map((r) => ({
+        keyword: r.keyword as string,
+        position: r.position as number | null,
+        previousPosition: r.previous_position as number | null,
+        checkDate: r.check_date as string,
+      })),
       gscData,
     },
     backlinks: {
