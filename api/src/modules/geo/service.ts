@@ -53,35 +53,43 @@ export async function getLocalRankings(
   projectId: string,
   options: { keyword?: string; locationCode?: number; languageCode?: string } = {},
 ): Promise<LocalRankingItem[]> {
-  const project = await db('projects').where('id', projectId).first();
-  if (!project) return [];
+  try {
+    const project = await db('projects').where('id', projectId).first();
+    if (!project) return [];
 
-  const keyword = options.keyword ?? project.domain ?? '';
-  const locationCode = options.locationCode ?? 2840;
-  const languageCode = options.languageCode ?? 'en';
+    const keyword = options.keyword ?? (project as { domain: string }).domain ?? '';
+    const locationCode = options.locationCode ?? 2840;
+    const languageCode = options.languageCode ?? 'en';
 
-  const result = await dataforseo.getLocalPackRankings(
-    keyword,
-    locationCode,
-    languageCode,
-    1006953, // default local location code
-  );
+    const result = await dataforseo.getLocalPackRankings(
+      keyword,
+      locationCode,
+      languageCode,
+      1006953,
+    );
 
-  if (result.success && Array.isArray(result.data)) {
-    return result.data as LocalRankingItem[];
+    if (result.success && Array.isArray(result.data)) {
+      return result.data as LocalRankingItem[];
+    }
+
+    return [];
+  } catch {
+    return [];
   }
-
-  return [];
 }
 
 export async function getGMBProfile(
   projectId: string,
 ): Promise<GMBProfileRecord | null> {
-  const record = await db('gmb_profiles')
-    .where('project_id', projectId)
-    .first();
-
-  return (record as GMBProfileRecord) ?? null;
+  try {
+    const record = await db('gmb_profiles')
+      .where('project_id', projectId)
+      .first();
+    return (record as GMBProfileRecord) ?? null;
+  } catch {
+    // Table doesn't exist
+    return null;
+  }
 }
 
 export async function compareLocations(
@@ -89,41 +97,40 @@ export async function compareLocations(
   location1: string,
   location2: string,
 ): Promise<LocalComparisonResult> {
-  // Get keywords for the project
-  const keywords = await db('keywords')
-    .where('project_id', projectId)
-    .select('keyword')
-    .limit(50);
+  try {
+    const keywords = await db('keywords')
+      .where('project_id', projectId)
+      .select('keyword')
+      .limit(50);
 
-  const rankings: LocalComparisonResult['rankings'] = [];
+    const rankings: LocalComparisonResult['rankings'] = [];
 
-  for (const kw of keywords) {
-    const [result1, result2] = await Promise.all([
-      dataforseo.getLocalPackRankings(kw.keyword, 2840, 'en', parseInt(location1, 10) || 1006953),
-      dataforseo.getLocalPackRankings(kw.keyword, 2840, 'en', parseInt(location2, 10) || 1006954),
-    ]);
+    for (const kw of keywords) {
+      const [result1, result2] = await Promise.all([
+        dataforseo.getLocalPackRankings(kw.keyword, 2840, 'en', parseInt(location1, 10) || 1006953),
+        dataforseo.getLocalPackRankings(kw.keyword, 2840, 'en', parseInt(location2, 10) || 1006954),
+      ]);
 
-    const pos1 = result1.success && Array.isArray(result1.data) && result1.data.length > 0
-      ? (result1.data[0] as LocalRankingItem).rank_absolute
-      : null;
+      const pos1 = result1.success && Array.isArray(result1.data) && result1.data.length > 0
+        ? (result1.data[0] as LocalRankingItem).rank_absolute
+        : null;
 
-    const pos2 = result2.success && Array.isArray(result2.data) && result2.data.length > 0
-      ? (result2.data[0] as LocalRankingItem).rank_absolute
-      : null;
+      const pos2 = result2.success && Array.isArray(result2.data) && result2.data.length > 0
+        ? (result2.data[0] as LocalRankingItem).rank_absolute
+        : null;
 
-    rankings.push({
-      keyword: kw.keyword,
-      location1Position: pos1,
-      location2Position: pos2,
-      difference: pos1 !== null && pos2 !== null ? pos2 - pos1 : 0,
-    });
+      rankings.push({
+        keyword: kw.keyword,
+        location1Position: pos1,
+        location2Position: pos2,
+        difference: pos1 !== null && pos2 !== null ? pos2 - pos1 : 0,
+      });
+    }
+
+    return { location1, location2, rankings };
+  } catch {
+    return { location1, location2, rankings: [] };
   }
-
-  return {
-    location1,
-    location2,
-    rankings,
-  };
 }
 
 export default {

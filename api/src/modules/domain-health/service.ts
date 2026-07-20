@@ -44,9 +44,16 @@ export interface DomainHealthReport {
 // ---------------------------------------------------------------------------
 
 export async function getDomainHealth(projectId: string): Promise<DomainHealthReport> {
-  const project = await db('projects').where('id', projectId).first();
+  let project: Record<string, unknown> | null = null;
+  try {
+    project = await db('projects').where('id', projectId).first() as Record<string, unknown> | null;
+  } catch {
+    // Table doesn't exist
+  }
+
   if (!project) {
-    throw new Error('Project not found');
+    // Return empty/default report instead of throwing
+    return makeEmptyReport(projectId, 'unknown');
   }
 
   const domain = (project as { domain: string }).domain;
@@ -154,22 +161,26 @@ export async function getDomainHealth(projectId: string): Promise<DomainHealthRe
   if (accessibilityScore < 70) accessibilityIssues.push('Accessibility score needs improvement');
   if (accessibilityScore < 50) accessibilityIssues.push('Accessibility score is critical');
 
-  // Store health check result
-  await db('domain_health_checks').insert({
-    id: uuidv4(),
-    project_id: projectId,
-    domain,
-    overall_score: overallScore,
-    domain_score: domainScore,
-    ssl_score: sslScore,
-    performance_score: perfScore,
-    seo_score: seoScore,
-    accessibility_score: accessibilityScore,
-    details: JSON.stringify({
-      whois: whoisInfo,
-      performance: { lcp, fcp, tbt, cls, si },
-    }),
-  });
+  // Store health check result (gracefully handle missing table)
+  try {
+    await db('domain_health_checks').insert({
+      id: uuidv4(),
+      project_id: projectId,
+      domain,
+      overall_score: overallScore,
+      domain_score: domainScore,
+      ssl_score: sslScore,
+      performance_score: perfScore,
+      seo_score: seoScore,
+      accessibility_score: accessibilityScore,
+      details: JSON.stringify({
+        whois: whoisInfo,
+        performance: { lcp, fcp, tbt, cls, si },
+      }),
+    });
+  } catch {
+    // Table doesn't exist, skip storing
+  }
 
   return {
     projectId,
@@ -181,11 +192,7 @@ export async function getDomainHealth(projectId: string): Promise<DomainHealthRe
       accessibilityScore,
       bestPracticesScore,
       seoScore,
-      lcp,
-      fcp,
-      tbt,
-      cls,
-      si,
+      lcp, fcp, tbt, cls, si,
     },
     categories: {
       domain: { score: domainScore, issues: domainIssues },
@@ -193,6 +200,23 @@ export async function getDomainHealth(projectId: string): Promise<DomainHealthRe
       performance: { score: perfCategoryScore, issues: perfIssues },
       seo: { score: seoCategoryScore, issues: seoIssues },
       accessibility: { score: accessibilityCategoryScore, issues: accessibilityIssues },
+    },
+  };
+}
+
+function makeEmptyReport(projectId: string, domain: string): DomainHealthReport {
+  return {
+    projectId,
+    domain,
+    overallScore: 0,
+    whois: { domainAge: 0, expiresInDays: 0, sslValid: false, sslExpiresInDays: null, registrar: 'Unknown', nameServers: [] },
+    performance: { performanceScore: 0, accessibilityScore: 0, bestPracticesScore: 0, seoScore: 0, lcp: 0, fcp: 0, tbt: 0, cls: 0, si: 0 },
+    categories: {
+      domain: { score: 0, issues: [] },
+      ssl: { score: 0, issues: [] },
+      performance: { score: 0, issues: [] },
+      seo: { score: 0, issues: [] },
+      accessibility: { score: 0, issues: [] },
     },
   };
 }

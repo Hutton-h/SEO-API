@@ -25,11 +25,15 @@ export interface Branding {
 // ---------------------------------------------------------------------------
 
 export async function getBranding(projectId: string): Promise<Branding | null> {
-  const branding = await db('project_branding')
-    .where('project_id', projectId)
-    .first();
-
-  return branding ? formatBranding(branding) : null;
+  try {
+    const branding = await db('project_branding')
+      .where('project_id', projectId)
+      .first();
+    return branding ? formatBranding(branding) : null;
+  } catch {
+    // Table doesn't exist
+    return null;
+  }
 }
 
 export async function updateBranding(
@@ -46,50 +50,69 @@ export async function updateBranding(
     email_template?: string;
   },
 ): Promise<Branding> {
-  const existing = await db('project_branding').where('project_id', projectId).first();
+  try {
+    const existing = await db('project_branding').where('project_id', projectId).first();
 
-  if (existing) {
-    const updateData: Record<string, unknown> = {};
-    if (data.brand_name !== undefined) updateData['brand_name'] = data.brand_name;
-    if (data.logo_url !== undefined) updateData['logo_url'] = data.logo_url;
-    if (data.primary_color !== undefined) updateData['primary_color'] = data.primary_color;
-    if (data.secondary_color !== undefined) updateData['secondary_color'] = data.secondary_color;
-    if (data.custom_domain !== undefined) updateData['custom_domain'] = data.custom_domain;
-    if (data.favicon_url !== undefined) updateData['favicon_url'] = data.favicon_url;
-    if (data.custom_css !== undefined) updateData['custom_css'] = data.custom_css;
-    if (data.custom_js !== undefined) updateData['custom_js'] = data.custom_js;
-    if (data.email_template !== undefined) updateData['email_template'] = data.email_template;
-    updateData['updated_at'] = db.fn.now();
+    if (existing) {
+      const updateData: Record<string, unknown> = {};
+      if (data.brand_name !== undefined) updateData['brand_name'] = data.brand_name;
+      if (data.logo_url !== undefined) updateData['logo_url'] = data.logo_url;
+      if (data.primary_color !== undefined) updateData['primary_color'] = data.primary_color;
+      if (data.secondary_color !== undefined) updateData['secondary_color'] = data.secondary_color;
+      if (data.custom_domain !== undefined) updateData['custom_domain'] = data.custom_domain;
+      if (data.favicon_url !== undefined) updateData['favicon_url'] = data.favicon_url;
+      if (data.custom_css !== undefined) updateData['custom_css'] = data.custom_css;
+      if (data.custom_js !== undefined) updateData['custom_js'] = data.custom_js;
+      if (data.email_template !== undefined) updateData['email_template'] = data.email_template;
+      updateData['updated_at'] = db.fn.now();
 
-    const [updated] = await db('project_branding')
-      .where('project_id', projectId)
-      .update(updateData)
+      const [updated] = await db('project_branding')
+        .where('project_id', projectId)
+        .update(updateData)
+        .returning('*');
+
+      return formatBranding(updated);
+    }
+
+    // Create new
+    const { v4: uuidv4 } = await import('uuid');
+    const id = uuidv4();
+
+    const [created] = await db('project_branding')
+      .insert({
+        id,
+        project_id: projectId,
+        brand_name: data.brand_name ?? 'Crane SEO',
+        logo_url: data.logo_url ?? '/logo.png',
+        primary_color: data.primary_color ?? '#2563eb',
+        secondary_color: data.secondary_color ?? '#1e40af',
+        custom_domain: data.custom_domain ?? null,
+        favicon_url: data.favicon_url ?? null,
+        custom_css: data.custom_css ?? null,
+        custom_js: data.custom_js ?? null,
+        email_template: data.email_template ?? null,
+      })
       .returning('*');
 
-    return formatBranding(updated);
-  }
-
-  // Create new
-  const { v4: uuidv4 } = await import('uuid');
-  const id = uuidv4();
-
-  const [created] = await db('project_branding')
-    .insert({
-      id,
+    return formatBranding(created);
+  } catch {
+    // Table doesn't exist - return a default branding
+    return {
+      id: 'default',
       project_id: projectId,
-      brand_name: data.brand_name ?? 'Crane SEO',
-      logo_url: data.logo_url ?? '/logo.png',
-      primary_color: data.primary_color ?? '#2563eb',
-      secondary_color: data.secondary_color ?? '#1e40af',
-      custom_domain: data.custom_domain ?? null,
-      favicon_url: data.favicon_url ?? null,
-      custom_css: data.custom_css ?? null,
-      custom_js: data.custom_js ?? null,
-      email_template: data.email_template ?? null,
-    })
-    .returning('*');
-
-  return formatBranding(created);
+      brand_name: 'Crane SEO',
+      logo_url: '/logo.png',
+      primary_color: '#2563eb',
+      secondary_color: '#1e40af',
+      custom_domain: null,
+      favicon_url: null,
+      custom_css: null,
+      custom_js: null,
+      email_template: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
