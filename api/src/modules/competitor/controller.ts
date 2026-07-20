@@ -53,12 +53,7 @@ export async function getKeywordOverlap(
 ): Promise<void> {
   try {
     const { id: projectId } = req.params;
-    const competitorId = req.query.competitorId as string;
-
-    if (!competitorId) {
-      badRequest(res, 'competitorId query parameter is required');
-      return;
-    }
+    const competitorId = req.query.competitorId as string | undefined;
 
     const overlap = await competitorService.getKeywordOverlap(projectId, competitorId);
     success(res, overlap);

@@ -100,19 +100,24 @@ export async function triggerCrawl(
     })
     .returning('*');
 
-  await crawlQueue.add(
-    'crawl-project',
-    {
-      taskId,
-      projectId,
-      url: options.url,
-      maxPages: options.maxPages ?? 500,
-      concurrency: options.concurrency ?? 5,
-    },
-    {
-      jobId: taskId,
-    },
-  );
+  try {
+    await crawlQueue.add(
+      'crawl-project',
+      {
+        taskId,
+        projectId,
+        url: options.url,
+        maxPages: options.maxPages ?? 500,
+        concurrency: options.concurrency ?? 5,
+      },
+      {
+        jobId: taskId,
+      },
+    );
+  } catch (queueErr) {
+    console.warn('[CrawlService] Queue add failed (Redis may be down):', queueErr);
+    // Still return the task - it was created in DB
+  }
 
   return taskRecord as TaskRecord;
 }
@@ -143,18 +148,23 @@ export async function triggerAudit(
     })
     .returning('*');
 
-  await auditQueue.add(
-    'audit-project',
-    {
-      taskId,
-      projectId,
-      url: options.url,
-      auditType: options.auditType ?? 'full',
-    },
-    {
-      jobId: taskId,
-    },
-  );
+  try {
+    await auditQueue.add(
+      'audit-project',
+      {
+        taskId,
+        projectId,
+        url: options.url,
+        auditType: options.auditType ?? 'full',
+      },
+      {
+        jobId: taskId,
+      },
+    );
+  } catch (queueErr) {
+    console.warn('[CrawlService] Audit queue add failed (Redis may be down):', queueErr);
+    // Still return the task - it was created in DB
+  }
 
   return taskRecord as TaskRecord;
 }

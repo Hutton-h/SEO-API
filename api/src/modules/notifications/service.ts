@@ -113,12 +113,15 @@ export async function testChannel(
 // ---------------------------------------------------------------------------
 
 export async function getHistory(
-  projectId: string,
+  projectId: string | undefined,
   params: { page: number; pageSize: number; channel?: string; status?: string },
 ): Promise<PaginatedResult<Notification>> {
   const { page, pageSize, channel, status } = params;
 
-  let query = db('notifications').where('project_id', projectId);
+  let query = db('notifications');
+  if (projectId) {
+    query = query.where('project_id', projectId);
+  }
 
   if (channel) query = query.where('channel', channel);
   if (status) query = query.where('status', status);

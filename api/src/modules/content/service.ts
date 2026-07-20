@@ -199,13 +199,17 @@ export async function analyzeUrl(
     pageContent = html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   } catch {
     // If we can't fetch, use existing data from crawl
-    const page = await db('crawl_pages').where('url', url).where('project_id', projectId).first();
-    if (page) {
-      const p = page as Record<string, unknown>;
-      title = (p['title'] as string) ?? '';
-      metaDescription = (p['meta_description'] as string) ?? '';
-      h1 = (p['h1'] as string) ?? '';
-      pageContent = title + ' ' + metaDescription + ' ' + h1;
+    try {
+      const page = await db('crawl_pages').where('url', url).where('project_id', projectId).first();
+      if (page) {
+        const p = page as Record<string, unknown>;
+        title = (p['title'] as string) ?? '';
+        metaDescription = (p['meta_description'] as string) ?? '';
+        h1 = (p['h1'] as string) ?? '';
+        pageContent = title + ' ' + metaDescription + ' ' + h1;
+      }
+    } catch {
+      // Crawl_pages table may not exist
     }
   }
 
@@ -214,19 +218,28 @@ export async function analyzeUrl(
   // Analyze entities via NLP
   let entities: Array<{ name: string; type: string; salience: number }> = [];
   if (pageContent.length > 20) {
-    const entityResult = await nlp.analyzeEntities(pageContent.substring(0, 10000));
-    if (entityResult.success && entityResult.data) {
-      entities = entityResult.data.map((e) => ({
-        name: e.name,
-        type: e.type,
-        salience: e.salience,
-      }));
+    try {
+      const entityResult = await nlp.analyzeEntities(pageContent.substring(0, 10000));
+      if (entityResult.success && entityResult.data) {
+        entities = entityResult.data.map((e) => ({
+          name: e.name,
+          type: e.type,
+          salience: e.salience,
+        }));
+      }
+    } catch {
+      // NLP service may not be available
     }
   }
 
   // Analyze content quality via OpenAI
   const keyword = entities.length > 0 ? entities[0].name : 'content';
-  const qualityResult = await openai.analyzeContentQuality(pageContent.substring(0, 8000), keyword);
+  let qualityResult: { success: boolean; data?: any } = { success: false };
+  try {
+    qualityResult = await openai.analyzeContentQuality(pageContent.substring(0, 8000), keyword);
+  } catch {
+    // OpenAI may not be configured
+  }
 
   const qualityScore = qualityResult.success && qualityResult.data
     ? qualityResult.data
