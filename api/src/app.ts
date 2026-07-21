@@ -1,119 +1,40 @@
-import express, { type Application, type Request, type Response, type NextFunction } from 'express';
+// ============================================================================
+// App 工厂: Express 应用 + 中间件链 + 路由注册
+// ============================================================================
+
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import swaggerUi from 'swagger-ui-express';
+import config from '../config.js';
+import { requestIdMiddleware } from '../middleware/request-id.js';
+import { metricsMiddleware, metricsEndpoint } from './metrics.js';
+import { errorHandlerMiddleware } from '../middleware/error-handler.js';
 
-import projectRouter from './modules/project/router.js';
-import crawlRouter from './modules/crawl/router.js';
-import keywordsRouter from './modules/keywords/router.js';
-import rankingsRouter from './modules/rankings/router.js';
-import backlinksRouter from './modules/backlinks/router.js';
-import semRouter from './modules/sem/router.js';
-import geoRouter from './modules/geo/router.js';
-import asoRouter from './modules/aso/router.js';
-import youtubeRouter from './modules/youtube/router.js';
-import aiRouter from './modules/ai/router.js';
-import competitorRouter from './modules/competitor/router.js';
-import reportRouter from './modules/report/router.js';
-import tasksRouter from './modules/tasks/router.js';
-
-// New modules
-import authRouter from './modules/auth/router.js';
-import alertingRouter from './modules/alerting/router.js';
-import monitorRouter from './modules/monitor/router.js';
-import scheduleRouter from './modules/schedule/router.js';
-import whitelabelRouter from './modules/whitelabel/router.js';
-import roiRouter from './modules/roi/router.js';
-import notificationsRouter from './modules/notifications/router.js';
-import serpFeaturesRouter from './modules/serp-features/router.js';
-import sitemapRouter from './modules/sitemap/router.js';
-import contentRouter from './modules/content/router.js';
-import domainHealthRouter from './modules/domain-health/router.js';
-import competitorChangeRouter from './modules/competitor-change/router.js';
-import apiUsageRouter from './modules/api-usage/router.js';
-import bulkAnalysisRouter from './modules/bulk-analysis/router.js';
-
-// New modules (trends & pagespeed)
-import trendsRouter from './modules/trends/router.js';
-import pagespeedRouter from './modules/pagespeed/router.js';
-
-// New SEO modules
-import domainOverviewRouter from './modules/domain-overview/router.js';
-import keywordGapRouter from './modules/keyword-gap/router.js';
-import topPagesRouter from './modules/top-pages/router.js';
-
-// ---------------------------------------------------------------------------
-// Swagger / OpenAPI spec
-// ---------------------------------------------------------------------------
-
-const swaggerSpec = {
-  openapi: '3.0.3',
-  info: {
-    title: 'Crane SEO Platform API',
-    version: '1.0.0',
-    description: 'REST API for the Crane SEO Platform - comprehensive SEO management for the crane industry',
-  },
-  servers: [
-    {
-      url: '/api/v1',
-      description: 'API v1',
-    },
-  ],
-  components: {
-    securitySchemes: {
-      bearerAuth: {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-      },
-      apiKey: {
-        type: 'apiKey',
-        in: 'header',
-        name: 'X-API-Key',
-      },
-    },
-  },
-  security: [
-    { bearerAuth: [] },
-    { apiKey: [] },
-  ],
-  paths: {},
-};
-
-// ---------------------------------------------------------------------------
-// App factory
-// ---------------------------------------------------------------------------
-
-export function createApp(): Application {
+export function createApp(): express.Application {
   const app = express();
 
-  // --- Security headers ---
+  // ── 基础中间件 ────────────────────────────────────────────────────────
+  app.use(requestIdMiddleware);
+  app.use(metricsMiddleware);
   app.use(helmet());
-
-  // --- CORS ---
   app.use(cors({
-    origin: process.env['CORS_ORIGIN'] ?? '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
-    credentials: true,
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+    exposedHeaders: ['X-Request-Id', 'Retry-After'],
+    maxAge: 86400,
   }));
-
-  // --- Request logging ---
-  app.use(morgan(process.env['NODE_ENV'] === 'production' ? 'combined' : 'dev'));
-
-  // --- Body parsing ---
   app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true }));
 
-  // --- Swagger UI ---
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-  app.get('/api-docs.json', (_req: Request, res: Response) => {
-    res.json(swaggerSpec);
-  });
+  // 请求日志
+  if (config.server.nodeEnv !== 'test') {
+    app.use(morgan('short'));
+  }
 
-  // --- Health check ---
-  app.get('/health', (_req: Request, res: Response) => {
+  // ── 健康检查 ──────────────────────────────────────────────────────────
+  app.get('/health', (_req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -121,79 +42,30 @@ export function createApp(): Application {
     });
   });
 
-  // --- API v1 routes ---
+  // ── 指标端点 ──────────────────────────────────────────────────────────
+  app.get('/metrics', metricsEndpoint);
 
-  // Auth (no auth middleware required for login/register)
-  app.use('/api/v1', authRouter);
+  // ── 路由注册 (由 main.ts 调用) ─────────────────────────────────────────
+  // 注意: 路由注册在 main.ts 中通过 registerRoutes() 完成
+  // 这里只保留基础结构
 
-  // Existing routes
-  app.use('/api/v1/projects', projectRouter);
-  app.use('/api/v1', crawlRouter);
-  app.use('/api/v1', keywordsRouter);
-  app.use('/api/v1', rankingsRouter);
-  app.use('/api/v1', backlinksRouter);
-  app.use('/api/v1', semRouter);
-  app.use('/api/v1', geoRouter);
-  app.use('/api/v1', asoRouter);
-  app.use('/api/v1', youtubeRouter);
-  app.use('/api/v1', aiRouter);
-  app.use('/api/v1', competitorRouter);
-  app.use('/api/v1', reportRouter);
-  app.use('/api/v1', scheduleRouter);        // frontend: /v1/schedule/*
-  app.use('/api/v1', alertingRouter);        // frontend: /v1/alerting/*
-  app.use('/api/v1', monitorRouter);         // frontend: /v1/monitor/*
-  app.use('/api/v1', whitelabelRouter);      // frontend: /v1/whitelabel/*
-  app.use('/api/v1', roiRouter);             // frontend: /v1/roi/*
-  app.use('/api/v1', notificationsRouter);   // frontend: /v1/notifications/*
-  app.use('/api/v1', serpFeaturesRouter);
-  app.use('/api/v1', sitemapRouter);
-  app.use('/api/v1', contentRouter);         // frontend: /v1/content/*
-  app.use('/api/v1', domainHealthRouter);    // frontend: /v1/domain-health/*
-  app.use('/api/v1', competitorChangeRouter); // frontend: /v1/competitor-changes/*
-  app.use('/api/v1', apiUsageRouter);        // frontend: /v1/api-usage/*
-  app.use('/api/v1', bulkAnalysisRouter);    // frontend: /v1/bulk-analysis/*
-  app.use('/api/v1', tasksRouter);
-
-  // Trends & PageSpeed
-  app.use('/api/v1', trendsRouter);          // frontend: /v1/trends/*
-  app.use('/api/v1', pagespeedRouter);       // frontend: /v1/pagespeed/*
-
-  // New SEO modules
-  app.use('/api/v1', domainOverviewRouter);
-  app.use('/api/v1', keywordGapRouter);
-  app.use('/api/v1', topPagesRouter);
-
-  // --- 404 handler ---
-  app.use((_req: Request, res: Response) => {
+  // ── 404 处理 ──────────────────────────────────────────────────────────
+  app.use((req, res) => {
     res.status(404).json({
       success: false,
       error: {
         code: 'NOT_FOUND',
-        message: `Route ${_req.method} ${_req.originalUrl} not found`,
+        message: `Route not found: ${req.method} ${req.originalUrl}`,
+      },
+      meta: {
+        requestId: req.requestId,
+        timestamp: new Date().toISOString(),
       },
     });
   });
 
-  // --- Global error handler ---
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('[App] Unhandled error:', err);
-
-    const statusCode = (err as { statusCode?: number }).statusCode ?? 500;
-    const message = process.env['NODE_ENV'] === 'production'
-      ? 'Internal server error'
-      : err.message;
-
-    res.status(statusCode).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message,
-        ...(process.env['NODE_ENV'] !== 'production' && { stack: err.stack }),
-      },
-    });
-  });
+  // ── 全局错误处理 ──────────────────────────────────────────────────────
+  app.use(errorHandlerMiddleware);
 
   return app;
 }
-
-export default createApp;
