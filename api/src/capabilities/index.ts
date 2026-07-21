@@ -137,3 +137,29 @@ export type {
   // 通知
   NotificationMessage,
 } from './dto.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 算法引擎
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Provider 指标追踪 (EWMA + 线性回归配额预测)
+export {
+  ProviderMetrics,
+  getOrCreateMetrics,
+  getAllMetricsSnapshots,
+  metricsRegistry,
+} from './provider-metrics.js';
+
+// Provider 多维评分选优
+export {
+  ProviderSelector,
+  providerSelector,
+  DEFAULT_WEIGHTS,
+} from './provider-selector.js';
+export type { SelectionWeights } from './provider-selector.js';
+
+// 自适应健康检查调度器
+export {
+  HealthChecker,
+  healthChecker,
+} from './health-checker.js';
