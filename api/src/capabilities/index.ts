@@ -163,3 +163,31 @@ export {
   HealthChecker,
   healthChecker,
 } from './health-checker.js';
+
+// 令牌桶限流
+export {
+  TokenBucketRateLimiter,
+  rateLimiter,
+} from './rate-limiter.js';
+export type { TokenBucketConfig } from './rate-limiter.js';
+
+// 统一调用保护层
+export {
+  ProviderCaller,
+  providerCaller,
+} from './provider-caller.js';
+export type { CallOptions, CallResult } from './provider-caller.js';
+
+// 成本追踪器
+export {
+  CostTracker,
+  costTracker,
+} from './cost-tracker.js';
+export type { CostRecord, CostSummary, BudgetAlert, BudgetConfig } from './cost-tracker.js';
+
+// Provider 生命周期编排器
+export {
+  ProviderLifecycle,
+  providerLifecycle,
+} from './provider-lifecycle.js';
+export type { ProviderTier, ProviderRegistration, LifecycleEvent } from './provider-lifecycle.js';
